@@ -1,0 +1,54 @@
+version: "3"
+
+includes:
+  common: ./build/Taskfile.yml
+  darwin: ./build/darwin/Taskfile.yml
+
+vars:
+  APP_NAME:
+    sh: . ./project.env && printf "%s" "$APP_BINARY_NAME"
+  BIN_DIR: "bin"
+  VITE_PORT: "{{.WAILS_VITE_PORT | default 43827}}"
+  APP_VERSION:
+    sh: . ./project.env && printf "%s" "${APP_VERSION#v}"
+  MACOS_MIN_VERSION:
+    sh: . ./project.env && printf "%s" "$MACOS_MIN_VERSION"
+  BUILD_COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo dev
+  BUILD_DATE:
+    sh: date -u +%Y-%m-%dT%H:%M:%SZ
+
+tasks:
+  build:
+    summary: 构建应用（当前平台）
+    cmds:
+      - task: "{{OS}}:build"
+
+  package:
+    summary: 打包生产版本
+    cmds:
+      - task: "{{OS}}:package"
+
+  run:
+    summary: 运行应用
+    cmds:
+      - task: "{{OS}}:run"
+
+  dev:
+    summary: 开发模式运行
+    cmds:
+      - wails3 dev -config ./build/config.yml -port {{.VITE_PORT}}
+
+  build:darwin:
+    summary: 构建 macOS 二进制
+    cmds:
+      - task: darwin:build
+        vars:
+          ARCH: "{{.ARCH | default ARCH}}"
+
+  package:darwin:
+    summary: 打包 macOS .app
+    cmds:
+      - task: darwin:package
+        vars:
+          ARCH: "{{.ARCH | default ARCH}}"

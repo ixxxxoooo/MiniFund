@@ -1,0 +1,76 @@
+version: "3"
+
+tasks:
+  go:mod:tidy:
+    summary: 运行 go mod tidy
+    internal: true
+    cmds:
+      - go mod tidy
+
+  install:frontend:deps:
+    summary: 安装前端依赖
+    dir: frontend
+    sources:
+      - package.json
+      - pnpm-lock.yaml
+    generates:
+      - node_modules
+    preconditions:
+      - sh: pnpm --version
+        msg: "未安装 pnpm，请先执行 corepack enable pnpm。"
+    cmds:
+      - pnpm install
+
+  build:frontend:
+    label: build:frontend (DEV={{.DEV}})
+    summary: 构建前端
+    dir: frontend
+    sources:
+      - "**/*"
+      - exclude: node_modules/**/*
+    generates:
+      - dist/**/*
+    deps:
+      - task: install:frontend:deps
+      - task: generate:bindings
+        vars:
+          BINDINGS_FLAGS:
+            ref: .BINDINGS_FLAGS
+    cmds:
+      - pnpm run {{.BUILD_COMMAND}}
+    vars:
+      BUILD_COMMAND: '{{if eq .DEV "true"}}build:dev{{else}}build{{end}}'
+      BINDINGS_FLAGS: '{{if eq .DEV "true"}}{{else}}-tags production{{end}}'
+
+  generate:bindings:
+    label: generate:bindings
+    summary: 生成前端 bindings
+    deps:
+      - task: go:mod:tidy
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+      - exclude: frontend/**/*
+    generates:
+      - frontend/bindings/**/*
+    cmds:
+      - wails3 generate bindings -f '{{.BINDINGS_FLAGS}}' -clean=true -ts
+
+  generate:icons:
+    summary: 从 appicon.png 生成 macOS .icns 图标
+    dir: build
+    sources:
+      - "appicon.png"
+    generates:
+      - "darwin/icons.icns"
+    cmds:
+      - wails3 generate icons -input appicon.png -macfilename darwin/icons.icns
+
+  dev:frontend:
+    summary: 开发模式运行前端
+    dir: frontend
+    deps:
+      - task: install:frontend:deps
+    cmds:
+      - pnpm dev -- --port {{.VITE_PORT}} --strictPort

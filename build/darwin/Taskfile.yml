@@ -1,0 +1,64 @@
+version: "3"
+
+includes:
+  common: ../Taskfile.yml
+
+tasks:
+  build:
+    summary: 构建 macOS 二进制
+    deps:
+      - task: common:go:mod:tidy
+      - task: common:build:frontend
+        vars:
+          DEV:
+            ref: .DEV
+    cmds:
+      - go build {{.BUILD_FLAGS}} -o {{.OUTPUT}}
+    vars:
+      BUILD_FLAGS: '{{if eq .DEV "true"}}-buildvcs=false -gcflags=all="-l"{{else}}-tags production -trimpath -buildvcs=false -ldflags="-w -s -X minifund/internal/version.Version={{.APP_VERSION}} -X minifund/internal/version.Commit={{.BUILD_COMMIT}} -X minifund/internal/version.BuildDate={{.BUILD_DATE}}"{{end}}'
+      DEFAULT_OUTPUT: "{{.BIN_DIR}}/{{.APP_NAME}}"
+      OUTPUT: "{{.OUTPUT | default .DEFAULT_OUTPUT}}"
+    env:
+      GOOS: darwin
+      CGO_ENABLED: 1
+      GOARCH: "{{.ARCH | default ARCH}}"
+      CGO_CFLAGS: "-mmacosx-version-min={{.MACOS_MIN_VERSION}}"
+      CGO_LDFLAGS: "-mmacosx-version-min={{.MACOS_MIN_VERSION}}"
+      MACOSX_DEPLOYMENT_TARGET: "{{.MACOS_MIN_VERSION}}"
+
+  package:
+    summary: 打包 .app bundle
+    cmds:
+      - task: build
+        vars:
+          ARCH: "{{.ARCH}}"
+      - task: create:app:bundle
+
+  create:app:bundle:
+    summary: 创建 .app bundle
+    cmds:
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
+      - |
+        if [ -f build/darwin/icons.icns ]; then
+          cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
+        else
+          echo "提示：未找到 build/darwin/icons.icns，跳过图标（可先执行 wails3 task common:generate:icons）"
+        fi
+      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
+      - cp build/darwin/Info.plist "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents"
+      - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app"
+
+  run:
+    summary: 以 .app 形式运行（保证托盘/通知等系统能力正常）
+    cmds:
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
+      - mkdir -p "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
+      - |
+        if [ -f build/darwin/icons.icns ]; then
+          cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
+        fi
+      - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
+      - cp "build/darwin/Info.dev.plist" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Info.plist"
+      - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app"
+      - "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS/{{.APP_NAME}}"

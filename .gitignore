@@ -1,0 +1,18 @@
+# 构建产物
+bin/
+.task/
+frontend/dist/*
+!frontend/dist/.gitkeep
+
+# 依赖
+node_modules/
+
+# 系统文件
+.DS_Store
+
+# 日志
+*.log
+
+# 编辑器
+.idea/
+.vscode/
