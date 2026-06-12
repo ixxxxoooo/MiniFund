@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.16",
     "@wailsio/runtime": "3.0.0-alpha.78",
     "clsx": "^2.1.1",
     "lucide-react": "^0.468.0",
