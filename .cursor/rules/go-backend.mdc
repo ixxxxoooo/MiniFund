@@ -1,0 +1,35 @@
+---
+description: Go 后端编码规范（services、internal）
+globs: ["**/*.go"]
+---
+
+# Go 后端编码规范
+
+## 服务层（services/）
+
+- 每个服务一个文件，命名 `xxx_service.go`，结构体 `XxxService`，构造函数 `NewXxxService(...)`。
+- 服务在 `internal/app/core.go` 装配，并加入 `services()` 返回的 `[]application.Service`。
+- 新增/修改服务公开方法后，必须运行 `wails3 generate bindings` 并提交生成产物。
+- 暴露给前端的方法：参数与返回值使用可序列化类型；错误信息使用中文且面向用户可读。
+
+## 错误与日志
+
+- 错误一律带上下文包装：`fmt.Errorf("拉取估值失败: %w", err)`。
+- 使用 `internal/logger`（Info/Warn/Error），禁止 `fmt.Println` 留在业务代码中。
+
+## 数据源层（internal/datasource/）
+
+- 网络请求统一使用包内带 UA/Referer 的 http.Client，超时 5s。
+- 必须遵守 `docs/DATA_SOURCES.md` 的限频表；新接口先登记文档再实现。
+- 解析函数必须有单元测试，用真实响应样本作为 testdata。
+
+## 调度与并发
+
+- 周期任务只能注册到 `internal/scheduler`，禁止散落的裸 goroutine + time.Ticker。
+- 托盘 UI 更新（标题/菜单）必须经 `application.InvokeAsync` 回主线程。
+- 共享状态加锁或用 channel，map 并发访问必须 mutex 保护。
+
+## 存储（internal/storage/）
+
+- 表结构变更只能通过 `migrations.go` 追加版本化迁移（`PRAGMA user_version`）。
+- SQL 使用预编译参数占位，禁止字符串拼接。

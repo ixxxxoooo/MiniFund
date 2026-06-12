@@ -1,0 +1,24 @@
+---
+description: MiniFund 项目全局开发约定
+alwaysApply: true
+---
+
+# MiniFund 全局开发约定
+
+## 语言与提交
+
+- 所有代码注释、日志文案、文档、UI 文案一律使用中文。
+- Git 提交信息使用中文 Conventional Commits：`feat: 描述`、`fix: 修复xxx`、`docs:`、`refactor:`、`test:`、`chore:`。
+- 一次提交只做一件事，提交前确保 `go test ./...` 与 `cd frontend && pnpm build` 通过。
+
+## 架构边界（违反即返工）
+
+- 外部 HTTP 请求只允许出现在 `internal/datasource/` 子包中；`services/` 与前端禁止直连外部接口。
+- 非官方接口的解析逻辑必须收敛在对应数据源包内（`eastmoney`/`tencent`/`sina`），上层只依赖 `internal/datasource/types.go` 中的接口与领域模型。
+- 周期性数据（估值、指数行情）由 `internal/scheduler` 统一拉取并通过 Wails 事件广播；前端禁止自行 setInterval 轮询 bindings。
+- 写操作数据流：前端调用 bindings → Go 落库 → Go 发事件 → 各窗口 store 更新。禁止前端先改本地状态再同步。
+
+## 文档同步
+
+- 功能行为变化时同步更新 `docs/PRD.md`；接口/存储/事件变化时同步更新 `docs/TECH_DESIGN.md`。
+- 新增外部接口必须先在 `docs/DATA_SOURCES.md` 登记接口规格与限频策略。

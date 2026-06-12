@@ -1,0 +1,38 @@
+---
+description: 前端编码规范（React/TS/Tailwind/zustand）
+globs: ["frontend/**/*.ts", "frontend/**/*.tsx", "frontend/**/*.css"]
+---
+
+# 前端编码规范
+
+## UI Token（强约束，详见 docs/UI_GUIDELINES.md）
+
+- 颜色、圆角、尺寸必须使用 `globals.css` 的 CSS 变量，禁止硬编码色值/像素：
+  - 正确：`bg-[var(--surface)] rounded-[var(--radius-btn)] h-[var(--size-btn)]`
+  - 错误：`bg-white rounded-lg h-7 text-[#ff3b30]`
+- 涨跌展示只能用 `--quote-up`/`--quote-down`/`--quote-flat`，且必须通过 `QuoteText`/`QuoteBadge` 组件输出；禁止用 `--danger`/`--success` 表达涨跌。
+- 数字（净值/涨跌幅/金额/代码）使用 `var(--font-mono)` + `tabular-nums`。
+- 新组件必须在亮色、暗色、紧凑三种模式下自查。
+
+## 组件
+
+- 通用组件放 `components/ui/`（小写文件名），业务组件按域放 `components/fund/`、`components/market/`。
+- 使用 `React.forwardRef` + `cn()` 合并类名；variant/size 用条件类名对象（参考 `components/ui/button.tsx`）。
+- 交互原语优先使用 Radix UI 封装，禁止自造 dialog/dropdown 可访问性逻辑。
+
+## 状态管理
+
+- zustand store 按域拆分（`stores/` 目录），禁止巨型单 store。
+- 与 Go 通信：调用 `frontend/bindings/` 生成的 bindings，统一经 `lib/wails/call.ts` 包装错误处理；禁止手写 fetch 调用本地服务。
+- 周期数据通过 `lib/wails/events.ts` 订阅 Go 事件更新 store；禁止前端 setInterval 轮询 bindings。
+- 写操作流程：bindings → Go 落库 → 事件回流更新 store；禁止乐观更新本地状态。
+
+## 多窗口
+
+- 每个窗口的根组件放 `windows/`，由 `main.tsx` 按 `location.hash` 分发。
+- 窗口间不共享 React 状态，一致性靠各自订阅同一事件流保证。
+
+## 其他
+
+- TypeScript 严格模式，禁止 `any`（确需时用 `unknown` + 收窄）。
+- i18n 文案放 `i18n/zh-CN.ts`，组件内禁止裸写可复用文案字符串。
