@@ -95,7 +95,14 @@ GET https://fund.eastmoney.com/pingzhongdata/{code}.js
 | `Data_performanceEvaluation` | 业绩评价五维图 |
 | `swithSameType` | 同类基金推荐 |
 
-补充接口（重仓股明细，含持仓占比）：
+补充接口（重仓股明细，含持仓占比）。实现采用移动端 JSON 接口（返回结构化数据，无需解析 HTML 表格）：
+
+```
+GET https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition?deviceid=Wap&plat=Wap&product=EFund&version=2.0.0&FCODE={code}
+返回：{"Datas":{"fundStocks":[{"GPDM":"股票代码","GPJC":"股票简称","JZBL":"占净值比例"}]}}
+```
+
+备选（网页端 HTML 片段，解析成本高，不采用）：
 
 ```
 GET https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code={code}&topline=10&year=&month=

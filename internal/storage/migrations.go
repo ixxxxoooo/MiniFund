@@ -1,0 +1,94 @@
+package storage
+
+import (
+	"fmt"
+
+	"minifund/internal/logger"
+)
+
+// migrations 版本化迁移列表：索引 i 对应版本 i+1，只允许追加，禁止修改历史项。
+var migrations = []string{
+	// v1：初始表结构（docs/TECH_DESIGN.md 第 5 节）
+	`
+	CREATE TABLE IF NOT EXISTS fund_index (
+		code TEXT PRIMARY KEY,
+		name TEXT NOT NULL,
+		type TEXT,
+		pinyin_abbr TEXT,
+		pinyin_full TEXT,
+		updated_at INTEGER
+	);
+	CREATE TABLE IF NOT EXISTS watch_group (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL,
+		sort INTEGER DEFAULT 0
+	);
+	CREATE TABLE IF NOT EXISTS watch_item (
+		code TEXT NOT NULL,
+		group_id INTEGER NOT NULL REFERENCES watch_group(id) ON DELETE CASCADE,
+		sort INTEGER DEFAULT 0,
+		pinned INTEGER DEFAULT 0,
+		created_at INTEGER,
+		PRIMARY KEY (code, group_id)
+	);
+	CREATE TABLE IF NOT EXISTS position (
+		code TEXT PRIMARY KEY,
+		shares REAL NOT NULL,
+		cost_price REAL NOT NULL,
+		updated_at INTEGER
+	);
+	CREATE TABLE IF NOT EXISTS daily_profit (
+		code TEXT,
+		date TEXT,
+		nav REAL,
+		growth REAL,
+		profit REAL,
+		PRIMARY KEY (code, date)
+	);
+	CREATE TABLE IF NOT EXISTS nav_history (
+		code TEXT,
+		date TEXT,
+		nav REAL,
+		acc_nav REAL,
+		growth REAL,
+		PRIMARY KEY (code, date)
+	);
+	CREATE TABLE IF NOT EXISTS detail_cache (
+		code TEXT PRIMARY KEY,
+		payload TEXT,
+		fetched_at INTEGER
+	);
+	CREATE TABLE IF NOT EXISTS settings (
+		key TEXT PRIMARY KEY,
+		value TEXT
+	);
+	`,
+}
+
+// migrate 按 PRAGMA user_version 顺序执行未应用的迁移。
+func (s *Store) migrate() error {
+	var current int
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&current); err != nil {
+		return fmt.Errorf("读取数据库版本失败: %w", err)
+	}
+	for i := current; i < len(migrations); i++ {
+		version := i + 1
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("开启迁移事务失败: %w", err)
+		}
+		if _, err := tx.Exec(migrations[i]); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("执行迁移 v%d 失败: %w", version, err)
+		}
+		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", version)); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("更新数据库版本失败: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("提交迁移 v%d 失败: %w", version, err)
+		}
+		logger.Info("数据库迁移完成: v%d", version)
+	}
+	return nil
+}

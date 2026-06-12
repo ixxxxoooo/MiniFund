@@ -1,0 +1,388 @@
+// Package scheduler 监控调度器：按交易时段状态机驱动估值/指数/净值确认轮询，
+// 结果通过 Wails 事件广播给所有窗口。设计见 docs/TECH_DESIGN.md 第 4 节。
+package scheduler
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"minifund/internal/datasource"
+	"minifund/internal/datasource/eastmoney"
+	"minifund/internal/logger"
+	"minifund/internal/model"
+	"minifund/internal/storage"
+
+	"github.com/wailsapp/wails/v3/pkg/application"
+)
+
+// 事件名（前端在 lib/wails/events.ts 中订阅）
+const (
+	EventEstimates    = "fund:estimates"
+	EventIndexes      = "market:indexes"
+	EventNavConfirmed = "fund:nav-confirmed"
+	EventMonitorState = "monitor:state"
+	EventDegraded     = "datasource:degraded"
+)
+
+// SettingsProvider 调度器需要的设置读取接口（由 SettingsService 实现，避免包循环依赖）。
+type SettingsProvider interface {
+	EstimateInterval() time.Duration // 盘中估值轮询间隔
+	WatchedIndexes() []string        // 订阅的指数代码
+	TrayTitleTarget() string         // 托盘标题展示目标（指数或基金代码，空为关闭）
+	StealthMode() bool               // 摸鱼模式
+}
+
+// Scheduler 监控调度器。
+type Scheduler struct {
+	app      *application.App
+	store    *storage.Store
+	indexSrc datasource.IndexQuoteSource
+	settings SettingsProvider
+
+	// setTrayTitle 托盘标题更新回调（由 app 装配时注入）
+	setTrayTitle func(string)
+
+	mu            sync.Mutex
+	paused        bool
+	fastMode      bool // 托盘面板打开时提速到 15s
+	lastEstimates []model.FundEstimate
+	lastIndexes   []model.IndexQuote
+	confirmed     map[string]bool // 当日已确认净值的基金
+	confirmedDate string          // confirmed 对应的日期
+
+	refreshCh chan struct{}
+	stopCh    chan struct{}
+	stopOnce  sync.Once
+}
+
+// New 创建调度器。
+func New(app *application.App, store *storage.Store, indexSrc datasource.IndexQuoteSource, settings SettingsProvider) *Scheduler {
+	return &Scheduler{
+		app:       app,
+		store:     store,
+		indexSrc:  indexSrc,
+		settings:  settings,
+		confirmed: make(map[string]bool),
+		refreshCh: make(chan struct{}, 1),
+		stopCh:    make(chan struct{}),
+	}
+}
+
+// SetTrayTitleUpdater 注入托盘标题更新回调。
+func (s *Scheduler) SetTrayTitleUpdater(fn func(string)) {
+	s.setTrayTitle = fn
+}
+
+// Start 启动调度循环（异步）。
+func (s *Scheduler) Start() {
+	go s.loop()
+	logger.Info("监控调度器已启动")
+}
+
+// Stop 停止调度循环。
+func (s *Scheduler) Stop() {
+	s.stopOnce.Do(func() { close(s.stopCh) })
+}
+
+// Pause 暂停/恢复监控（托盘菜单调用）。
+func (s *Scheduler) Pause(paused bool) {
+	s.mu.Lock()
+	s.paused = paused
+	s.mu.Unlock()
+	s.emitState()
+	if !paused {
+		s.RefreshNow()
+	}
+}
+
+// IsPaused 返回是否处于暂停状态。
+func (s *Scheduler) IsPaused() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.paused
+}
+
+// SetFastMode 托盘面板打开时提速估值轮询。
+func (s *Scheduler) SetFastMode(fast bool) {
+	s.mu.Lock()
+	s.fastMode = fast
+	s.mu.Unlock()
+}
+
+// RefreshNow 立即触发一轮拉取（自选变更/手动刷新时调用，非阻塞）。
+func (s *Scheduler) RefreshNow() {
+	select {
+	case s.refreshCh <- struct{}{}:
+	default:
+	}
+}
+
+// LastEstimates 返回最近一轮估值缓存（窗口初始化时拉取）。
+func (s *Scheduler) LastEstimates() []model.FundEstimate {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]model.FundEstimate, len(s.lastEstimates))
+	copy(out, s.lastEstimates)
+	return out
+}
+
+// LastIndexes 返回最近一轮指数行情缓存。
+func (s *Scheduler) LastIndexes() []model.IndexQuote {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]model.IndexQuote, len(s.lastIndexes))
+	copy(out, s.lastIndexes)
+	return out
+}
+
+// CurrentState 返回当前监控状态。
+func (s *Scheduler) CurrentState() model.MonitorState {
+	now := time.Now()
+	p := phaseAt(now)
+	return model.MonitorState{
+		Phase:      string(p),
+		Paused:     s.IsPaused(),
+		NextChange: nextChangeHint(p, now),
+	}
+}
+
+// loop 调度主循环：每 2 秒评估一次任务到期情况。
+func (s *Scheduler) loop() {
+	// 启动时无条件拉一轮（非交易时段 fundgz 也会返回最近数据，保证 UI 有初始内容）
+	s.runEstimateRound()
+	s.runIndexRound()
+	s.emitState()
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	var lastEstimate, lastIndex, lastNav time.Time
+	lastPhase := phaseAt(time.Now())
+
+	for {
+		select {
+		case <-s.stopCh:
+			return
+		case <-s.refreshCh:
+			s.runEstimateRound()
+			s.runIndexRound()
+		case now := <-ticker.C:
+			if s.IsPaused() {
+				continue
+			}
+			phase := phaseAt(now)
+			if phase != lastPhase {
+				lastPhase = phase
+				s.emitState()
+				logger.Info("监控时段切换: %s", phase)
+			}
+
+			// 估值轮询：仅交易时段
+			if phase == PhaseTrading && now.Sub(lastEstimate) >= s.estimateInterval() {
+				lastEstimate = now
+				s.runEstimateRound()
+			}
+
+			// 指数轮询：交易时段 10s，开盘前/午休/净值确认 60s
+			indexInterval := time.Duration(0)
+			switch phase {
+			case PhaseTrading:
+				indexInterval = 10 * time.Second
+			case PhasePreMarket, PhaseLunch, PhaseNavConfirm:
+				indexInterval = 60 * time.Second
+			}
+			if indexInterval > 0 && now.Sub(lastIndex) >= indexInterval {
+				lastIndex = now
+				s.runIndexRound()
+			}
+
+			// 净值确认：16:00-23:00 每 10 分钟
+			if phase == PhaseNavConfirm && now.Sub(lastNav) >= 10*time.Minute {
+				lastNav = now
+				s.runNavConfirmRound()
+			}
+		}
+	}
+}
+
+// estimateInterval 当前生效的估值轮询间隔。
+func (s *Scheduler) estimateInterval() time.Duration {
+	s.mu.Lock()
+	fast := s.fastMode
+	s.mu.Unlock()
+	if fast {
+		return 15 * time.Second
+	}
+	return s.settings.EstimateInterval()
+}
+
+// runEstimateRound 拉取一轮自选基金估值并广播。
+func (s *Scheduler) runEstimateRound() {
+	codes, err := s.store.AllWatchedCodes()
+	if err != nil {
+		logger.Warn("读取自选代码失败: %v", err)
+		return
+	}
+	if len(codes) == 0 {
+		s.mu.Lock()
+		s.lastEstimates = nil
+		s.mu.Unlock()
+		s.app.Event.Emit(EventEstimates, []model.FundEstimate{})
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	estimates, err := eastmoney.FetchEstimates(ctx, codes)
+	if err != nil {
+		logger.Warn("估值轮询失败: %v", err)
+		return
+	}
+	s.mu.Lock()
+	s.lastEstimates = estimates
+	s.mu.Unlock()
+	s.app.Event.Emit(EventEstimates, estimates)
+	s.updateTrayTitle()
+}
+
+// runIndexRound 拉取一轮指数行情并广播。
+func (s *Scheduler) runIndexRound() {
+	symbols := s.settings.WatchedIndexes()
+	if len(symbols) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	quotes, err := s.indexSrc.FetchIndexQuotes(ctx, symbols)
+	if err != nil {
+		logger.Warn("指数轮询失败: %v", err)
+		return
+	}
+	s.mu.Lock()
+	s.lastIndexes = quotes
+	s.mu.Unlock()
+	s.app.Event.Emit(EventIndexes, quotes)
+	s.updateTrayTitle()
+}
+
+// runNavConfirmRound 净值确认：逐只查询当日真实净值，确认后落库收益并广播。
+func (s *Scheduler) runNavConfirmRound() {
+	today := time.Now().Format("2006-01-02")
+	s.mu.Lock()
+	if s.confirmedDate != today {
+		s.confirmed = make(map[string]bool)
+		s.confirmedDate = today
+	}
+	s.mu.Unlock()
+
+	codes, err := s.store.AllWatchedCodes()
+	if err != nil {
+		logger.Warn("读取自选代码失败: %v", err)
+		return
+	}
+	for _, code := range codes {
+		s.mu.Lock()
+		done := s.confirmed[code]
+		s.mu.Unlock()
+		if done {
+			continue
+		}
+		// 已落库的也跳过（应用重启后恢复状态）
+		if ok, _ := s.store.HasDailyProfit(code, today); ok {
+			s.mu.Lock()
+			s.confirmed[code] = true
+			s.mu.Unlock()
+			continue
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		page, err := eastmoney.FetchNavHistory(ctx, code, 1, 2)
+		cancel()
+		if err != nil || len(page.Items) == 0 {
+			continue
+		}
+		latest := page.Items[0]
+		if latest.Date != today {
+			continue // 当日净值尚未公布
+		}
+
+		// 计算当日真实收益（有持仓时）
+		var profit float64
+		if pos, _ := s.store.GetPosition(code); pos != nil && len(page.Items) > 1 {
+			profit = pos.Shares * (latest.Nav - page.Items[1].Nav)
+		}
+		if err := s.store.SaveDailyProfit(code, today, latest.Nav, latest.Growth, profit); err != nil {
+			logger.Warn("净值确认落库失败: code=%s err=%v", code, err)
+			continue
+		}
+		s.mu.Lock()
+		s.confirmed[code] = true
+		s.mu.Unlock()
+		s.app.Event.Emit(EventNavConfirmed, model.NavConfirmed{
+			Code: code, Date: latest.Date, Nav: latest.Nav, Growth: latest.Growth, Profit: profit,
+		})
+		logger.Info("当日净值已确认: code=%s nav=%.4f growth=%.2f%%", code, latest.Nav, latest.Growth)
+	}
+}
+
+// emitState 广播监控状态。
+func (s *Scheduler) emitState() {
+	s.app.Event.Emit(EventMonitorState, s.CurrentState())
+}
+
+// EmitDegraded 广播数据源降级状态（由 FallbackIndexSource 回调触发）。
+func (s *Scheduler) EmitDegraded(source string, degraded bool) {
+	s.app.Event.Emit(EventDegraded, map[string]any{"source": source, "degraded": degraded})
+}
+
+// updateTrayTitle 按设置目标刷新托盘标题。
+func (s *Scheduler) updateTrayTitle() {
+	if s.setTrayTitle == nil {
+		return
+	}
+	target := s.settings.TrayTitleTarget()
+	if target == "" {
+		s.setTrayTitle("")
+		return
+	}
+	stealth := s.settings.StealthMode()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// 先在指数中找，再在自选估值中找
+	for _, q := range s.lastIndexes {
+		if q.Symbol == target {
+			s.setTrayTitle(formatTrayTitle(q.ChangePercent, stealth))
+			return
+		}
+	}
+	for _, e := range s.lastEstimates {
+		if e.Code == target && e.HasEstimate {
+			s.setTrayTitle(formatTrayTitle(e.EstimateGrowth, stealth))
+			return
+		}
+	}
+}
+
+// formatTrayTitle 生成托盘标题文本（如 ▲1.24%）；摸鱼模式输出中性格式（无方向符号）。
+func formatTrayTitle(percent float64, stealth bool) string {
+	if stealth {
+		return fmt.Sprintf("%.2f%%", abs(percent))
+	}
+	switch {
+	case percent > 0:
+		return fmt.Sprintf("▲%.2f%%", percent)
+	case percent < 0:
+		return fmt.Sprintf("▼%.2f%%", -percent)
+	default:
+		return "0.00%"
+	}
+}
+
+func abs(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
