@@ -17,6 +17,9 @@ type WindowService struct {
 	app      *application.App
 	settings *SettingsService
 
+	// onTrayPanelVisible 托盘面板显隐回调（用于调度器提速，装配时注入）
+	onTrayPanelVisible func(visible bool)
+
 	mu        sync.Mutex
 	main      *application.WebviewWindow
 	trayPanel *application.WebviewWindow
@@ -34,6 +37,11 @@ func NewWindowService(settings *SettingsService) *WindowService {
 // SetWailsApplication 注入 Wails 应用实例（在 runner 中调用，不暴露给前端使用）。
 func (s *WindowService) SetWailsApplication(app *application.App) {
 	s.app = app
+}
+
+// SetTrayPanelVisibilityListener 注入托盘面板显隐回调（不暴露给前端使用）。
+func (s *WindowService) SetTrayPanelVisibilityListener(fn func(visible bool)) {
+	s.onTrayPanelVisible = fn
 }
 
 // CreateMainWindow 创建主窗口（应用启动时由 runner 调用一次）。
@@ -98,6 +106,17 @@ func (s *WindowService) CreateTrayPanelWindow() *application.WebviewWindow {
 	// 失焦自动隐藏，符合菜单栏弹出面板的交互习惯
 	win.OnWindowEvent(events.Common.WindowLostFocus, func(e *application.WindowEvent) {
 		win.Hide()
+	})
+	// 面板显隐联动调度器提速（打开面板时估值轮询提速至 15s）
+	win.OnWindowEvent(events.Common.WindowShow, func(e *application.WindowEvent) {
+		if s.onTrayPanelVisible != nil {
+			s.onTrayPanelVisible(true)
+		}
+	})
+	win.OnWindowEvent(events.Common.WindowHide, func(e *application.WindowEvent) {
+		if s.onTrayPanelVisible != nil {
+			s.onTrayPanelVisible(false)
+		}
 	})
 	s.trayPanel = win
 	return win

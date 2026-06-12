@@ -17,4 +17,7 @@ func TestDefaultSettings(t *testing.T) {
 	if s.CloseAction != "hide" {
 		t.Errorf("默认关闭行为应为 hide（隐藏到托盘），实际为 %s", s.CloseAction)
 	}
+	if len(s.WatchedIndexes) == 0 || s.WatchedIndexes[0] != "sh000001" {
+		t.Errorf("默认指数列表错误: %+v", s.WatchedIndexes)
+	}
 }

@@ -3,8 +3,6 @@
 
 /**
  * FundService 基金数据服务：搜索、详情、历史净值、排行。
- * TODO(M1)：接入 internal/datasource/eastmoney 与 internal/storage 后实现真实逻辑，
- * 接口规格见 docs/DATA_SOURCES.md，任务拆解见 docs/ROADMAP.md 里程碑 M1/M2。
  * @module
  */
 
@@ -14,18 +12,64 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore: Unused imports
-import * as $models from "./models.js";
+import * as model$0 from "../internal/model/models.js";
 
 /**
- * SearchFunds 按关键字搜索基金（代码/名称/拼音）。
- * TODO(M1)：基于本地 SQLite 基金代码表实现，当前为骨架占位。
+ * EnsureFundIndex 确保基金代码表存在且未过期（应用启动时后台调用，不暴露给前端）。
  */
-export function SearchFunds(keyword: string, limit: number): $CancellablePromise<$models.FundIndexItem[]> {
-    return $Call.ByID(925186620, keyword, limit).then(($result: any) => {
+export function EnsureFundIndex(): $CancellablePromise<void> {
+    return $Call.ByID(3610751999);
+}
+
+/**
+ * GetFundDetail 获取基金详情（缓存优先，24h 过期后重新抓取）。
+ */
+export function GetFundDetail(code: string): $CancellablePromise<model$0.FundDetail | null> {
+    return $Call.ByID(17137502, code).then(($result: any) => {
         return $$createType1($result);
     });
 }
 
+/**
+ * GetFundRanking 获取基金排行。
+ */
+export function GetFundRanking(fundType: string, sortKey: string, pageIndex: number): $CancellablePromise<model$0.RankPage | null> {
+    return $Call.ByID(1525782339, fundType, sortKey, pageIndex).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
+ * GetNavHistory 获取历史净值（分页）。
+ */
+export function GetNavHistory(code: string, pageIndex: number, pageSize: number): $CancellablePromise<model$0.NavPage | null> {
+    return $Call.ByID(4059753423, code, pageIndex, pageSize).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
+/**
+ * RefreshFundIndex 手动全量更新基金代码表（设置页调用）。
+ */
+export function RefreshFundIndex(): $CancellablePromise<void> {
+    return $Call.ByID(3243024372);
+}
+
+/**
+ * SearchFunds 本地搜索基金（代码/名称/拼音首字母/全拼）。
+ */
+export function SearchFunds(keyword: string, limit: number): $CancellablePromise<model$0.FundIndexItem[]> {
+    return $Call.ByID(925186620, keyword, limit).then(($result: any) => {
+        return $$createType7($result);
+    });
+}
+
 // Private type creation functions
-const $$createType0 = $models.FundIndexItem.createFrom;
-const $$createType1 = $Create.Array($$createType0);
+const $$createType0 = model$0.FundDetail.createFrom;
+const $$createType1 = $Create.Nullable($$createType0);
+const $$createType2 = model$0.RankPage.createFrom;
+const $$createType3 = $Create.Nullable($$createType2);
+const $$createType4 = model$0.NavPage.createFrom;
+const $$createType5 = $Create.Nullable($$createType4);
+const $$createType6 = model$0.FundIndexItem.createFrom;
+const $$createType7 = $Create.Array($$createType6);

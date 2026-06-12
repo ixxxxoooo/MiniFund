@@ -22,6 +22,12 @@ type Options struct {
 	PanelWindow *application.WebviewWindow
 	// OnShowMain 菜单"显示主窗口"回调
 	OnShowMain func()
+	// OnPauseToggle 菜单"暂停监控"勾选回调
+	OnPauseToggle func(paused bool)
+	// OnStealthToggle 菜单"摸鱼模式"勾选回调
+	OnStealthToggle func(stealth bool)
+	// StealthChecked 初始摸鱼模式状态
+	StealthChecked bool
 }
 
 // Setup 创建并配置系统托盘。
@@ -38,7 +44,19 @@ func Setup(app *application.App, opts Options) *Tray {
 			opts.OnShowMain()
 		}
 	})
-	// TODO(M3)：接入调度器后补充"暂停监控/恢复监控"与"摸鱼模式"菜单项（见 docs/ROADMAP.md）
+	menu.AddSeparator()
+	pauseItem := menu.AddCheckbox("暂停监控", false)
+	pauseItem.OnClick(func(ctx *application.Context) {
+		if opts.OnPauseToggle != nil {
+			opts.OnPauseToggle(pauseItem.Checked())
+		}
+	})
+	stealthItem := menu.AddCheckbox("摸鱼模式", opts.StealthChecked)
+	stealthItem.OnClick(func(ctx *application.Context) {
+		if opts.OnStealthToggle != nil {
+			opts.OnStealthToggle(stealthItem.Checked())
+		}
+	})
 	menu.AddSeparator()
 	menu.Add("退出 " + version.AppName).OnClick(func(ctx *application.Context) {
 		app.Quit()

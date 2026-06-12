@@ -55,6 +55,13 @@ export function QuitApp(): $CancellablePromise<void> {
 }
 
 /**
+ * SetTrayPanelVisibilityListener 注入托盘面板显隐回调（不暴露给前端使用）。
+ */
+export function SetTrayPanelVisibilityListener(fn: any): $CancellablePromise<void> {
+    return $Call.ByID(309207357, fn);
+}
+
+/**
  * SetWailsApplication 注入 Wails 应用实例（在 runner 中调用，不暴露给前端使用）。
  */
 export function SetWailsApplication(app: application$0.App | null): $CancellablePromise<void> {

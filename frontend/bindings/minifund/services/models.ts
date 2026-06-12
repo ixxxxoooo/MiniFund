@@ -30,14 +30,24 @@ export class AppSettings {
     "refreshIntervalSec": number;
 
     /**
-     * TrayTitleEnabled 托盘标题是否展示涨跌幅
+     * TrayTitleTarget 托盘标题展示目标（指数 symbol 或基金代码，空为关闭）
      */
-    "trayTitleEnabled": boolean;
+    "trayTitleTarget": string;
+
+    /**
+     * StealthMode 摸鱼模式：涨跌中性展示、金额隐藏
+     */
+    "stealthMode": boolean;
 
     /**
      * CloseAction 主窗口关闭行为：hide（隐藏到托盘）/ quit（退出）
      */
     "closeAction": string;
+
+    /**
+     * WatchedIndexes 订阅的指数列表
+     */
+    "watchedIndexes": string[];
 
     /** Creates a new AppSettings instance. */
     constructor($$source: Partial<AppSettings> = {}) {
@@ -53,11 +63,17 @@ export class AppSettings {
         if (!("refreshIntervalSec" in $$source)) {
             this["refreshIntervalSec"] = 0;
         }
-        if (!("trayTitleEnabled" in $$source)) {
-            this["trayTitleEnabled"] = false;
+        if (!("trayTitleTarget" in $$source)) {
+            this["trayTitleTarget"] = "";
+        }
+        if (!("stealthMode" in $$source)) {
+            this["stealthMode"] = false;
         }
         if (!("closeAction" in $$source)) {
             this["closeAction"] = "";
+        }
+        if (!("watchedIndexes" in $$source)) {
+            this["watchedIndexes"] = [];
         }
 
         Object.assign(this, $$source);
@@ -67,58 +83,14 @@ export class AppSettings {
      * Creates a new AppSettings instance from a string or object.
      */
     static createFrom($$source: any = {}): AppSettings {
+        const $$createField7_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("watchedIndexes" in $$parsedSource) {
+            $$parsedSource["watchedIndexes"] = $$createField7_0($$parsedSource["watchedIndexes"]);
+        }
         return new AppSettings($$parsedSource as Partial<AppSettings>);
     }
 }
 
-/**
- * FundIndexItem 基金代码表条目（搜索结果项）。
- */
-export class FundIndexItem {
-    /**
-     * 基金代码
-     */
-    "code": string;
-
-    /**
-     * 基金名称
-     */
-    "name": string;
-
-    /**
-     * 基金类型（混合型/股票型/...）
-     */
-    "type": string;
-
-    /**
-     * 拼音首字母
-     */
-    "pinyinAbbr": string;
-
-    /** Creates a new FundIndexItem instance. */
-    constructor($$source: Partial<FundIndexItem> = {}) {
-        if (!("code" in $$source)) {
-            this["code"] = "";
-        }
-        if (!("name" in $$source)) {
-            this["name"] = "";
-        }
-        if (!("type" in $$source)) {
-            this["type"] = "";
-        }
-        if (!("pinyinAbbr" in $$source)) {
-            this["pinyinAbbr"] = "";
-        }
-
-        Object.assign(this, $$source);
-    }
-
-    /**
-     * Creates a new FundIndexItem instance from a string or object.
-     */
-    static createFrom($$source: any = {}): FundIndexItem {
-        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        return new FundIndexItem($$parsedSource as Partial<FundIndexItem>);
-    }
-}
+// Private type creation functions
+const $$createType0 = $Create.Array($Create.Any);
