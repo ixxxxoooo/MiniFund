@@ -36,11 +36,20 @@ export function GetIndexQuotes(): $CancellablePromise<model$0.IndexQuote[]> {
 }
 
 /**
+ * GetMarketBreadth 拉取大盘涨跌分布（按涨跌幅档位统计家数）。
+ */
+export function GetMarketBreadth(): $CancellablePromise<model$0.MarketBreadth | null> {
+    return $Call.ByID(153537417).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
+/**
  * GetMonitorState 返回当前监控状态。
  */
 export function GetMonitorState(): $CancellablePromise<model$0.MonitorState> {
     return $Call.ByID(3357847774).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType6($result);
     });
 }
 
@@ -49,7 +58,7 @@ export function GetMonitorState(): $CancellablePromise<model$0.MonitorState> {
  */
 export function GetSectors(kind: string): $CancellablePromise<model$0.SectorItem[]> {
     return $Call.ByID(1239119416, kind).then(($result: any) => {
-        return $$createType6($result);
+        return $$createType8($result);
     });
 }
 
@@ -59,7 +68,7 @@ export function GetSectors(kind: string): $CancellablePromise<model$0.SectorItem
  */
 export function GetTopicFunds(topicID: string, sortKey: string, sortType: string, pageIndex: number): $CancellablePromise<model$0.RankPage | null> {
     return $Call.ByID(2767582740, topicID, sortKey, sortType, pageIndex).then(($result: any) => {
-        return $$createType8($result);
+        return $$createType10($result);
     });
 }
 
@@ -68,7 +77,7 @@ export function GetTopicFunds(topicID: string, sortKey: string, sortType: string
  */
 export function GetTopics(): $CancellablePromise<model$0.TopicItem[]> {
     return $Call.ByID(2510723945).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType12($result);
     });
 }
 
@@ -98,10 +107,12 @@ const $$createType0 = model$0.FundEstimate.createFrom;
 const $$createType1 = $Create.Array($$createType0);
 const $$createType2 = model$0.IndexQuote.createFrom;
 const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = model$0.MonitorState.createFrom;
-const $$createType5 = model$0.SectorItem.createFrom;
-const $$createType6 = $Create.Array($$createType5);
-const $$createType7 = model$0.RankPage.createFrom;
-const $$createType8 = $Create.Nullable($$createType7);
-const $$createType9 = model$0.TopicItem.createFrom;
-const $$createType10 = $Create.Array($$createType9);
+const $$createType4 = model$0.MarketBreadth.createFrom;
+const $$createType5 = $Create.Nullable($$createType4);
+const $$createType6 = model$0.MonitorState.createFrom;
+const $$createType7 = model$0.SectorItem.createFrom;
+const $$createType8 = $Create.Array($$createType7);
+const $$createType9 = model$0.RankPage.createFrom;
+const $$createType10 = $Create.Nullable($$createType9);
+const $$createType11 = model$0.TopicItem.createFrom;
+const $$createType12 = $Create.Array($$createType11);

@@ -59,9 +59,9 @@ func (s *FundService) RefreshFundIndex() error {
 	return nil
 }
 
-// SearchFunds 本地搜索基金（代码/名称/拼音首字母/全拼）。
-func (s *FundService) SearchFunds(keyword string, limit int) ([]model.FundIndexItem, error) {
-	return s.store.SearchFunds(keyword, limit)
+// SearchFunds 本地搜索基金（代码/名称/拼音首字母/全拼），offset 用于滚动加载。
+func (s *FundService) SearchFunds(keyword string, limit, offset int) ([]model.FundIndexItem, error) {
+	return s.store.SearchFunds(keyword, limit, offset)
 }
 
 // GetFundDetail 获取基金详情（缓存优先，24h 过期后重新抓取）。

@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Window } from "@wailsio/runtime";
-import type { FundDetail, NavPage } from "@bindings/minifund/internal/model";
+import type { FundDetail, ManagerInfo, NavPage } from "@bindings/minifund/internal/model";
 import { FundService } from "@bindings/minifund/services";
 import { LineChart } from "@/components/charts/LineChart";
+import { ManagerDialog } from "@/components/fund/ManagerDialog";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { QuoteText } from "@/components/market/QuoteText";
 import { Badge } from "@/components/ui/badge";
 import { SortableHeader } from "@/components/ui/sortable-header";
+import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
 import { formatNav } from "@/lib/format";
+import { useHotkeys } from "@/lib/hotkeys";
+import { usePrefetchPager } from "@/lib/pager";
 import { useLocalSort } from "@/lib/sort";
 import { cn } from "@/lib/utils";
 import { useMarketStore } from "@/stores/market";
@@ -53,11 +57,17 @@ export function DetailWindow({ code }: DetailWindowProps) {
   const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
 
   const [detail, setDetail] = useState<FundDetail | null>(null);
-  const [navPage, setNavPage] = useState<NavPage | null>(null);
-  const [navIndex, setNavIndex] = useState(1);
-  const [navLoading, setNavLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const [range, setRange] = useState<RangeKey>("y1");
+  const [activeManager, setActiveManager] = useState<ManagerInfo | null>(null);
+
+  // Esc / ⌘W 关闭详情窗口（经理档案弹窗打开时 Esc 先关弹窗，由 Radix 处理）
+  useHotkeys({
+    escape: () => {
+      if (!activeManager) void Window.Close();
+    },
+    "meta+w": () => void Window.Close(),
+  });
 
   useEffect(() => {
     void loadSettings();
@@ -71,14 +81,16 @@ export function DetailWindow({ code }: DetailWindowProps) {
     });
   }, [code, loadSettings, initMarket]);
 
-  // 历史净值分页加载
-  useEffect(() => {
-    setNavLoading(true);
-    void call("加载历史净值", () => FundService.GetNavHistory(code, navIndex, NAV_PAGE_SIZE)).then((p) => {
-      setNavLoading(false);
-      if (p) setNavPage(p);
-    });
-  }, [code, navIndex]);
+  // 历史净值分页（带下一页预取，翻页零等待）
+  const {
+    page: navPage,
+    pageIndex: navIndex,
+    loading: navLoading,
+    goto: navGoto,
+  } = usePrefetchPager<NavPage>(
+    (pi) => call("加载历史净值", () => FundService.GetNavHistory(code, pi, NAV_PAGE_SIZE)),
+    code
+  );
 
   const est = estimates[code];
 
@@ -242,19 +254,24 @@ export function DetailWindow({ code }: DetailWindowProps) {
                 <div className="mb-2 text-[length:var(--size-font-xs)] font-medium text-[var(--fg)]">
                   {zhCN.detail.managersTitle}
                 </div>
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-1">
                   {(detail.managers ?? []).map((m) => (
-                    <div key={m.name} className="flex items-center justify-between text-2xs">
-                      <span className="font-medium text-[var(--fg)]">{m.name}</span>
-                      <span className="text-[var(--fg-secondary)]">
-                        {zhCN.detail.managerTenure} {m.workTime}
-                        {m.profit && (
-                          <span className="ml-2">
-                            {zhCN.detail.managerReturn} <span className="quote-num">{m.profit}</span>
-                          </span>
-                        )}
-                      </span>
-                    </div>
+                    <Tooltip key={m.name} content={zhCN.manager.viewProfile}>
+                      <button
+                        onClick={() => setActiveManager(m)}
+                        className="flex w-full items-center justify-between gap-2 rounded-[var(--radius-sm)] px-1 py-1 text-left text-2xs hover:bg-[var(--row-hover)]"
+                      >
+                        <span className="whitespace-nowrap font-medium text-[var(--accent)]">{m.name}</span>
+                        <span className="truncate text-right text-[var(--fg-secondary)]">
+                          {zhCN.detail.managerTenure} {m.workTime}
+                          {m.profit && (
+                            <span className="ml-2 whitespace-nowrap">
+                              {zhCN.detail.managerReturn} <span className="quote-num">{m.profit}</span>
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    </Tooltip>
                   ))}
                 </div>
               </section>
@@ -273,7 +290,7 @@ export function DetailWindow({ code }: DetailWindowProps) {
                   <span className="flex items-center gap-1 text-2xs text-[var(--fg-secondary)]">
                     <button
                       disabled={navIndex <= 1 || navLoading}
-                      onClick={() => setNavIndex((p) => p - 1)}
+                      onClick={() => navGoto(navIndex - 1)}
                       className="rounded-[var(--radius-sm)] p-0.5 hover:bg-[var(--row-hover)] disabled:opacity-40"
                       aria-label={zhCN.ranking.prevPage}
                     >
@@ -284,7 +301,7 @@ export function DetailWindow({ code }: DetailWindowProps) {
                     </span>
                     <button
                       disabled={navIndex >= navTotalPages || navLoading}
-                      onClick={() => setNavIndex((p) => p + 1)}
+                      onClick={() => navGoto(navIndex + 1)}
                       className="rounded-[var(--radius-sm)] p-0.5 hover:bg-[var(--row-hover)] disabled:opacity-40"
                       aria-label={zhCN.ranking.nextPage}
                     >
@@ -340,6 +357,7 @@ export function DetailWindow({ code }: DetailWindowProps) {
           </div>
         </main>
       )}
+      <ManagerDialog manager={activeManager} onClose={() => setActiveManager(null)} />
     </div>
   );
 }

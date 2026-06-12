@@ -2,6 +2,7 @@ package services
 
 import (
 	"fmt"
+	"sort"
 
 	"minifund/internal/model"
 	"minifund/internal/scheduler"
@@ -16,6 +17,9 @@ import (
 type PortfolioService struct {
 	store *storage.Store
 	sched *scheduler.Scheduler
+	// getDetail 基金详情读取函数（注入 FundService.GetFundDetail，避免服务间直接引用被 bindings 生成器误判为模型）
+	getDetail func(code string) (*model.FundDetail, error)
+	onChange  func() // 持仓变更通知（广播给所有窗口）
 }
 
 // NewPortfolioService 创建持仓服务。
@@ -26,6 +30,23 @@ func NewPortfolioService(store *storage.Store) *PortfolioService {
 // SetScheduler 注入调度器（装配时调用，不暴露给前端使用）。
 func (s *PortfolioService) SetScheduler(sched *scheduler.Scheduler) {
 	s.sched = sched
+}
+
+// SetDetailProvider 注入基金详情读取函数（持仓透视需要读取详情缓存，不暴露给前端使用）。
+func (s *PortfolioService) SetDetailProvider(fn func(code string) (*model.FundDetail, error)) {
+	s.getDetail = fn
+}
+
+// SetOnChange 注入持仓变更回调（不暴露给前端使用）。
+func (s *PortfolioService) SetOnChange(fn func()) {
+	s.onChange = fn
+}
+
+// notifyChange 持仓变更后广播。
+func (s *PortfolioService) notifyChange() {
+	if s.onChange != nil {
+		s.onChange()
+	}
 }
 
 // ListPositions 返回全部持仓。
@@ -43,12 +64,113 @@ func (s *PortfolioService) UpsertPosition(code string, shares, costPrice float64
 	if shares <= 0 || costPrice <= 0 {
 		return fmt.Errorf("份额与成本价必须大于 0")
 	}
-	return s.store.UpsertPosition(code, shares, costPrice)
+	if err := s.store.UpsertPosition(code, shares, costPrice); err != nil {
+		return err
+	}
+	s.notifyChange()
+	return nil
 }
 
 // DeletePosition 删除持仓。
 func (s *PortfolioService) DeletePosition(code string) error {
-	return s.store.DeletePosition(code)
+	if err := s.store.DeletePosition(code); err != nil {
+		return err
+	}
+	s.notifyChange()
+	return nil
+}
+
+// GetProfitHistory 返回组合每日收益历史（净值确认后落库的数据，升序，最多 days 天）。
+func (s *PortfolioService) GetProfitHistory(days int) ([]model.ProfitHistoryPoint, error) {
+	return s.store.ProfitHistory(days)
+}
+
+// GetXray 持仓透视：聚合自选基金的前十重仓股，分析股票层面暴露。
+// 有持仓时按持仓市值加权；完全无持仓时按等权计算。
+func (s *PortfolioService) GetXray() ([]model.XrayStock, error) {
+	if s.getDetail == nil {
+		return nil, fmt.Errorf("服务尚未装配完成")
+	}
+	codes, err := s.store.AllWatchedCodes()
+	if err != nil {
+		return nil, err
+	}
+	if len(codes) == 0 {
+		return []model.XrayStock{}, nil
+	}
+
+	// 各基金权重 = 持仓市值占比；无任何持仓时等权
+	estimates := map[string]model.FundEstimate{}
+	if s.sched != nil {
+		for _, e := range s.sched.LastEstimates() {
+			estimates[e.Code] = e
+		}
+	}
+	weights := make(map[string]float64, len(codes))
+	var totalValue float64
+	for _, code := range codes {
+		pos, _ := s.store.GetPosition(code)
+		if pos == nil {
+			continue
+		}
+		est, ok := estimates[code]
+		if !ok || est.PrevNav <= 0 {
+			continue
+		}
+		nav := est.PrevNav
+		if est.HasEstimate {
+			nav = est.Estimate
+		}
+		v := pos.Shares * nav
+		weights[code] = v
+		totalValue += v
+	}
+	if totalValue > 0 {
+		for code, v := range weights {
+			weights[code] = v / totalValue
+		}
+	} else {
+		// 等权退化
+		for _, code := range codes {
+			weights[code] = 1.0 / float64(len(codes))
+		}
+	}
+
+	// 聚合重仓股：组合权重 = Σ(基金权重 × 股票占基金净值比例)
+	type agg struct {
+		name   string
+		weight float64
+		funds  []model.XrayFundRef
+	}
+	stocks := map[string]*agg{}
+	for _, code := range codes {
+		w := weights[code]
+		if w <= 0 {
+			continue
+		}
+		detail, err := s.getDetail(code)
+		if err != nil {
+			continue // 单只基金详情失败不影响整体
+		}
+		for _, h := range detail.Holdings {
+			a, ok := stocks[h.StockCode]
+			if !ok {
+				a = &agg{name: h.StockName}
+				stocks[h.StockCode] = a
+			}
+			a.weight += w * h.Percent
+			a.funds = append(a.funds, model.XrayFundRef{Code: detail.Code, Name: detail.Name, Percent: h.Percent})
+		}
+	}
+
+	out := make([]model.XrayStock, 0, len(stocks))
+	for stockCode, a := range stocks {
+		out = append(out, model.XrayStock{
+			StockCode: stockCode, StockName: a.name, Weight: a.weight, Funds: a.funds,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Weight > out[j].Weight })
+	return out, nil
 }
 
 // GetSummary 计算持仓盈亏汇总（基于最近一轮估值缓存）。

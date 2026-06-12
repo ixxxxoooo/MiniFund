@@ -81,3 +81,33 @@ func (s *Store) HasDailyProfit(code, date string) (bool, error) {
 	}
 	return n > 0, nil
 }
+
+// ProfitHistory 按日聚合全部基金当日收益（升序），days 为最多返回天数。
+func (s *Store) ProfitHistory(days int) ([]model.ProfitHistoryPoint, error) {
+	if days <= 0 || days > 365 {
+		days = 90
+	}
+	rows, err := s.db.Query(`
+		SELECT date, SUM(profit) FROM daily_profit
+		GROUP BY date ORDER BY date DESC LIMIT ?`, days)
+	if err != nil {
+		return nil, fmt.Errorf("查询收益历史失败: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	points := make([]model.ProfitHistoryPoint, 0, days)
+	for rows.Next() {
+		var p model.ProfitHistoryPoint
+		if err := rows.Scan(&p.Date, &p.Profit); err != nil {
+			return nil, fmt.Errorf("读取收益历史失败: %w", err)
+		}
+		points = append(points, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// 反转为升序（时间从旧到新，便于绘图）
+	for i, j := 0, len(points)-1; i < j; i, j = i+1, j-1 {
+		points[i], points[j] = points[j], points[i]
+	}
+	return points, nil
+}

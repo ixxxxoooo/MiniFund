@@ -52,11 +52,22 @@ type Holding struct {
 	Percent   float64 `json:"percent"`   // 占净值比例（%）
 }
 
-// ManagerInfo 基金经理信息。
+// ManagerInfo 基金经理信息（含档案数据，来自 pingzhongdata）。
 type ManagerInfo struct {
+	ID       string `json:"id"`       // 经理 ID
 	Name     string `json:"name"`     // 姓名
+	Pic      string `json:"pic"`      // 照片 URL
+	Star     int    `json:"star"`     // 星级（0-5）
 	WorkTime string `json:"workTime"` // 任职时间描述
+	FundSize string `json:"fundSize"` // 管理规模描述（如 532.96亿(23只基金)）
 	Profit   string `json:"profit"`   // 任期回报描述
+	// 能力评分雷达（经验值/收益率/跟踪误差/超额收益/管理规模）
+	PowerAvr        string    `json:"powerAvr"`        // 综合评分
+	PowerCategories []string  `json:"powerCategories"` // 维度名称
+	PowerData       []float64 `json:"powerData"`       // 各维度评分
+	// 任期收益对比（任期收益/同类平均/沪深300）
+	ProfitCategories []string  `json:"profitCategories"` // 对比项名称
+	ProfitData       []float64 `json:"profitData"`       // 对比项收益（%）
 }
 
 // TrendPoint 净值走势点。
@@ -91,6 +102,42 @@ type TopicItem struct {
 	ID          string  `json:"id"`          // 主题 ID（哈希串）
 	Name        string  `json:"name"`        // 主题名称
 	Year1Growth float64 `json:"year1Growth"` // 近 1 年涨幅（%）
+}
+
+// BreadthBin 涨跌分布档位。Level 为涨跌幅档（-11 ~ 11，负数下跌；±11 为 >10% 即涨/跌停档）。
+type BreadthBin struct {
+	Level int `json:"level"` // 档位
+	Count int `json:"count"` // 家数
+}
+
+// MarketBreadth 大盘涨跌分布。
+type MarketBreadth struct {
+	Date      string       `json:"date"`      // 数据日期（yyyyMMdd）
+	UpCount   int          `json:"upCount"`   // 上涨家数
+	DownCount int          `json:"downCount"` // 下跌家数
+	FlatCount int          `json:"flatCount"` // 平盘家数
+	Bins      []BreadthBin `json:"bins"`      // 分布档位（按 level 升序）
+}
+
+// ProfitHistoryPoint 组合每日收益历史点（全部持仓基金当日收益之和）。
+type ProfitHistoryPoint struct {
+	Date   string  `json:"date"`   // 日期 yyyy-MM-dd
+	Profit float64 `json:"profit"` // 当日收益（元）
+}
+
+// XrayFundRef 持仓透视中某股票的来源基金。
+type XrayFundRef struct {
+	Code    string  `json:"code"`    // 基金代码
+	Name    string  `json:"name"`    // 基金名称
+	Percent float64 `json:"percent"` // 该股占基金净值比例（%）
+}
+
+// XrayStock 持仓透视聚合后的股票暴露。
+type XrayStock struct {
+	StockCode string        `json:"stockCode"` // 股票代码
+	StockName string        `json:"stockName"` // 股票名称
+	Weight    float64       `json:"weight"`    // 占组合权重（%，按持仓市值加权）
+	Funds     []XrayFundRef `json:"funds"`     // 来源基金列表
 }
 
 // RankItem 基金排行条目。

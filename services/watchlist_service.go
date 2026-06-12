@@ -11,8 +11,9 @@ import (
 
 // WatchlistService 自选与分组管理服务。
 type WatchlistService struct {
-	store *storage.Store
-	sched *scheduler.Scheduler
+	store    *storage.Store
+	sched    *scheduler.Scheduler
+	onChange func() // 自选变更通知（广播给所有窗口，保证主窗口/托盘面板同步）
 }
 
 // NewWatchlistService 创建自选服务。
@@ -25,10 +26,18 @@ func (s *WatchlistService) SetScheduler(sched *scheduler.Scheduler) {
 	s.sched = sched
 }
 
-// refresh 自选变更后立即触发一轮估值拉取。
+// SetOnChange 注入自选变更回调（不暴露给前端使用）。
+func (s *WatchlistService) SetOnChange(fn func()) {
+	s.onChange = fn
+}
+
+// refresh 自选变更后立即触发一轮估值拉取并广播变更事件。
 func (s *WatchlistService) refresh() {
 	if s.sched != nil {
 		s.sched.RefreshNow()
+	}
+	if s.onChange != nil {
+		s.onChange()
 	}
 }
 
@@ -43,7 +52,11 @@ func (s *WatchlistService) CreateGroup(name string) (*model.WatchGroup, error) {
 	if name == "" {
 		return nil, fmt.Errorf("分组名称不能为空")
 	}
-	return s.store.CreateGroup(name)
+	g, err := s.store.CreateGroup(name)
+	if err == nil && s.onChange != nil {
+		s.onChange()
+	}
+	return g, err
 }
 
 // RenameGroup 重命名分组。

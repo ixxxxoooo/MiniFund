@@ -45,9 +45,13 @@ func (s *Store) FundIndexUpdatedAt() (int64, error) {
 }
 
 // SearchFunds 本地模糊搜索：代码前缀 / 名称包含 / 拼音首字母前缀 / 全拼包含。
-func (s *Store) SearchFunds(keyword string, limit int) ([]model.FundIndexItem, error) {
+// offset 用于滚动加载更多。
+func (s *Store) SearchFunds(keyword string, limit, offset int) ([]model.FundIndexItem, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	kw := strings.TrimSpace(keyword)
 	if kw == "" {
@@ -60,9 +64,9 @@ func (s *Store) SearchFunds(keyword string, limit int) ([]model.FundIndexItem, e
 		ORDER BY
 			CASE WHEN code = ? THEN 0 WHEN code LIKE ? THEN 1 WHEN pinyin_abbr LIKE ? THEN 2 ELSE 3 END,
 			code
-		LIMIT ?`,
+		LIMIT ? OFFSET ?`,
 		kw+"%", "%"+kw+"%", upper+"%", "%"+upper+"%",
-		kw, kw+"%", upper+"%", limit)
+		kw, kw+"%", upper+"%", limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("搜索基金失败: %w", err)
 	}
@@ -77,6 +81,33 @@ func (s *Store) SearchFunds(keyword string, limit int) ([]model.FundIndexItem, e
 		items = append(items, it)
 	}
 	return items, rows.Err()
+}
+
+// FundTypes 批量查询基金类型（code → type），用于调度器区分场内/场外。
+func (s *Store) FundTypes(codes []string) (map[string]string, error) {
+	out := make(map[string]string, len(codes))
+	if len(codes) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(codes))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(codes))
+	for i, c := range codes {
+		args[i] = c
+	}
+	rows, err := s.db.Query("SELECT code, type FROM fund_index WHERE code IN ("+placeholders+")", args...)
+	if err != nil {
+		return nil, fmt.Errorf("查询基金类型失败: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var code, typ string
+		if err := rows.Scan(&code, &typ); err != nil {
+			return nil, fmt.Errorf("读取基金类型失败: %w", err)
+		}
+		out[code] = typ
+	}
+	return out, rows.Err()
 }
 
 // GetFundIndexItem 按代码取基金基础信息。

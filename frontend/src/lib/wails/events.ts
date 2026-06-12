@@ -47,3 +47,13 @@ export function onMonitorState(cb: (data: MonitorState) => void): () => void {
 export function onDegraded(cb: (data: DegradedPayload) => void): () => void {
   return EventsOn("datasource:degraded", cb);
 }
+
+/** 订阅自选/持仓变更（任一窗口修改后所有窗口重新加载，保证主窗口与托盘同步） */
+export function onWatchlistChanged(cb: () => void): () => void {
+  return EventsOn("watchlist:changed", cb);
+}
+
+/** 订阅托盘面板弹出（面板每次显示时重新加载数据） */
+export function onTrayPanelShown(cb: () => void): () => void {
+  return EventsOn("traypanel:shown", cb);
+}

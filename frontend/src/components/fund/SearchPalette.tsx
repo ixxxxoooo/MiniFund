@@ -24,7 +24,11 @@ export function SearchPalette() {
   const [results, setResults] = useState<FundIndexItem[]>([]);
   const [selected, setSelected] = useState(0);
   const [searched, setSearched] = useState(false);
+  /** 是否还有更多结果（上一批拿满 PAGE_SIZE 视为可能还有） */
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const debounceRef = useRef<number>();
+  const PAGE_SIZE = 20;
 
   // 全局 Cmd+K 快捷键
   useEffect(() => {
@@ -48,13 +52,37 @@ export function SearchPalette() {
       return;
     }
     debounceRef.current = window.setTimeout(() => {
-      void call("搜索基金", () => FundService.SearchFunds(keyword, 20)).then((list) => {
+      void call("搜索基金", () => FundService.SearchFunds(keyword, PAGE_SIZE, 0)).then((list) => {
         setResults(list ?? []);
         setSelected(0);
         setSearched(true);
+        setHasMore((list?.length ?? 0) >= PAGE_SIZE);
       });
     }, 200);
   }, [keyword, open]);
+
+  /** 滚动到底加载下一批 */
+  const loadMore = useCallback(() => {
+    if (!hasMore || loadingMore) return;
+    setLoadingMore(true);
+    const offset = results.length;
+    void call("搜索基金", () => FundService.SearchFunds(keyword, PAGE_SIZE, offset)).then((list) => {
+      setLoadingMore(false);
+      if (list) {
+        setResults((prev) => [...prev, ...list]);
+        setHasMore(list.length >= PAGE_SIZE);
+      } else {
+        setHasMore(false);
+      }
+    });
+  }, [hasMore, loadingMore, results.length, keyword]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 60) {
+      loadMore();
+    }
+  };
 
   // 关闭时重置
   useEffect(() => {
@@ -63,6 +91,8 @@ export function SearchPalette() {
       setResults([]);
       setSelected(0);
       setSearched(false);
+      setHasMore(false);
+      setLoadingMore(false);
     }
   }, [open]);
 
@@ -109,7 +139,7 @@ export function SearchPalette() {
           />
         </div>
 
-        <div className="scroll-always max-h-[320px] overflow-y-auto p-1">
+        <div className="scroll-always max-h-[320px] overflow-y-auto p-1" onScroll={handleScroll}>
           {searched && results.length === 0 && (
             <div className="py-8 text-center text-[length:var(--size-font-xs)] text-[var(--fg-muted)]">
               {zhCN.search.empty}
@@ -159,6 +189,15 @@ export function SearchPalette() {
               </div>
             );
           })}
+          {/* 滚动加载状态尾部 */}
+          {results.length > 0 && (loadingMore || hasMore) && (
+            <div className="py-2 text-center text-2xs text-[var(--fg-muted)]">
+              {loadingMore ? zhCN.search.loadingMore : ""}
+            </div>
+          )}
+          {results.length > 0 && !hasMore && !loadingMore && results.length > PAGE_SIZE && (
+            <div className="py-2 text-center text-2xs text-[var(--fg-muted)]">{zhCN.search.noMore}</div>
+          )}
         </div>
 
         <div className="border-t border-[var(--border-subtle)] px-3 py-1.5 text-2xs text-[var(--fg-muted)]">

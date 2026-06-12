@@ -8,6 +8,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
 import { formatNav } from "@/lib/format";
+import { usePrefetchPager } from "@/lib/pager";
 import { cn } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings";
 import { useWatchlistStore } from "@/stores/watchlist";
@@ -238,30 +239,12 @@ function TopicFundsView({
   const addFund = useWatchlistStore((s) => s.addFund);
   const [sortKey, setSortKey] = useState("SYL_1N");
   const [sortType, setSortType] = useState<"desc" | "asc">("desc");
-  const [pageIndex, setPageIndex] = useState(1);
-  const [page, setPage] = useState<RankPage | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setFailed(false);
-    void call("加载主题基金", () => MarketService.GetTopicFunds(topic.id, sortKey, sortType, pageIndex)).then(
-      (result) => {
-        if (cancelled) return;
-        setLoading(false);
-        if (result) {
-          setPage(result);
-        } else {
-          setFailed(true);
-        }
-      }
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [topic.id, sortKey, sortType, pageIndex]);
+  // 分页加载 + 下一页后台预取；主题/排序变化自动回第 1 页
+  const { page, pageIndex, loading, failed, goto } = usePrefetchPager<RankPage>(
+    (pi) => call("加载主题基金", () => MarketService.GetTopicFunds(topic.id, sortKey, sortType, pi)),
+    `${topic.id}|${sortKey}|${sortType}`
+  );
 
   const handleSort = (key: string) => {
     if (key === sortKey) {
@@ -270,7 +253,6 @@ function TopicFundsView({
       setSortKey(key);
       setSortType("desc");
     }
-    setPageIndex(1);
   };
 
   const totalPages = page ? Math.max(1, Math.ceil(page.total / 50)) : 1;
@@ -361,7 +343,7 @@ function TopicFundsView({
       <div className="flex items-center justify-end gap-2 text-[length:var(--size-font-xs)] text-[var(--fg-secondary)]">
         <button
           disabled={pageIndex <= 1 || loading}
-          onClick={() => setPageIndex((p) => p - 1)}
+          onClick={() => goto(pageIndex - 1)}
           className="flex items-center gap-0.5 rounded-[var(--radius-btn)] px-2 py-1 hover:bg-[var(--row-hover)] disabled:opacity-40"
         >
           <ChevronLeft size={13} />
@@ -372,7 +354,7 @@ function TopicFundsView({
         </span>
         <button
           disabled={pageIndex >= totalPages || loading}
-          onClick={() => setPageIndex((p) => p + 1)}
+          onClick={() => goto(pageIndex + 1)}
           className="flex items-center gap-0.5 rounded-[var(--radius-btn)] px-2 py-1 hover:bg-[var(--row-hover)] disabled:opacity-40"
         >
           {zhCN.ranking.nextPage}

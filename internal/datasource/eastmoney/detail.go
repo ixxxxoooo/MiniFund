@@ -21,9 +21,18 @@ type trendRaw struct {
 
 // managerRaw Data_currentFundManager 数组元素结构。
 type managerRaw struct {
+	ID       string `json:"id"`
 	Name     string `json:"name"`
+	Pic      string `json:"pic"`
+	Star     int    `json:"star"`
 	WorkTime string `json:"workTime"`
-	Profit   struct {
+	FundSize string `json:"fundSize"`
+	Power    struct {
+		Avr        string    `json:"avr"`
+		Categories []string  `json:"categories"`
+		Data       []float64 `json:"data"`
+	} `json:"power"`
+	Profit struct {
 		Categories []string `json:"categories"`
 		Series     []struct {
 			Data []struct {
@@ -97,11 +106,21 @@ func parsePingzhong(script string) (*model.FundDetail, error) {
 		var rows []managerRaw
 		if err := json.Unmarshal([]byte(v), &rows); err == nil {
 			for _, r := range rows {
-				m := model.ManagerInfo{Name: r.Name, WorkTime: r.WorkTime}
-				// 任期回报取 profit 序列最后一个点
-				if len(r.Profit.Series) > 0 && len(r.Profit.Series[0].Data) > 0 {
-					last := r.Profit.Series[0].Data[len(r.Profit.Series[0].Data)-1]
-					m.Profit = strconv.FormatFloat(last.Y, 'f', 2, 64) + "%"
+				m := model.ManagerInfo{
+					ID: r.ID, Name: r.Name, Pic: r.Pic, Star: r.Star,
+					WorkTime: r.WorkTime, FundSize: r.FundSize,
+					PowerAvr: r.Power.Avr, PowerCategories: r.Power.Categories, PowerData: r.Power.Data,
+					ProfitCategories: r.Profit.Categories,
+				}
+				// 任期收益对比：profit.series[0].data 与 categories 一一对应（任期收益/同类平均/沪深300）
+				if len(r.Profit.Series) > 0 {
+					for _, d := range r.Profit.Series[0].Data {
+						m.ProfitData = append(m.ProfitData, d.Y)
+					}
+				}
+				// 任期回报描述取第一个对比项（任期收益）
+				if len(m.ProfitData) > 0 {
+					m.Profit = strconv.FormatFloat(m.ProfitData[0], 'f', 2, 64) + "%"
 				}
 				detail.Managers = append(detail.Managers, m)
 			}

@@ -6,6 +6,41 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
+ * BreadthBin 涨跌分布档位。Level 为涨跌幅档（-11 ~ 11，负数下跌；±11 为 >10% 即涨/跌停档）。
+ */
+export class BreadthBin {
+    /**
+     * 档位
+     */
+    "level": number;
+
+    /**
+     * 家数
+     */
+    "count": number;
+
+    /** Creates a new BreadthBin instance. */
+    constructor($$source: Partial<BreadthBin> = {}) {
+        if (!("level" in $$source)) {
+            this["level"] = 0;
+        }
+        if (!("count" in $$source)) {
+            this["count"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new BreadthBin instance from a string or object.
+     */
+    static createFrom($$source: any = {}): BreadthBin {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new BreadthBin($$parsedSource as Partial<BreadthBin>);
+    }
+}
+
+/**
  * FundDetail 基金详情聚合数据。
  */
 export class FundDetail {
@@ -406,13 +441,28 @@ export class IndexQuote {
 }
 
 /**
- * ManagerInfo 基金经理信息。
+ * ManagerInfo 基金经理信息（含档案数据，来自 pingzhongdata）。
  */
 export class ManagerInfo {
+    /**
+     * 经理 ID
+     */
+    "id": string;
+
     /**
      * 姓名
      */
     "name": string;
+
+    /**
+     * 照片 URL
+     */
+    "pic": string;
+
+    /**
+     * 星级（0-5）
+     */
+    "star": number;
 
     /**
      * 任职时间描述
@@ -420,20 +470,79 @@ export class ManagerInfo {
     "workTime": string;
 
     /**
+     * 管理规模描述（如 532.96亿(23只基金)）
+     */
+    "fundSize": string;
+
+    /**
      * 任期回报描述
      */
     "profit": string;
 
+    /**
+     * 能力评分雷达（经验值/收益率/跟踪误差/超额收益/管理规模）
+     * 综合评分
+     */
+    "powerAvr": string;
+
+    /**
+     * 维度名称
+     */
+    "powerCategories": string[];
+
+    /**
+     * 各维度评分
+     */
+    "powerData": number[];
+
+    /**
+     * 任期收益对比（任期收益/同类平均/沪深300）
+     * 对比项名称
+     */
+    "profitCategories": string[];
+
+    /**
+     * 对比项收益（%）
+     */
+    "profitData": number[];
+
     /** Creates a new ManagerInfo instance. */
     constructor($$source: Partial<ManagerInfo> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
         if (!("name" in $$source)) {
             this["name"] = "";
+        }
+        if (!("pic" in $$source)) {
+            this["pic"] = "";
+        }
+        if (!("star" in $$source)) {
+            this["star"] = 0;
         }
         if (!("workTime" in $$source)) {
             this["workTime"] = "";
         }
+        if (!("fundSize" in $$source)) {
+            this["fundSize"] = "";
+        }
         if (!("profit" in $$source)) {
             this["profit"] = "";
+        }
+        if (!("powerAvr" in $$source)) {
+            this["powerAvr"] = "";
+        }
+        if (!("powerCategories" in $$source)) {
+            this["powerCategories"] = [];
+        }
+        if (!("powerData" in $$source)) {
+            this["powerData"] = [];
+        }
+        if (!("profitCategories" in $$source)) {
+            this["profitCategories"] = [];
+        }
+        if (!("profitData" in $$source)) {
+            this["profitData"] = [];
         }
 
         Object.assign(this, $$source);
@@ -443,8 +552,87 @@ export class ManagerInfo {
      * Creates a new ManagerInfo instance from a string or object.
      */
     static createFrom($$source: any = {}): ManagerInfo {
+        const $$createField8_0 = $$createType6;
+        const $$createField9_0 = $$createType7;
+        const $$createField10_0 = $$createType6;
+        const $$createField11_0 = $$createType7;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("powerCategories" in $$parsedSource) {
+            $$parsedSource["powerCategories"] = $$createField8_0($$parsedSource["powerCategories"]);
+        }
+        if ("powerData" in $$parsedSource) {
+            $$parsedSource["powerData"] = $$createField9_0($$parsedSource["powerData"]);
+        }
+        if ("profitCategories" in $$parsedSource) {
+            $$parsedSource["profitCategories"] = $$createField10_0($$parsedSource["profitCategories"]);
+        }
+        if ("profitData" in $$parsedSource) {
+            $$parsedSource["profitData"] = $$createField11_0($$parsedSource["profitData"]);
+        }
         return new ManagerInfo($$parsedSource as Partial<ManagerInfo>);
+    }
+}
+
+/**
+ * MarketBreadth 大盘涨跌分布。
+ */
+export class MarketBreadth {
+    /**
+     * 数据日期（yyyyMMdd）
+     */
+    "date": string;
+
+    /**
+     * 上涨家数
+     */
+    "upCount": number;
+
+    /**
+     * 下跌家数
+     */
+    "downCount": number;
+
+    /**
+     * 平盘家数
+     */
+    "flatCount": number;
+
+    /**
+     * 分布档位（按 level 升序）
+     */
+    "bins": BreadthBin[];
+
+    /** Creates a new MarketBreadth instance. */
+    constructor($$source: Partial<MarketBreadth> = {}) {
+        if (!("date" in $$source)) {
+            this["date"] = "";
+        }
+        if (!("upCount" in $$source)) {
+            this["upCount"] = 0;
+        }
+        if (!("downCount" in $$source)) {
+            this["downCount"] = 0;
+        }
+        if (!("flatCount" in $$source)) {
+            this["flatCount"] = 0;
+        }
+        if (!("bins" in $$source)) {
+            this["bins"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MarketBreadth instance from a string or object.
+     */
+    static createFrom($$source: any = {}): MarketBreadth {
+        const $$createField4_0 = $$createType9;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("bins" in $$parsedSource) {
+            $$parsedSource["bins"] = $$createField4_0($$parsedSource["bins"]);
+        }
+        return new MarketBreadth($$parsedSource as Partial<MarketBreadth>);
     }
 }
 
@@ -514,7 +702,7 @@ export class NavPage {
      * Creates a new NavPage instance from a string or object.
      */
     static createFrom($$source: any = {}): NavPage {
-        const $$createField0_0 = $$createType7;
+        const $$createField0_0 = $$createType11;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("items" in $$parsedSource) {
             $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
@@ -678,6 +866,41 @@ export class Position {
 }
 
 /**
+ * ProfitHistoryPoint 组合每日收益历史点（全部持仓基金当日收益之和）。
+ */
+export class ProfitHistoryPoint {
+    /**
+     * 日期 yyyy-MM-dd
+     */
+    "date": string;
+
+    /**
+     * 当日收益（元）
+     */
+    "profit": number;
+
+    /** Creates a new ProfitHistoryPoint instance. */
+    constructor($$source: Partial<ProfitHistoryPoint> = {}) {
+        if (!("date" in $$source)) {
+            this["date"] = "";
+        }
+        if (!("profit" in $$source)) {
+            this["profit"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ProfitHistoryPoint instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ProfitHistoryPoint {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ProfitHistoryPoint($$parsedSource as Partial<ProfitHistoryPoint>);
+    }
+}
+
+/**
  * RankItem 基金排行条目。
  */
 export class RankItem {
@@ -807,7 +1030,7 @@ export class RankPage {
      * Creates a new RankPage instance from a string or object.
      */
     static createFrom($$source: any = {}): RankPage {
-        const $$createField0_0 = $$createType9;
+        const $$createField0_0 = $$createType13;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("items" in $$parsedSource) {
             $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
@@ -1053,6 +1276,104 @@ export class WatchItem {
     }
 }
 
+/**
+ * XrayFundRef 持仓透视中某股票的来源基金。
+ */
+export class XrayFundRef {
+    /**
+     * 基金代码
+     */
+    "code": string;
+
+    /**
+     * 基金名称
+     */
+    "name": string;
+
+    /**
+     * 该股占基金净值比例（%）
+     */
+    "percent": number;
+
+    /** Creates a new XrayFundRef instance. */
+    constructor($$source: Partial<XrayFundRef> = {}) {
+        if (!("code" in $$source)) {
+            this["code"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("percent" in $$source)) {
+            this["percent"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new XrayFundRef instance from a string or object.
+     */
+    static createFrom($$source: any = {}): XrayFundRef {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new XrayFundRef($$parsedSource as Partial<XrayFundRef>);
+    }
+}
+
+/**
+ * XrayStock 持仓透视聚合后的股票暴露。
+ */
+export class XrayStock {
+    /**
+     * 股票代码
+     */
+    "stockCode": string;
+
+    /**
+     * 股票名称
+     */
+    "stockName": string;
+
+    /**
+     * 占组合权重（%，按持仓市值加权）
+     */
+    "weight": number;
+
+    /**
+     * 来源基金列表
+     */
+    "funds": XrayFundRef[];
+
+    /** Creates a new XrayStock instance. */
+    constructor($$source: Partial<XrayStock> = {}) {
+        if (!("stockCode" in $$source)) {
+            this["stockCode"] = "";
+        }
+        if (!("stockName" in $$source)) {
+            this["stockName"] = "";
+        }
+        if (!("weight" in $$source)) {
+            this["weight"] = 0;
+        }
+        if (!("funds" in $$source)) {
+            this["funds"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new XrayStock instance from a string or object.
+     */
+    static createFrom($$source: any = {}): XrayStock {
+        const $$createField3_0 = $$createType15;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("funds" in $$parsedSource) {
+            $$parsedSource["funds"] = $$createField3_0($$parsedSource["funds"]);
+        }
+        return new XrayStock($$parsedSource as Partial<XrayStock>);
+    }
+}
+
 // Private type creation functions
 const $$createType0 = TrendPoint.createFrom;
 const $$createType1 = $Create.Array($$createType0);
@@ -1060,7 +1381,13 @@ const $$createType2 = Holding.createFrom;
 const $$createType3 = $Create.Array($$createType2);
 const $$createType4 = ManagerInfo.createFrom;
 const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = NavRecord.createFrom;
-const $$createType7 = $Create.Array($$createType6);
-const $$createType8 = RankItem.createFrom;
+const $$createType6 = $Create.Array($Create.Any);
+const $$createType7 = $Create.Array($Create.Any);
+const $$createType8 = BreadthBin.createFrom;
 const $$createType9 = $Create.Array($$createType8);
+const $$createType10 = NavRecord.createFrom;
+const $$createType11 = $Create.Array($$createType10);
+const $$createType12 = RankItem.createFrom;
+const $$createType13 = $Create.Array($$createType12);
+const $$createType14 = XrayFundRef.createFrom;
+const $$createType15 = $Create.Array($$createType14);

@@ -1,8 +1,8 @@
 import { create } from "zustand";
-import type { FundEstimate, IndexQuote, MonitorState } from "@bindings/minifund/internal/model";
+import type { FundEstimate, IndexQuote, MarketBreadth, MonitorState } from "@bindings/minifund/internal/model";
 import { MarketService } from "@bindings/minifund/services";
 import { call } from "@/lib/wails/call";
-import { onDegraded, onEstimates, onIndexes, onMonitorState, onNavConfirmed } from "@/lib/wails/events";
+import { onDegraded, onEstimates, onIndexes, onMonitorState, onNavConfirmed, onWatchlistChanged } from "@/lib/wails/events";
 import { useWatchlistStore } from "./watchlist";
 
 interface MarketStore {
@@ -12,12 +12,16 @@ interface MarketStore {
   estimatesUpdatedAt: number;
   /** 指数行情 */
   indexes: IndexQuote[];
+  /** 大盘涨跌分布 */
+  breadth: MarketBreadth | null;
   /** 监控状态 */
   monitor: MonitorState | null;
   /** 数据源是否降级 */
   degraded: boolean;
   /** 初始化：拉取缓存快照并订阅事件（每个窗口调用一次） */
   init: () => void;
+  /** 拉取大盘涨跌分布（指数轮询同频调用代价低，组件按需定时调用） */
+  loadBreadth: () => Promise<void>;
   /** 手动触发一轮拉取 */
   refreshNow: () => void;
 }
@@ -35,6 +39,7 @@ export const useMarketStore = create<MarketStore>()((set) => ({
   estimates: {},
   estimatesUpdatedAt: 0,
   indexes: [],
+  breadth: null,
   monitor: null,
   degraded: false,
 
@@ -66,9 +71,19 @@ export const useMarketStore = create<MarketStore>()((set) => ({
       // 净值确认后刷新汇总（真实收益落库）
       void useWatchlistStore.getState().refreshSummary();
     });
+    // 自选/持仓在任一窗口变更后，本窗口重新加载列表与汇总
+    onWatchlistChanged(() => {
+      void useWatchlistStore.getState().load();
+    });
+  },
+
+  loadBreadth: async () => {
+    const b = await call("加载涨跌分布", () => MarketService.GetMarketBreadth());
+    if (b) set({ breadth: b });
   },
 
   refreshNow: () => {
     void call("手动刷新", () => MarketService.RefreshNow());
+    void useMarketStore.getState().loadBreadth();
   },
 }));

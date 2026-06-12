@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import type { RankPage } from "@bindings/minifund/internal/model";
 import { FundService, WindowService } from "@bindings/minifund/services";
@@ -8,6 +8,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
 import { formatNav } from "@/lib/format";
+import { usePrefetchPager } from "@/lib/pager";
 import { cn } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings";
 import { useWatchlistStore } from "@/stores/watchlist";
@@ -47,26 +48,12 @@ export function RankingPage() {
   const [fundType, setFundType] = useState<FundType>("all");
   const [sortKey, setSortKey] = useState<SortKey>("rzdf");
   const [sortType, setSortType] = useState<"desc" | "asc">("desc");
-  const [pageIndex, setPageIndex] = useState(1);
-  const [page, setPage] = useState<RankPage | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
 
-  const loadPage = useCallback(async (ft: FundType, sk: SortKey, st: string, pi: number) => {
-    setLoading(true);
-    setFailed(false);
-    const result = await call("加载基金排行", () => FundService.GetFundRanking(ft, sk, st, pi));
-    setLoading(false);
-    if (result) {
-      setPage(result);
-    } else {
-      setFailed(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadPage(fundType, sortKey, sortType, pageIndex);
-  }, [fundType, sortKey, sortType, pageIndex, loadPage]);
+  // 分页加载 + 下一页后台预取（翻页零等待）；筛选/排序变化自动回第 1 页
+  const { page, pageIndex, loading, failed, goto } = usePrefetchPager<RankPage>(
+    (pi) => call("加载基金排行", () => FundService.GetFundRanking(fundType, sortKey, sortType, pi)),
+    `${fundType}|${sortKey}|${sortType}`
+  );
 
   /** 列头点击：同列切换方向，异列重置为降序 */
   const handleSort = (key: SortKey) => {
@@ -76,7 +63,6 @@ export function RankingPage() {
       setSortKey(key);
       setSortType("desc");
     }
-    setPageIndex(1);
   };
 
   const totalPages = page ? Math.max(1, Math.ceil(page.total / 50)) : 1;
@@ -89,10 +75,7 @@ export function RankingPage() {
         {(Object.keys(zhCN.ranking.types) as FundType[]).map((t) => (
           <button
             key={t}
-            onClick={() => {
-              setFundType(t);
-              setPageIndex(1);
-            }}
+            onClick={() => setFundType(t)}
             className={cn(
               "h-[var(--size-tab)] rounded-[var(--radius-btn)] px-3 text-[length:var(--size-font-xs)]",
               t === fundType
@@ -174,7 +157,7 @@ export function RankingPage() {
       <div className="flex items-center justify-end gap-2 text-[length:var(--size-font-xs)] text-[var(--fg-secondary)]">
         <button
           disabled={pageIndex <= 1 || loading}
-          onClick={() => setPageIndex((p) => p - 1)}
+          onClick={() => goto(pageIndex - 1)}
           className="flex items-center gap-0.5 rounded-[var(--radius-btn)] px-2 py-1 hover:bg-[var(--row-hover)] disabled:opacity-40"
         >
           <ChevronLeft size={13} />
@@ -185,7 +168,7 @@ export function RankingPage() {
         </span>
         <button
           disabled={pageIndex >= totalPages || loading}
-          onClick={() => setPageIndex((p) => p + 1)}
+          onClick={() => goto(pageIndex + 1)}
           className="flex items-center gap-0.5 rounded-[var(--radius-btn)] px-2 py-1 hover:bg-[var(--row-hover)] disabled:opacity-40"
         >
           {zhCN.ranking.nextPage}

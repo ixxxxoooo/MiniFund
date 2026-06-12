@@ -29,17 +29,17 @@ func TestFundIndexSearch(t *testing.T) {
 	}
 
 	// 按代码前缀
-	got, err := s.SearchFunds("0000", 10)
+	got, err := s.SearchFunds("0000", 10, 0)
 	if err != nil || len(got) != 1 || got[0].Code != "000001" {
 		t.Fatalf("按代码搜索失败: %v %+v", err, got)
 	}
 	// 按名称
-	got, _ = s.SearchFunds("易方达", 10)
+	got, _ = s.SearchFunds("易方达", 10, 0)
 	if len(got) != 1 || got[0].Code != "110011" {
 		t.Fatalf("按名称搜索失败: %+v", got)
 	}
 	// 按拼音首字母（小写输入）
-	got, _ = s.SearchFunds("hxcz", 10)
+	got, _ = s.SearchFunds("hxcz", 10, 0)
 	if len(got) != 1 || got[0].Code != "000001" {
 		t.Fatalf("按拼音搜索失败: %+v", got)
 	}

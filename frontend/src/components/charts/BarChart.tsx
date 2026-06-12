@@ -1,0 +1,112 @@
+import React, { useMemo, useRef, useState } from "react";
+
+export interface BarPoint {
+  /** 标签（日期） */
+  label: string;
+  /** 数值（正负均可） */
+  value: number;
+}
+
+interface BarChartProps {
+  points: BarPoint[];
+  height?: number;
+  /** 数值格式化（悬停提示用） */
+  formatValue?: (v: number) => string;
+}
+
+/**
+ * 正负柱状图：用于每日收益历史。正值用上涨色、负值用下跌色（跟随涨跌配色方案）。
+ */
+export function BarChart({ points, height = 180, formatValue }: BarChartProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const width = 640;
+
+  const { max, zeroY } = useMemo(() => {
+    let absMax = 0;
+    for (const p of points) {
+      const a = Math.abs(p.value);
+      if (a > absMax) absMax = a;
+    }
+    if (absMax === 0) absMax = 1;
+    // 正负对称布局，0 线居中
+    return { max: absMax * 1.08, zeroY: height / 2 };
+  }, [points, height]);
+
+  if (points.length === 0) {
+    return (
+      <div
+        className="flex items-center justify-center text-[length:var(--size-font-xs)] text-[var(--fg-muted)]"
+        style={{ height }}
+      >
+        暂无收益数据
+      </div>
+    );
+  }
+
+  const slot = width / points.length;
+  const barW = Math.max(1.5, Math.min(14, slot * 0.65));
+
+  const handleMove = (e: React.MouseEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const idx = Math.floor(((e.clientX - rect.left) / rect.width) * points.length);
+    setHoverIndex(Math.max(0, Math.min(points.length - 1, idx)));
+  };
+
+  const hover = hoverIndex != null ? points[hoverIndex] : null;
+  const fmt = formatValue ?? ((v: number) => v.toFixed(2));
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative w-full"
+      onMouseMove={handleMove}
+      onMouseLeave={() => setHoverIndex(null)}
+    >
+      <div className="quote-num mb-1 flex h-4 items-center gap-3 text-2xs text-[var(--fg-secondary)]">
+        {hover ? (
+          <>
+            <span>{hover.label}</span>
+            <span className={hover.value >= 0 ? "text-[var(--quote-up)]" : "text-[var(--quote-down)]"}>
+              {fmt(hover.value)}
+            </span>
+          </>
+        ) : (
+          points.length > 0 && (
+            <span>
+              {points[0].label} ~ {points[points.length - 1].label}
+            </span>
+          )
+        )}
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="block w-full" style={{ height }}>
+        <line
+          x1={0}
+          y1={zeroY}
+          x2={width}
+          y2={zeroY}
+          stroke="var(--border-color)"
+          strokeWidth="1"
+          vectorEffect="non-scaling-stroke"
+        />
+        {points.map((p, i) => {
+          const h = (Math.abs(p.value) / max) * (height / 2);
+          const x = i * slot + (slot - barW) / 2;
+          const y = p.value >= 0 ? zeroY - h : zeroY;
+          return (
+            <rect
+              key={p.label}
+              x={x}
+              y={y}
+              width={barW}
+              height={Math.max(h, 0.5)}
+              fill={p.value >= 0 ? "var(--quote-up)" : "var(--quote-down)"}
+              opacity={hoverIndex == null || hoverIndex === i ? 1 : 0.45}
+            />
+          );
+        })}
+      </svg>
+    </div>
+  );
+}

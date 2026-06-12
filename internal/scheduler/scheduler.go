@@ -5,11 +5,13 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
 	"minifund/internal/datasource"
 	"minifund/internal/datasource/eastmoney"
+	"minifund/internal/datasource/tencent"
 	"minifund/internal/logger"
 	"minifund/internal/model"
 	"minifund/internal/storage"
@@ -19,11 +21,13 @@ import (
 
 // 事件名（前端在 lib/wails/events.ts 中订阅）
 const (
-	EventEstimates    = "fund:estimates"
-	EventIndexes      = "market:indexes"
-	EventNavConfirmed = "fund:nav-confirmed"
-	EventMonitorState = "monitor:state"
-	EventDegraded     = "datasource:degraded"
+	EventEstimates        = "fund:estimates"
+	EventIndexes          = "market:indexes"
+	EventNavConfirmed     = "fund:nav-confirmed"
+	EventMonitorState     = "monitor:state"
+	EventDegraded         = "datasource:degraded"
+	EventWatchlistChanged = "watchlist:changed" // 自选/持仓变更（所有窗口需重新加载）
+	EventTrayPanelShown   = "traypanel:shown"   // 托盘面板弹出（面板重新加载数据）
 )
 
 // SettingsProvider 调度器需要的设置读取接口（由 SettingsService 实现，避免包循环依赖）。
@@ -218,7 +222,14 @@ func (s *Scheduler) estimateInterval() time.Duration {
 	return s.settings.EstimateInterval()
 }
 
+// isExchangeTraded 判断基金类型是否为场内交易（ETF/场内 LOF），场内基金走交易所实时行情。
+// ETF 联接基金类型为"指数型-股票"，不会误判。
+func isExchangeTraded(fundType string) bool {
+	return strings.Contains(fundType, "场内") || strings.Contains(fundType, "ETF")
+}
+
 // runEstimateRound 拉取一轮自选基金估值并广播。
+// 场外基金走东财估值接口；场内 ETF/LOF 走腾讯交易所实时行情。
 func (s *Scheduler) runEstimateRound() {
 	codes, err := s.store.AllWatchedCodes()
 	if err != nil {
@@ -232,11 +243,39 @@ func (s *Scheduler) runEstimateRound() {
 		s.app.Event.Emit(EventEstimates, []model.FundEstimate{})
 		return
 	}
+
+	types, err := s.store.FundTypes(codes)
+	if err != nil {
+		logger.Warn("查询基金类型失败: %v", err)
+		types = map[string]string{}
+	}
+	var otc, exchange []string
+	for _, c := range codes {
+		if isExchangeTraded(types[c]) {
+			exchange = append(exchange, c)
+		} else {
+			otc = append(otc, c)
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	estimates, err := eastmoney.FetchEstimates(ctx, codes)
-	if err != nil {
-		logger.Warn("估值轮询失败: %v", err)
+	estimates := make([]model.FundEstimate, 0, len(codes))
+	if len(otc) > 0 {
+		if est, err := eastmoney.FetchEstimates(ctx, otc); err == nil {
+			estimates = append(estimates, est...)
+		} else {
+			logger.Warn("估值轮询失败: %v", err)
+		}
+	}
+	if len(exchange) > 0 {
+		if est, err := tencent.FetchFundQuotes(ctx, exchange); err == nil {
+			estimates = append(estimates, est...)
+		} else {
+			logger.Warn("场内行情轮询失败: %v", err)
+		}
+	}
+	if len(estimates) == 0 {
 		return
 	}
 	s.mu.Lock()

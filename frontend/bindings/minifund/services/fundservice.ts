@@ -56,10 +56,10 @@ export function RefreshFundIndex(): $CancellablePromise<void> {
 }
 
 /**
- * SearchFunds 本地搜索基金（代码/名称/拼音首字母/全拼）。
+ * SearchFunds 本地搜索基金（代码/名称/拼音首字母/全拼），offset 用于滚动加载。
  */
-export function SearchFunds(keyword: string, limit: number): $CancellablePromise<model$0.FundIndexItem[]> {
-    return $Call.ByID(925186620, keyword, limit).then(($result: any) => {
+export function SearchFunds(keyword: string, limit: number, offset: number): $CancellablePromise<model$0.FundIndexItem[]> {
+    return $Call.ByID(925186620, keyword, limit, offset).then(($result: any) => {
         return $$createType7($result);
     });
 }

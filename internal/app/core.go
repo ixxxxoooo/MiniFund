@@ -60,9 +60,24 @@ func (c *core) startup(wailsApp *application.App) {
 	// 服务与调度器互联
 	c.WatchlistSvc.SetScheduler(c.Scheduler)
 	c.PortfolioSvc.SetScheduler(c.Scheduler)
+	c.PortfolioSvc.SetDetailProvider(c.FundSvc.GetFundDetail)
 	c.MarketSvc.SetScheduler(c.Scheduler)
 	c.SettingsSvc.SetOnChange(c.Scheduler.RefreshNow)
-	c.WindowSvc.SetTrayPanelVisibilityListener(c.Scheduler.SetFastMode)
+
+	// 自选/持仓变更广播给所有窗口（主窗口与托盘面板保持同步）
+	emitWatchlistChanged := func() {
+		wailsApp.Event.Emit(scheduler.EventWatchlistChanged, nil)
+	}
+	c.WatchlistSvc.SetOnChange(emitWatchlistChanged)
+	c.PortfolioSvc.SetOnChange(emitWatchlistChanged)
+
+	// 托盘面板显隐：联动调度器提速 + 广播事件（面板打开时前端重新加载数据）
+	c.WindowSvc.SetTrayPanelVisibilityListener(func(visible bool) {
+		c.Scheduler.SetFastMode(visible)
+		if visible {
+			wailsApp.Event.Emit(scheduler.EventTrayPanelShown, nil)
+		}
+	})
 
 	// 基金代码表后台更新（过期检查），完成后启动调度循环
 	go func() {

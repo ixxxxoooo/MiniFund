@@ -47,6 +47,13 @@ func (s *MarketService) GetSectors(kind string) ([]model.SectorItem, error) {
 	return eastmoney.FetchSectors(ctx, kind)
 }
 
+// GetMarketBreadth 拉取大盘涨跌分布（按涨跌幅档位统计家数）。
+func (s *MarketService) GetMarketBreadth() (*model.MarketBreadth, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return eastmoney.FetchMarketBreadth(ctx)
+}
+
 // GetTopics 拉取基金主题列表（约 150 个，含近 1 年涨幅）。
 func (s *MarketService) GetTopics() ([]model.TopicItem, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

@@ -164,6 +164,20 @@ func TestParseFundInfo(t *testing.T) {
 	}
 }
 
+func TestParseBreadth(t *testing.T) {
+	body := `{"rc":0,"data":{"qdate":20260612,"fenbu":[{"-1":444},{"-11":15},{"0":61},{"2":1119},{"11":89}]}}`
+	b, err := parseBreadth(body)
+	if err != nil {
+		t.Fatalf("解析涨跌分布失败: %v", err)
+	}
+	if b.UpCount != 1208 || b.DownCount != 459 || b.FlatCount != 61 {
+		t.Errorf("涨跌家数统计错误: up=%d down=%d flat=%d", b.UpCount, b.DownCount, b.FlatCount)
+	}
+	if len(b.Bins) != 5 || b.Bins[0].Level != -11 || b.Bins[4].Level != 11 {
+		t.Errorf("档位排序错误: %+v", b.Bins)
+	}
+}
+
 func TestParseSectors(t *testing.T) {
 	body := `{"rc":0,"data":{"total":86,"diff":[{"f3":2.45,"f12":"BK0475","f14":"银行","f104":40,"f105":2,"f128":"招商银行"},{"f3":-1.23,"f12":"BK0438","f14":"食品饮料","f104":10,"f105":35,"f128":"贵州茅台"}]}}`
 	items, err := parseSectors(body)

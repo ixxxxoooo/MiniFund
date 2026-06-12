@@ -38,11 +38,30 @@ export function GetPosition(code: string): $CancellablePromise<model$0.Position 
 }
 
 /**
+ * GetProfitHistory 返回组合每日收益历史（净值确认后落库的数据，升序，最多 days 天）。
+ */
+export function GetProfitHistory(days: number): $CancellablePromise<model$0.ProfitHistoryPoint[]> {
+    return $Call.ByID(2860447045, days).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
  * GetSummary 计算持仓盈亏汇总（基于最近一轮估值缓存）。
  */
 export function GetSummary(): $CancellablePromise<model$0.PortfolioSummary | null> {
     return $Call.ByID(1904589935).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType5($result);
+    });
+}
+
+/**
+ * GetXray 持仓透视：聚合自选基金的前十重仓股，分析股票层面暴露。
+ * 有持仓时按持仓市值加权；完全无持仓时按等权计算。
+ */
+export function GetXray(): $CancellablePromise<model$0.XrayStock[]> {
+    return $Call.ByID(1687472949).then(($result: any) => {
+        return $$createType7($result);
     });
 }
 
@@ -51,8 +70,22 @@ export function GetSummary(): $CancellablePromise<model$0.PortfolioSummary | nul
  */
 export function ListPositions(): $CancellablePromise<model$0.Position[]> {
     return $Call.ByID(153802093).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType8($result);
     });
+}
+
+/**
+ * SetDetailProvider 注入基金详情读取函数（持仓透视需要读取详情缓存，不暴露给前端使用）。
+ */
+export function SetDetailProvider(fn: any): $CancellablePromise<void> {
+    return $Call.ByID(635106265, fn);
+}
+
+/**
+ * SetOnChange 注入持仓变更回调（不暴露给前端使用）。
+ */
+export function SetOnChange(fn: any): $CancellablePromise<void> {
+    return $Call.ByID(2039036768, fn);
 }
 
 /**
@@ -72,6 +105,10 @@ export function UpsertPosition(code: string, shares: number, costPrice: number):
 // Private type creation functions
 const $$createType0 = model$0.Position.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
-const $$createType2 = model$0.PortfolioSummary.createFrom;
-const $$createType3 = $Create.Nullable($$createType2);
-const $$createType4 = $Create.Array($$createType0);
+const $$createType2 = model$0.ProfitHistoryPoint.createFrom;
+const $$createType3 = $Create.Array($$createType2);
+const $$createType4 = model$0.PortfolioSummary.createFrom;
+const $$createType5 = $Create.Nullable($$createType4);
+const $$createType6 = model$0.XrayStock.createFrom;
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = $Create.Array($$createType0);

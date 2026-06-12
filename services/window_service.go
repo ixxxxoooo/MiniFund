@@ -91,7 +91,7 @@ func (s *WindowService) CreateTrayPanelWindow() *application.WebviewWindow {
 		Name:          "tray-panel",
 		Title:         "",
 		Width:         320,
-		Height:        420,
+		Height:        520,
 		URL:           "/#/tray",
 		Frameless:     true,
 		AlwaysOnTop:   true,

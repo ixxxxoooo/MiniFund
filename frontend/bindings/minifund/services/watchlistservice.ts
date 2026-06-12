@@ -73,6 +73,13 @@ export function RenameGroup(id: number, name: string): $CancellablePromise<void>
 }
 
 /**
+ * SetOnChange 注入自选变更回调（不暴露给前端使用）。
+ */
+export function SetOnChange(fn: any): $CancellablePromise<void> {
+    return $Call.ByID(3010620241, fn);
+}
+
+/**
  * SetScheduler 注入调度器（装配时调用，不暴露给前端使用）。
  */
 export function SetScheduler(sched: scheduler$0.Scheduler | null): $CancellablePromise<void> {
