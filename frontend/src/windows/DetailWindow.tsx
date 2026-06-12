@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Window } from "@wailsio/runtime";
 import type { FundDetail, NavPage } from "@bindings/minifund/internal/model";
 import { FundService } from "@bindings/minifund/services";
@@ -6,12 +7,24 @@ import { LineChart } from "@/components/charts/LineChart";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { QuoteText } from "@/components/market/QuoteText";
 import { Badge } from "@/components/ui/badge";
+import { SortableHeader } from "@/components/ui/sortable-header";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
 import { formatNav } from "@/lib/format";
+import { useLocalSort } from "@/lib/sort";
 import { cn } from "@/lib/utils";
 import { useMarketStore } from "@/stores/market";
 import { useSettingsStore } from "@/stores/settings";
+
+/** 历史净值每页条数 */
+const NAV_PAGE_SIZE = 10;
+
+/** 将规模原始字符串（元）格式化为亿元 */
+function formatScale(raw: string): string {
+  const v = parseFloat(raw);
+  if (!Number.isFinite(v) || v <= 0) return "";
+  return (v / 1e8).toFixed(2) + zhCN.detail.tags.scaleUnit;
+}
 
 interface DetailWindowProps {
   /** 基金代码，来自 hash 路由 /#/detail/{code} */
@@ -41,6 +54,8 @@ export function DetailWindow({ code }: DetailWindowProps) {
 
   const [detail, setDetail] = useState<FundDetail | null>(null);
   const [navPage, setNavPage] = useState<NavPage | null>(null);
+  const [navIndex, setNavIndex] = useState(1);
+  const [navLoading, setNavLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const [range, setRange] = useState<RangeKey>("y1");
 
@@ -54,10 +69,16 @@ export function DetailWindow({ code }: DetailWindowProps) {
         setFailed(true);
       }
     });
-    void call("加载历史净值", () => FundService.GetNavHistory(code, 1, 10)).then((p) => {
+  }, [code, loadSettings, initMarket]);
+
+  // 历史净值分页加载
+  useEffect(() => {
+    setNavLoading(true);
+    void call("加载历史净值", () => FundService.GetNavHistory(code, navIndex, NAV_PAGE_SIZE)).then((p) => {
+      setNavLoading(false);
       if (p) setNavPage(p);
     });
-  }, [code, loadSettings, initMarket]);
+  }, [code, navIndex]);
 
   const est = estimates[code];
 
@@ -70,6 +91,15 @@ export function DetailWindow({ code }: DetailWindowProps) {
   }, [detail, range]);
 
   const latest = detail?.netWorthTrend?.[detail.netWorthTrend.length - 1];
+
+  // 历史净值当前页本地排序
+  const navSort = useLocalSort(navPage?.items ?? [], {
+    date: (r) => r.date,
+    nav: (r) => r.nav,
+    accNav: (r) => r.accNav,
+    growth: (r) => r.growth,
+  });
+  const navTotalPages = navPage ? Math.max(1, Math.ceil(navPage.total / NAV_PAGE_SIZE)) : 1;
 
   return (
     <div className="flex h-full flex-col bg-[var(--surface)]">
@@ -98,6 +128,32 @@ export function DetailWindow({ code }: DetailWindowProps) {
                   {detail.name}
                 </span>
                 {detail.rate && <Badge variant="secondary">{zhCN.detail.rate} {detail.rate}%</Badge>}
+              </div>
+              {/* 标签行：类型 / 公司 / 跟踪指数 / 风险等级 / 规模 / 成立日期 */}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {detail.type && <Badge variant="secondary">{detail.type}</Badge>}
+                {detail.company && <Badge variant="secondary">{detail.company}</Badge>}
+                {detail.indexName && (
+                  <Badge variant="secondary">
+                    {zhCN.detail.tags.index} {detail.indexName}
+                  </Badge>
+                )}
+                {detail.riskLevel && zhCN.detail.tags.riskLevels[detail.riskLevel as keyof typeof zhCN.detail.tags.riskLevels] && (
+                  <Badge variant="warning">
+                    {zhCN.detail.tags.risk}
+                    {zhCN.detail.tags.riskLevels[detail.riskLevel as keyof typeof zhCN.detail.tags.riskLevels]}
+                  </Badge>
+                )}
+                {formatScale(detail.scale) && (
+                  <Badge variant="secondary">
+                    {zhCN.detail.tags.scale} {formatScale(detail.scale)}
+                  </Badge>
+                )}
+                {detail.estabDate && (
+                  <Badge variant="secondary">
+                    {zhCN.detail.tags.estab} {detail.estabDate}
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center gap-3 text-2xs text-[var(--fg-secondary)]">
                 {latest && (
@@ -204,20 +260,70 @@ export function DetailWindow({ code }: DetailWindowProps) {
               </section>
 
               <section className="rounded-[var(--radius-panel)] border border-[var(--border-subtle)] p-[var(--size-padding-sm)]">
-                <div className="mb-1 text-[length:var(--size-font-xs)] font-medium text-[var(--fg)]">
-                  {zhCN.detail.navHistoryTitle}
+                <div className="mb-1 flex items-center justify-between">
+                  <span className="text-[length:var(--size-font-xs)] font-medium text-[var(--fg)]">
+                    {zhCN.detail.navHistoryTitle}
+                    {navPage && (
+                      <span className="quote-num ml-2 text-2xs font-normal text-[var(--fg-muted)]">
+                        {zhCN.detail.navTotal.replace("{n}", String(navPage.total))}
+                      </span>
+                    )}
+                  </span>
+                  {/* 分页控制 */}
+                  <span className="flex items-center gap-1 text-2xs text-[var(--fg-secondary)]">
+                    <button
+                      disabled={navIndex <= 1 || navLoading}
+                      onClick={() => setNavIndex((p) => p - 1)}
+                      className="rounded-[var(--radius-sm)] p-0.5 hover:bg-[var(--row-hover)] disabled:opacity-40"
+                      aria-label={zhCN.ranking.prevPage}
+                    >
+                      <ChevronLeft size={12} />
+                    </button>
+                    <span className="quote-num">
+                      {navIndex} / {navTotalPages}
+                    </span>
+                    <button
+                      disabled={navIndex >= navTotalPages || navLoading}
+                      onClick={() => setNavIndex((p) => p + 1)}
+                      className="rounded-[var(--radius-sm)] p-0.5 hover:bg-[var(--row-hover)] disabled:opacity-40"
+                      aria-label={zhCN.ranking.nextPage}
+                    >
+                      <ChevronRight size={12} />
+                    </button>
+                  </span>
                 </div>
-                <table className="w-full border-collapse">
+                <table className={cn("w-full border-collapse", navLoading && "opacity-50")}>
                   <thead>
                     <tr>
-                      <th className="data-grid-header border-b">{zhCN.detail.navDate}</th>
-                      <th className="data-grid-header border-b text-right">{zhCN.detail.navValue}</th>
-                      <th className="data-grid-header border-b text-right">{zhCN.detail.navAcc}</th>
-                      <th className="data-grid-header border-b text-right">{zhCN.detail.navGrowth}</th>
+                      <SortableHeader
+                        label={zhCN.detail.navDate}
+                        align="left"
+                        active={navSort.sortState.key === "date"}
+                        dir={navSort.sortState.key === "date" ? navSort.sortState.dir : null}
+                        onClick={() => navSort.toggle("date")}
+                      />
+                      <SortableHeader
+                        label={zhCN.detail.navValue}
+                        active={navSort.sortState.key === "nav"}
+                        dir={navSort.sortState.key === "nav" ? navSort.sortState.dir : null}
+                        onClick={() => navSort.toggle("nav")}
+                      />
+                      <SortableHeader
+                        label={zhCN.detail.navAcc}
+                        active={navSort.sortState.key === "accNav"}
+                        dir={navSort.sortState.key === "accNav" ? navSort.sortState.dir : null}
+                        onClick={() => navSort.toggle("accNav")}
+                      />
+                      <SortableHeader
+                        label={zhCN.detail.navGrowth}
+                        active={navSort.sortState.key === "growth"}
+                        dir={navSort.sortState.key === "growth" ? navSort.sortState.dir : null}
+                        onClick={() => navSort.toggle("growth")}
+                      />
                     </tr>
                   </thead>
                   <tbody>
-                    {(navPage?.items ?? []).map((r) => (
+                    {navSort.sorted.map((r) => (
                       <tr key={r.date} className="hover:bg-[var(--row-hover)]">
                         <td className="data-grid-cell">{r.date}</td>
                         <td className="data-grid-cell text-right">{formatNav(r.nav)}</td>

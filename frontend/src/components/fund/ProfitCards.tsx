@@ -1,5 +1,6 @@
 import { Eye, EyeOff } from "lucide-react";
 import { QuoteText } from "@/components/market/QuoteText";
+import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { formatMoney, formatPercent } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -39,13 +40,15 @@ export function ProfitCards() {
       <Card
         label={zhCN.summary.todayProfit}
         extra={
-          <button
-            aria-label={hideAmounts ? zhCN.summary.showAmounts : zhCN.summary.hideAmounts}
-            onClick={toggleHide}
-            className="text-[var(--fg-muted)] hover:text-[var(--fg)]"
-          >
-            {hideAmounts ? <EyeOff size={12} /> : <Eye size={12} />}
-          </button>
+          <Tooltip content={hideAmounts ? zhCN.summary.showAmounts : zhCN.summary.hideAmounts}>
+            <button
+              aria-label={hideAmounts ? zhCN.summary.showAmounts : zhCN.summary.hideAmounts}
+              onClick={toggleHide}
+              className="text-[var(--fg-muted)] hover:text-[var(--fg)]"
+            >
+              {hideAmounts ? <EyeOff size={12} /> : <Eye size={12} />}
+            </button>
+          </Tooltip>
         }
       >
         <span

@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import "./globals.css";
+import { TooltipProvider } from "./components/ui/tooltip";
 import { MainWindow } from "./windows/MainWindow";
 import { TrayPanel } from "./windows/TrayPanel";
 import { DetailWindow } from "./windows/DetailWindow";
@@ -27,5 +28,8 @@ function resolveWindow(): React.ReactElement {
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>{resolveWindow()}</React.StrictMode>
+  <React.StrictMode>
+    {/* 全局 Tooltip Provider：所有窗口共享统一提示样式 */}
+    <TooltipProvider>{resolveWindow()}</TooltipProvider>
+  </React.StrictMode>
 );

@@ -5,6 +5,7 @@ import { PositionDialog } from "@/components/fund/PositionDialog";
 import { ProfitCards } from "@/components/fund/ProfitCards";
 import { WatchlistTable } from "@/components/fund/WatchlistTable";
 import { Button } from "@/components/ui/button";
+import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/stores/ui";
@@ -60,18 +61,19 @@ export function WatchlistPage() {
               {g.name}
             </button>
             {groups.length > 1 && g.id === activeGroupId && (
-              <button
-                aria-label={zhCN.watchlist.deleteGroup}
-                title={zhCN.watchlist.deleteGroup}
-                onClick={() => {
-                  if (window.confirm(zhCN.watchlist.deleteGroupConfirm)) {
-                    void deleteGroup(g.id);
-                  }
-                }}
-                className="absolute -right-1 -top-1 hidden rounded-full bg-[var(--surface-elevated)] p-0.5 text-[var(--fg-muted)] shadow-[var(--shadow-sm)] hover:text-[var(--danger)] group-hover:block"
-              >
-                <X size={10} />
-              </button>
+              <Tooltip content={zhCN.watchlist.deleteGroup}>
+                <button
+                  aria-label={zhCN.watchlist.deleteGroup}
+                  onClick={() => {
+                    if (window.confirm(zhCN.watchlist.deleteGroupConfirm)) {
+                      void deleteGroup(g.id);
+                    }
+                  }}
+                  className="absolute -right-1 -top-1 hidden rounded-full bg-[var(--surface-elevated)] p-0.5 text-[var(--fg-muted)] shadow-[var(--shadow-sm)] hover:text-[var(--danger)] group-hover:block"
+                >
+                  <X size={10} />
+                </button>
+              </Tooltip>
             )}
           </div>
         ))}
@@ -92,14 +94,15 @@ export function WatchlistPage() {
             className="h-[var(--size-tab)] w-28 rounded-[var(--radius-btn)] border border-[var(--border-color)] bg-[var(--surface)] px-2 text-[length:var(--size-font-xs)] outline-none focus:border-[var(--accent)]"
           />
         ) : (
-          <button
-            aria-label={zhCN.watchlist.addGroup}
-            title={zhCN.watchlist.addGroup}
-            onClick={() => setAddingGroup(true)}
-            className="flex h-[var(--size-tab)] items-center rounded-[var(--radius-btn)] px-2 text-[var(--fg-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--fg)]"
-          >
-            <Plus size={13} />
-          </button>
+          <Tooltip content={zhCN.watchlist.addGroup}>
+            <button
+              aria-label={zhCN.watchlist.addGroup}
+              onClick={() => setAddingGroup(true)}
+              className="flex h-[var(--size-tab)] items-center rounded-[var(--radius-btn)] px-2 text-[var(--fg-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--fg)]"
+            >
+              <Plus size={13} />
+            </button>
+          </Tooltip>
         )}
       </div>
 

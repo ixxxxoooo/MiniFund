@@ -3,6 +3,8 @@ import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import type { RankPage } from "@bindings/minifund/internal/model";
 import { FundService, WindowService } from "@bindings/minifund/services";
 import { QuoteText } from "@/components/market/QuoteText";
+import { SortableHeader } from "@/components/ui/sortable-header";
+import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
 import { formatNav } from "@/lib/format";
@@ -13,8 +15,30 @@ import { useWatchlistStore } from "@/stores/watchlist";
 type FundType = keyof typeof zhCN.ranking.types;
 type SortKey = keyof typeof zhCN.ranking.sortKeys;
 
+/** 可排序列定义：列头 → 服务端排序键 */
+const SORT_COLUMNS: { key: SortKey; label: string }[] = [
+  { key: "rzdf", label: zhCN.ranking.columns.day },
+  { key: "zzf", label: zhCN.ranking.columns.week },
+  { key: "1yzf", label: zhCN.ranking.columns.m1 },
+  { key: "3yzf", label: zhCN.ranking.columns.m3 },
+  { key: "6yzf", label: zhCN.ranking.columns.m6 },
+  { key: "1nzf", label: zhCN.ranking.columns.y1 },
+  { key: "jnzf", label: zhCN.ranking.columns.ytd },
+];
+
+/** 列 key → 数据字段 */
+const COLUMN_VALUES: Record<SortKey, (item: RankPage["items"][number]) => number> = {
+  rzdf: (r) => r.dayGrowth,
+  zzf: (r) => r.weekGrowth,
+  "1yzf": (r) => r.monthGrowth,
+  "3yzf": (r) => r.month3,
+  "6yzf": (r) => r.month6,
+  "1nzf": (r) => r.year1,
+  jnzf: (r) => r.ytd,
+};
+
 /**
- * 基金排行页：类型筛选 + 排序 + 分页，双击行打开详情。
+ * 基金排行页：类型筛选 + 列头点击服务端排序（降序 ⇄ 升序）+ 分页，双击行打开详情。
  */
 export function RankingPage() {
   const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
@@ -22,15 +46,16 @@ export function RankingPage() {
 
   const [fundType, setFundType] = useState<FundType>("all");
   const [sortKey, setSortKey] = useState<SortKey>("rzdf");
+  const [sortType, setSortType] = useState<"desc" | "asc">("desc");
   const [pageIndex, setPageIndex] = useState(1);
   const [page, setPage] = useState<RankPage | null>(null);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  const loadPage = useCallback(async (ft: FundType, sk: SortKey, pi: number) => {
+  const loadPage = useCallback(async (ft: FundType, sk: SortKey, st: string, pi: number) => {
     setLoading(true);
     setFailed(false);
-    const result = await call("加载基金排行", () => FundService.GetFundRanking(ft, sk, pi));
+    const result = await call("加载基金排行", () => FundService.GetFundRanking(ft, sk, st, pi));
     setLoading(false);
     if (result) {
       setPage(result);
@@ -40,49 +65,44 @@ export function RankingPage() {
   }, []);
 
   useEffect(() => {
-    void loadPage(fundType, sortKey, pageIndex);
-  }, [fundType, sortKey, pageIndex, loadPage]);
+    void loadPage(fundType, sortKey, sortType, pageIndex);
+  }, [fundType, sortKey, sortType, pageIndex, loadPage]);
+
+  /** 列头点击：同列切换方向，异列重置为降序 */
+  const handleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortType((t) => (t === "desc" ? "asc" : "desc"));
+    } else {
+      setSortKey(key);
+      setSortType("desc");
+    }
+    setPageIndex(1);
+  };
 
   const totalPages = page ? Math.max(1, Math.ceil(page.total / 50)) : 1;
   const cols = zhCN.ranking.columns;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-[var(--size-gap)] p-[var(--size-padding)]">
-      {/* 筛选栏 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          {(Object.keys(zhCN.ranking.types) as FundType[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => {
-                setFundType(t);
-                setPageIndex(1);
-              }}
-              className={cn(
-                "h-[var(--size-tab)] rounded-[var(--radius-btn)] px-3 text-[length:var(--size-font-xs)]",
-                t === fundType
-                  ? "bg-[var(--row-selected)] font-medium text-[var(--accent)]"
-                  : "text-[var(--fg-secondary)] hover:bg-[var(--row-hover)]"
-              )}
-            >
-              {zhCN.ranking.types[t]}
-            </button>
-          ))}
-        </div>
-        <select
-          value={sortKey}
-          onChange={(e) => {
-            setSortKey(e.target.value as SortKey);
-            setPageIndex(1);
-          }}
-          className="h-[var(--size-input-sm)] rounded-[var(--radius-input)] border border-[var(--border-color)] bg-[var(--surface)] px-2 text-[length:var(--size-font-xs)] text-[var(--fg)] outline-none"
-        >
-          {(Object.keys(zhCN.ranking.sortKeys) as SortKey[]).map((k) => (
-            <option key={k} value={k}>
-              {zhCN.ranking.sortKeys[k]}
-            </option>
-          ))}
-        </select>
+      {/* 类型筛选 */}
+      <div className="flex items-center gap-1">
+        {(Object.keys(zhCN.ranking.types) as FundType[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => {
+              setFundType(t);
+              setPageIndex(1);
+            }}
+            className={cn(
+              "h-[var(--size-tab)] rounded-[var(--radius-btn)] px-3 text-[length:var(--size-font-xs)]",
+              t === fundType
+                ? "bg-[var(--row-selected)] font-medium text-[var(--accent)]"
+                : "text-[var(--fg-secondary)] hover:bg-[var(--row-hover)]"
+            )}
+          >
+            {zhCN.ranking.types[t]}
+          </button>
+        ))}
       </div>
 
       {/* 排行表格 */}
@@ -98,13 +118,15 @@ export function RankingPage() {
                 <th className="data-grid-header border-b text-right">{cols.rank}</th>
                 <th className="data-grid-header border-b">{cols.name}</th>
                 <th className="data-grid-header border-b text-right">{cols.nav}</th>
-                <th className="data-grid-header border-b text-right">{cols.day}</th>
-                <th className="data-grid-header border-b text-right">{cols.week}</th>
-                <th className="data-grid-header border-b text-right">{cols.m1}</th>
-                <th className="data-grid-header border-b text-right">{cols.m3}</th>
-                <th className="data-grid-header border-b text-right">{cols.m6}</th>
-                <th className="data-grid-header border-b text-right">{cols.y1}</th>
-                <th className="data-grid-header border-b text-right">{cols.ytd}</th>
+                {SORT_COLUMNS.map((c) => (
+                  <SortableHeader
+                    key={c.key}
+                    label={c.label}
+                    active={sortKey === c.key}
+                    dir={sortKey === c.key ? sortType : null}
+                    onClick={() => handleSort(c.key)}
+                  />
+                ))}
                 <th className="data-grid-header border-b" />
               </tr>
             </thead>
@@ -125,22 +147,21 @@ export function RankingPage() {
                     </div>
                   </td>
                   <td className="data-grid-cell text-right">{formatNav(item.nav)}</td>
-                  <td className="data-grid-cell text-right"><QuoteText value={item.dayGrowth} neutral={stealth} /></td>
-                  <td className="data-grid-cell text-right"><QuoteText value={item.weekGrowth} neutral={stealth} /></td>
-                  <td className="data-grid-cell text-right"><QuoteText value={item.monthGrowth} neutral={stealth} /></td>
-                  <td className="data-grid-cell text-right"><QuoteText value={item.month3} neutral={stealth} /></td>
-                  <td className="data-grid-cell text-right"><QuoteText value={item.month6} neutral={stealth} /></td>
-                  <td className="data-grid-cell text-right"><QuoteText value={item.year1} neutral={stealth} /></td>
-                  <td className="data-grid-cell text-right"><QuoteText value={item.ytd} neutral={stealth} /></td>
+                  {SORT_COLUMNS.map((c) => (
+                    <td key={c.key} className="data-grid-cell text-right">
+                      <QuoteText value={COLUMN_VALUES[c.key](item)} neutral={stealth} />
+                    </td>
+                  ))}
                   <td className="data-grid-cell">
-                    <button
-                      aria-label={zhCN.search.add}
-                      title={zhCN.search.add}
-                      onClick={() => void addFund(item.code)}
-                      className="rounded-[var(--radius-sm)] p-1 text-[var(--fg-muted)] hover:bg-[var(--row-selected)] hover:text-[var(--accent)]"
-                    >
-                      <Plus size={12} />
-                    </button>
+                    <Tooltip content={zhCN.search.add}>
+                      <button
+                        aria-label={zhCN.search.add}
+                        onClick={() => void addFund(item.code)}
+                        className="rounded-[var(--radius-sm)] p-1 text-[var(--fg-muted)] hover:bg-[var(--row-selected)] hover:text-[var(--accent)]"
+                      >
+                        <Plus size={12} />
+                      </button>
+                    </Tooltip>
                   </td>
                 </tr>
               ))}

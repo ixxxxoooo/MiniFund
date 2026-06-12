@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { RefreshCw, Settings } from "lucide-react";
 import { WindowService } from "@bindings/minifund/services";
 import { QuoteText } from "@/components/market/QuoteText";
+import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
 import { formatMoney, formatPercent } from "@/lib/format";
@@ -135,22 +136,24 @@ export function TrayPanel() {
           {zhCN.tray.openMain}
         </button>
         <div className="flex items-center gap-1">
-          <button
-            aria-label={zhCN.tray.refresh}
-            title={zhCN.tray.refresh}
-            className="rounded-[var(--radius-btn)] p-1.5 text-[var(--fg-secondary)] hover:bg-[var(--sidebar-hover)]"
-            onClick={refreshNow}
-          >
-            <RefreshCw size={13} />
-          </button>
-          <button
-            aria-label={zhCN.nav.settings}
-            title={zhCN.nav.settings}
-            className="rounded-[var(--radius-btn)] p-1.5 text-[var(--fg-secondary)] hover:bg-[var(--sidebar-hover)]"
-            onClick={() => void call("打开主窗口", () => WindowService.ShowMainWindow())}
-          >
-            <Settings size={13} />
-          </button>
+          <Tooltip content={zhCN.tray.refresh}>
+            <button
+              aria-label={zhCN.tray.refresh}
+              className="rounded-[var(--radius-btn)] p-1.5 text-[var(--fg-secondary)] hover:bg-[var(--sidebar-hover)]"
+              onClick={refreshNow}
+            >
+              <RefreshCw size={13} />
+            </button>
+          </Tooltip>
+          <Tooltip content={zhCN.nav.settings}>
+            <button
+              aria-label={zhCN.nav.settings}
+              className="rounded-[var(--radius-btn)] p-1.5 text-[var(--fg-secondary)] hover:bg-[var(--sidebar-hover)]"
+              onClick={() => void call("打开主窗口", () => WindowService.ShowMainWindow())}
+            >
+              <Settings size={13} />
+            </button>
+          </Tooltip>
         </div>
       </div>
     </div>

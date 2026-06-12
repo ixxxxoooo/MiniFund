@@ -3,6 +3,7 @@ import { AlertTriangle, BarChart3, LayoutGrid, ListOrdered, Pause, RefreshCw, Se
 import { TitleBar } from "@/components/layout/TitleBar";
 import { IndexBar } from "@/components/market/IndexBar";
 import { SearchPalette } from "@/components/fund/SearchPalette";
+import { Tooltip } from "@/components/ui/tooltip";
 import { WatchlistPage } from "@/pages/WatchlistPage";
 import { RankingPage } from "@/pages/RankingPage";
 import { SectorPage } from "@/pages/SectorPage";
@@ -106,14 +107,15 @@ export function MainWindow() {
               {zhCN.monitor.degraded}
             </span>
           )}
-          <button
-            aria-label={zhCN.monitor.refreshNow}
-            title={zhCN.monitor.refreshNow}
-            onClick={refreshNow}
-            className="rounded-[var(--radius-sm)] p-0.5 hover:bg-[var(--row-hover)] hover:text-[var(--fg)]"
-          >
-            <RefreshCw size={10} />
-          </button>
+          <Tooltip content={zhCN.monitor.refreshNow}>
+            <button
+              aria-label={zhCN.monitor.refreshNow}
+              onClick={refreshNow}
+              className="rounded-[var(--radius-sm)] p-0.5 hover:bg-[var(--row-hover)] hover:text-[var(--fg)]"
+            >
+              <RefreshCw size={10} />
+            </button>
+          </Tooltip>
         </div>
         <span>{zhCN.app.dataDisclaimer}</span>
       </footer>
