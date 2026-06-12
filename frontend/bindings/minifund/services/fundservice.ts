@@ -31,10 +31,10 @@ export function GetFundDetail(code: string): $CancellablePromise<model$0.FundDet
 }
 
 /**
- * GetFundRanking 获取基金排行。
+ * GetFundRanking 获取基金排行。sortType：desc/asc。
  */
-export function GetFundRanking(fundType: string, sortKey: string, pageIndex: number): $CancellablePromise<model$0.RankPage | null> {
-    return $Call.ByID(1525782339, fundType, sortKey, pageIndex).then(($result: any) => {
+export function GetFundRanking(fundType: string, sortKey: string, sortType: string, pageIndex: number): $CancellablePromise<model$0.RankPage | null> {
+    return $Call.ByID(1525782339, fundType, sortKey, sortType, pageIndex).then(($result: any) => {
         return $$createType3($result);
     });
 }

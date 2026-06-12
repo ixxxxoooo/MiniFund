@@ -47,6 +47,21 @@ func (s *MarketService) GetSectors(kind string) ([]model.SectorItem, error) {
 	return eastmoney.FetchSectors(ctx, kind)
 }
 
+// GetTopics 拉取基金主题列表（约 150 个，含近 1 年涨幅）。
+func (s *MarketService) GetTopics() ([]model.TopicItem, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return eastmoney.FetchTopics(ctx)
+}
+
+// GetTopicFunds 拉取某主题下的基金列表（服务端排序 + 分页）。
+// sortKey：NAVCHGRT/SYL_Z/SYL_Y/SYL_3Y/SYL_6Y/SYL_1N/SYL_JN；sortType：desc/asc。
+func (s *MarketService) GetTopicFunds(topicID, sortKey, sortType string, pageIndex int) (*model.RankPage, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return eastmoney.FetchTopicFunds(ctx, topicID, sortKey, sortType, pageIndex, 50)
+}
+
 // GetMonitorState 返回当前监控状态。
 func (s *MarketService) GetMonitorState() (model.MonitorState, error) {
 	if s.sched == nil {

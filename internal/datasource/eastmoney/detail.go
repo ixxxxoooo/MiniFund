@@ -136,6 +136,36 @@ func parseHoldings(body string) ([]model.Holding, error) {
 	return holdings, nil
 }
 
+// rawInfoResponse 移动端基金详情信息接口返回结构（标签信息）。
+type rawInfoResponse struct {
+	Datas struct {
+		FTYPE     string `json:"FTYPE"`     // 基金类型
+		JJGS      string `json:"JJGS"`      // 基金公司
+		INDEXNAME string `json:"INDEXNAME"` // 跟踪指数
+		RISKLEVEL string `json:"RISKLEVEL"` // 风险等级 1-5
+		ESTABDATE string `json:"ESTABDATE"` // 成立日期
+		ENDNAV    string `json:"ENDNAV"`    // 最新规模（元）
+	} `json:"Datas"`
+}
+
+// parseFundInfo 解析基金标签信息并填充到详情。
+func parseFundInfo(body string, detail *model.FundDetail) error {
+	var raw rawInfoResponse
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
+		return fmt.Errorf("解析基金信息 JSON 失败: %w", err)
+	}
+	d := raw.Datas
+	detail.Type = d.FTYPE
+	detail.Company = d.JJGS
+	if d.INDEXNAME != "--" {
+		detail.IndexName = d.INDEXNAME
+	}
+	detail.RiskLevel = d.RISKLEVEL
+	detail.EstabDate = d.ESTABDATE
+	detail.Scale = d.ENDNAV
+	return nil
+}
+
 // FetchFundDetail 拉取基金详情：pingzhongdata 主体 + 移动端重仓股接口。
 func FetchFundDetail(ctx context.Context, code string) (*model.FundDetail, error) {
 	script, err := datasource.FetchText(ctx, fmt.Sprintf("https://fund.eastmoney.com/pingzhongdata/%s.js", code), fundReferer)
@@ -157,6 +187,16 @@ func FetchFundDetail(ctx context.Context, code string) (*model.FundDetail, error
 		}
 	} else {
 		logger.Warn("拉取重仓股失败: code=%s err=%v", code, err)
+	}
+
+	// 标签信息（类型/公司/跟踪指数/风险等级/规模）拉取失败同样不影响主体
+	infoURL := fmt.Sprintf("https://fundmobapi.eastmoney.com/FundMNewApi/FundMNDetailInformation?deviceid=Wap&plat=Wap&product=EFund&version=2.0.0&FCODE=%s", code)
+	if body, err := datasource.FetchText(ctx, infoURL, fundReferer); err == nil {
+		if err := parseFundInfo(body, detail); err != nil {
+			logger.Warn("解析基金信息失败: code=%s err=%v", code, err)
+		}
+	} else {
+		logger.Warn("拉取基金信息失败: code=%s err=%v", code, err)
 	}
 	return detail, nil
 }

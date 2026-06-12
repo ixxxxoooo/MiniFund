@@ -2,6 +2,8 @@ package eastmoney
 
 import (
 	"testing"
+
+	"minifund/internal/model"
 )
 
 // 真实响应样本（已脱敏精简）
@@ -122,6 +124,43 @@ func TestParseRanking(t *testing.T) {
 	first := page.Items[0]
 	if first.Code != "000001" || first.DayGrowth != 0.52 || first.Year1 != 15.20 || first.Ytd != 12.80 {
 		t.Errorf("排行条目解析错误: %+v", first)
+	}
+}
+
+func TestParseTopics(t *testing.T) {
+	body := `var result={ "Datas" : ["3e98b3ffb8d67e2f,大数据,6.1385", "d5016e2c21a149eb,黄金概念,-4.8070"], "PageIndex" : "0", "TotalCount" : "148" }`
+	items, err := parseTopics(body)
+	if err != nil {
+		t.Fatalf("解析主题列表失败: %v", err)
+	}
+	if len(items) != 2 || items[0].ID != "3e98b3ffb8d67e2f" || items[0].Name != "大数据" || items[0].Year1Growth != 6.1385 {
+		t.Errorf("主题条目解析错误: %+v", items)
+	}
+}
+
+func TestParseTopicFunds(t *testing.T) {
+	body := `var result={"Datas":[{"TTYPE":"3e98b3ffb8d67e2f","TTYPENAME":"大数据","FCODE":"001118","SHORTNAME":"华宝事件驱动混合A","SYL_Z":"-0.5","SYL_Y":"-17.31","SYL_3Y":"-3.66","SYL_6Y":"22.8","SYL_1N":"59.49","SYL_JN":"17.79","PDATE":"2026-06-11","NAV":"1.185","NAVCHGRT":"1.46","FTYPE":"混合型-偏股"}],"PageSize":0,"PageIndex":0,"TotalCount":13,"ErrCode":0,"Pages":7}`
+	page, err := parseTopicFunds(body)
+	if err != nil {
+		t.Fatalf("解析主题基金失败: %v", err)
+	}
+	if page.Total != 13 || len(page.Items) != 1 {
+		t.Fatalf("主题基金分页错误: total=%d items=%d", page.Total, len(page.Items))
+	}
+	f := page.Items[0]
+	if f.Code != "001118" || f.DayGrowth != 1.46 || f.Year1 != 59.49 || f.Nav != 1.185 {
+		t.Errorf("主题基金条目解析错误: %+v", f)
+	}
+}
+
+func TestParseFundInfo(t *testing.T) {
+	body := `{"Datas":{"FCODE":"161725","SHORTNAME":"招商中证白酒指数(LOF)A","FTYPE":"指数型-股票","ESTABDATE":"2015-05-27","ENDNAV":"25837313173.42","RISKLEVEL":"4","JJGS":"招商基金","INDEXNAME":"中证白酒指数"},"ErrCode":0}`
+	var detail model.FundDetail
+	if err := parseFundInfo(body, &detail); err != nil {
+		t.Fatalf("解析基金信息失败: %v", err)
+	}
+	if detail.Type != "指数型-股票" || detail.Company != "招商基金" || detail.IndexName != "中证白酒指数" || detail.RiskLevel != "4" {
+		t.Errorf("基金信息解析错误: %+v", detail)
 	}
 }
 

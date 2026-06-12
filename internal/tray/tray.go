@@ -3,12 +3,18 @@
 package tray
 
 import (
+	_ "embed"
+
 	"minifund/internal/logger"
 	"minifund/internal/version"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
-	"github.com/wailsapp/wails/v3/pkg/icons"
 )
+
+// trayTemplateIcon 自定义托盘模板图标（黑色+alpha，由 build/genicon 生成，系统自动适配亮暗）
+//
+//go:embed assets/tray_template@2x.png
+var trayTemplateIcon []byte
 
 // Tray 系统托盘封装。
 type Tray struct {
@@ -35,7 +41,7 @@ func Setup(app *application.App, opts Options) *Tray {
 	t := &Tray{app: app, tray: app.SystemTray.New()}
 
 	// macOS 使用模板图标，自动适配菜单栏亮暗模式
-	t.tray.SetTemplateIcon(icons.SystrayMacTemplate)
+	t.tray.SetTemplateIcon(trayTemplateIcon)
 
 	// 右键菜单
 	menu := app.Menu.New()

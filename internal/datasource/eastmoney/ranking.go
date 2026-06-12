@@ -62,13 +62,16 @@ func parseRanking(body string) (*model.RankPage, error) {
 }
 
 // FetchRanking 拉取基金排行。
-// fundType：all/gp/hh/zq/zs/qdii/fof；sortKey：rzdf/zzf/1yzf/3yzf/6yzf/1nzf/jnzf/3nzf。
-func FetchRanking(ctx context.Context, fundType, sortKey string, pageIndex, pageSize int) (*model.RankPage, error) {
+// fundType：all/gp/hh/zq/zs/qdii/fof；sortKey：rzdf/zzf/1yzf/3yzf/6yzf/1nzf/jnzf/3nzf；sortType：desc/asc。
+func FetchRanking(ctx context.Context, fundType, sortKey, sortType string, pageIndex, pageSize int) (*model.RankPage, error) {
 	if !validFundTypes[fundType] {
 		fundType = "all"
 	}
 	if !validSortKeys[sortKey] {
 		sortKey = "rzdf"
+	}
+	if sortType != "asc" {
+		sortType = "desc"
 	}
 	if pageIndex <= 0 {
 		pageIndex = 1
@@ -77,8 +80,8 @@ func FetchRanking(ctx context.Context, fundType, sortKey string, pageIndex, page
 		pageSize = 50
 	}
 	url := fmt.Sprintf(
-		"https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=%s&rs=&gs=0&sc=%s&st=desc&qdii=&tabSubtype=,,,,,&pi=%d&pn=%d&dx=1",
-		fundType, sortKey, pageIndex, pageSize)
+		"https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft=%s&rs=&gs=0&sc=%s&st=%s&qdii=&tabSubtype=,,,,,&pi=%d&pn=%d&dx=1",
+		fundType, sortKey, sortType, pageIndex, pageSize)
 	body, err := datasource.FetchText(ctx, url, "https://fund.eastmoney.com/data/fundranking.html")
 	if err != nil {
 		return nil, fmt.Errorf("拉取基金排行失败: %w", err)

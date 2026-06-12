@@ -94,9 +94,9 @@ func (s *FundService) GetNavHistory(code string, pageIndex, pageSize int) (*mode
 	return eastmoney.FetchNavHistory(ctx, code, pageIndex, pageSize)
 }
 
-// GetFundRanking 获取基金排行。
-func (s *FundService) GetFundRanking(fundType, sortKey string, pageIndex int) (*model.RankPage, error) {
+// GetFundRanking 获取基金排行。sortType：desc/asc。
+func (s *FundService) GetFundRanking(fundType, sortKey, sortType string, pageIndex int) (*model.RankPage, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return eastmoney.FetchRanking(ctx, fundType, sortKey, pageIndex, 50)
+	return eastmoney.FetchRanking(ctx, fundType, sortKey, sortType, pageIndex, 50)
 }

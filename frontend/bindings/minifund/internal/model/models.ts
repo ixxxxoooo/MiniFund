@@ -59,6 +59,32 @@ export class FundDetail {
      */
     "fetchedAt": number;
 
+    /**
+     * 标签信息（来自移动端详情接口）
+     * 基金公司
+     */
+    "company": string;
+
+    /**
+     * 跟踪指数（指数型基金）
+     */
+    "indexName": string;
+
+    /**
+     * 风险等级（1-5）
+     */
+    "riskLevel": string;
+
+    /**
+     * 成立日期
+     */
+    "estabDate": string;
+
+    /**
+     * 最新规模（元，原始字符串）
+     */
+    "scale": string;
+
     /** Creates a new FundDetail instance. */
     constructor($$source: Partial<FundDetail> = {}) {
         if (!("code" in $$source)) {
@@ -90,6 +116,21 @@ export class FundDetail {
         }
         if (!("fetchedAt" in $$source)) {
             this["fetchedAt"] = 0;
+        }
+        if (!("company" in $$source)) {
+            this["company"] = "";
+        }
+        if (!("indexName" in $$source)) {
+            this["indexName"] = "";
+        }
+        if (!("riskLevel" in $$source)) {
+            this["riskLevel"] = "";
+        }
+        if (!("estabDate" in $$source)) {
+            this["estabDate"] = "";
+        }
+        if (!("scale" in $$source)) {
+            this["scale"] = "";
         }
 
         Object.assign(this, $$source);
@@ -839,6 +880,49 @@ export class SectorItem {
     static createFrom($$source: any = {}): SectorItem {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new SectorItem($$parsedSource as Partial<SectorItem>);
+    }
+}
+
+/**
+ * TopicItem 基金主题/板块条目（天天基金主题体系）。
+ */
+export class TopicItem {
+    /**
+     * 主题 ID（哈希串）
+     */
+    "id": string;
+
+    /**
+     * 主题名称
+     */
+    "name": string;
+
+    /**
+     * 近 1 年涨幅（%）
+     */
+    "year1Growth": number;
+
+    /** Creates a new TopicItem instance. */
+    constructor($$source: Partial<TopicItem> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("year1Growth" in $$source)) {
+            this["year1Growth"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new TopicItem instance from a string or object.
+     */
+    static createFrom($$source: any = {}): TopicItem {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new TopicItem($$parsedSource as Partial<TopicItem>);
     }
 }
 

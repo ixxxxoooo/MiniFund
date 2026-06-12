@@ -16,6 +16,7 @@ export {
     RankItem,
     RankPage,
     SectorItem,
+    TopicItem,
     TrendPoint,
     WatchGroup,
     WatchItem

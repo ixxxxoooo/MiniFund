@@ -54,6 +54,25 @@ export function GetSectors(kind: string): $CancellablePromise<model$0.SectorItem
 }
 
 /**
+ * GetTopicFunds 拉取某主题下的基金列表（服务端排序 + 分页）。
+ * sortKey：NAVCHGRT/SYL_Z/SYL_Y/SYL_3Y/SYL_6Y/SYL_1N/SYL_JN；sortType：desc/asc。
+ */
+export function GetTopicFunds(topicID: string, sortKey: string, sortType: string, pageIndex: number): $CancellablePromise<model$0.RankPage | null> {
+    return $Call.ByID(2767582740, topicID, sortKey, sortType, pageIndex).then(($result: any) => {
+        return $$createType8($result);
+    });
+}
+
+/**
+ * GetTopics 拉取基金主题列表（约 150 个，含近 1 年涨幅）。
+ */
+export function GetTopics(): $CancellablePromise<model$0.TopicItem[]> {
+    return $Call.ByID(2510723945).then(($result: any) => {
+        return $$createType10($result);
+    });
+}
+
+/**
  * PauseMonitor 暂停/恢复监控。
  */
 export function PauseMonitor(paused: boolean): $CancellablePromise<void> {
@@ -82,3 +101,7 @@ const $$createType3 = $Create.Array($$createType2);
 const $$createType4 = model$0.MonitorState.createFrom;
 const $$createType5 = model$0.SectorItem.createFrom;
 const $$createType6 = $Create.Array($$createType5);
+const $$createType7 = model$0.RankPage.createFrom;
+const $$createType8 = $Create.Nullable($$createType7);
+const $$createType9 = model$0.TopicItem.createFrom;
+const $$createType10 = $Create.Array($$createType9);

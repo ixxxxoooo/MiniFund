@@ -78,6 +78,19 @@ type FundDetail struct {
 	Holdings       []Holding    `json:"holdings"`       // 前十重仓股
 	Managers       []ManagerInfo `json:"managers"`      // 现任基金经理
 	FetchedAt      int64        `json:"fetchedAt"`      // 数据抓取时间（Unix 秒）
+	// 标签信息（来自移动端详情接口）
+	Company   string `json:"company"`   // 基金公司
+	IndexName string `json:"indexName"` // 跟踪指数（指数型基金）
+	RiskLevel string `json:"riskLevel"` // 风险等级（1-5）
+	EstabDate string `json:"estabDate"` // 成立日期
+	Scale     string `json:"scale"`     // 最新规模（元，原始字符串）
+}
+
+// TopicItem 基金主题/板块条目（天天基金主题体系）。
+type TopicItem struct {
+	ID          string  `json:"id"`          // 主题 ID（哈希串）
+	Name        string  `json:"name"`        // 主题名称
+	Year1Growth float64 `json:"year1Growth"` // 近 1 年涨幅（%）
 }
 
 // RankItem 基金排行条目。
