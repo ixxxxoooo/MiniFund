@@ -159,7 +159,7 @@ export function NewsPage() {
                     className="flex w-full flex-col gap-1 px-[var(--size-padding)] py-2.5 text-left hover:bg-[var(--row-hover)]"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="quote-num shrink-0 text-2xs text-[var(--fg-muted)]">{n.time.slice(11, 16)}</span>
+                      <span className="quote-num shrink-0 text-2xs text-[var(--fg-muted)]">{n.time}</span>
                       {n.important && (
                         <span className="shrink-0 rounded-[var(--radius-sm)] bg-[var(--quote-up)] px-1 text-2xs text-white">
                           {zhCN.news.important}

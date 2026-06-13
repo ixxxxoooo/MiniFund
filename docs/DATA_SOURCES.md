@@ -179,13 +179,14 @@ Referer: https://fund.eastmoney.com/
 ### 2.10 全球财经快讯（东财 `getFastNewsList`）
 
 ```
-GET https://np-weblist.eastmoney.com/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=109&sortEnd=&pageSize=50&req_trace={毫秒}&_={毫秒}
+GET https://np-weblist.eastmoney.com/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=102&sortEnd=&pageSize=50&req_trace={毫秒}&_={毫秒}
 Referer: https://kuaixun.eastmoney.com/
 ```
 
-- 用途：「财经快讯」页「全球快讯」Tab，对应 `https://kuaixun.eastmoney.com/jj.html`（基金快讯，`fastColumn=109`）的 7×24 短讯。
-- 返回 `{"code":"1","data":{"fastNewsList":[{"code","title","summary","showTime","titleColor","stockList":[...]}]}}`，**`summary` 字段即完整短讯正文**（含【标题】前缀），无需二次抓取；`titleColor != 0` 表示重要快讯（标红）。
-- 解析（`eastmoney/news.go: FetchFlashNews`）→ `[]model.NewsFlash`。
+- 用途：「财经快讯」页「全球快讯」Tab，对应 `https://kuaixun.eastmoney.com/7_24.html`（全部/全球 7×24 直播，`fastColumn=102`）的滚动短讯。
+- **栏目选型（重要修复）**：原用 `fastColumn=109`（基金栏目，对应 `jj.html`），该栏目为**低频栏目**，非交易时段（周末/夜间）长时间无新条目，表现为「快讯不更新」。改用 `fastColumn=102`（全部/全球 7×24），**24 小时滚动更新**，与 `7_24.html` 一致。其余栏目编码：`101` 要闻 / `102` 全部 / `108` 债券 / `109` 基金 / `110` 大宗。
+- 返回 `{"code":"1","data":{"fastNewsList":[{"code","title","summary","showTime","titleColor","stockList":[...]}]}}`，**`summary` 字段即完整短讯正文**（含【标题】前缀），无需二次抓取；`titleColor != 0` 表示重要快讯（标红）；`showTime` 为 `yyyy-MM-dd HH:mm:ss`。
+- 解析（`eastmoney/news.go: FetchFlashNews`）→ `[]model.NewsFlash`，并**按 `showTime` 字典序倒序排序**（最新在前），保证前端列表恒为时间倒序。前端列表展示完整 `年-月-日 时:分:秒`（不再仅显示时分）。
 - **更新方式**：由 `internal/scheduler` 按设置 `newsPollSec`（默认 60s，最小 30s）定时拉取，与盘中估值/暂停状态解耦；通过 `news:flash` 事件广播最新列表；新增条目（以 `news_last_id` 游标判断）在开启「快讯桌面通知」时经 Wails 通知服务弹系统通知（首轮与重启后不补推历史）。
 
 ### 2.11 基金滚动资讯与文章正文（`roll` 页 + `#ContentBody`）
@@ -199,7 +200,7 @@ Referer: https://kuaixun.eastmoney.com/
 
 - 与快讯的区别：快讯是短讯（summary 即全文）；`roll/fund.html` 是**完整新闻文章**列表（标题 + 指向 `/a/{id}.html` 详情页），二者内容形态不同，故「财经快讯」页用「基金资讯」Tab 单独承载。
 - 列表解析（`FetchRollNews`）：正则提取页面中 `finance|fund.eastmoney.com/a/{id}.html` 的文章链接与标题，文章编号前 8 位即 `yyyyMMdd`（据此推导发布日期），去重后取前 50 条。
-- 正文解析（`FetchArticleContent` → `parseArticleContent`）：用 `golang.org/x/net/html` 解析文章页，取 `id="ContentBody"` 元素内 `<p>` 文本，剔除「在东方财富看资讯行情」等引流广告段。
+- 正文解析（`FetchArticleContent` → `parseArticleHTML`）：用 `golang.org/x/net/html` 解析文章页 `id="ContentBody"`，按**白名单清洗为安全 HTML 片段**——保留 `<p>`/`<br>`/`<a>`（仅 http(s) 超链接，如个股行情页 `quote.eastmoney.com`）/`<img>`（正文图片）/`<strong>`/`<em>`；文本与属性值均做 HTML 转义，链接仅放行 http(s)（杜绝 `javascript:` 等）。剔除：引流广告段（「在东方财富看资讯行情」等）、开户/活动引流图与链接（`acttg.eastmoney.com`、`em_handle_adv_close`）、隐藏占位段、`<script>`/`<style>` 等。前端在独立窗口以富文本渲染（`.news-article`），**点击正文超链接经窗口拦截后用系统浏览器打开**，图片自适应展示；AI 解读前由前端去标签取纯文本。
 - 缓存：列表 60s、正文 30 分钟（正文不可变）；均为按需抓取（进入页/点击时），不参与定时轮询与通知。
 
 ## 3. 指数行情接口规格

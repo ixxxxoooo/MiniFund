@@ -47,6 +47,8 @@ export function NewsWindow({ payload }: NewsWindowProps) {
 
   // 正文：快讯先以短讯兜底，随后尝试抓取完整文章页；资讯直接抓取
   const [content, setContent] = useState(data?.summary ?? "");
+  // 是否为富文本 HTML（抓到完整文章页正文时为 true，含股票超链接与图片）；短讯兜底为纯文本
+  const [isHtml, setIsHtml] = useState(false);
   const [contentLoading, setContentLoading] = useState(data?.kind === "roll");
   const [contentFailed, setContentFailed] = useState(false);
 
@@ -73,6 +75,7 @@ export function NewsWindow({ payload }: NewsWindowProps) {
       if (!alive) return;
       if (text && text.trim().length > 0) {
         setContent(text);
+        setIsHtml(true); // 抓到的正文为已清洗的富文本 HTML
       } else if (data.kind === "roll") {
         setContentFailed(true);
       }
@@ -82,6 +85,15 @@ export function NewsWindow({ payload }: NewsWindowProps) {
       alive = false;
     };
   }, [data]);
+
+  // 富文本正文中点击超链接（如个股行情页）用系统浏览器打开
+  const handleContentClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const anchor = (e.target as HTMLElement).closest("a");
+    if (anchor?.href) {
+      e.preventDefault();
+      void OpenExternalURL(anchor.href);
+    }
+  };
 
   const handleAI = async () => {
     setAiOpen(true);
@@ -93,7 +105,9 @@ export function NewsWindow({ payload }: NewsWindowProps) {
     setAiError("");
     setAiText("");
     try {
-      const result = await AIService.InterpretNews(data!.title, content || data!.title);
+      // 富文本正文先去标签再交给 AI，避免把 HTML 标签当正文
+      const plain = isHtml ? content.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : content;
+      const result = await AIService.InterpretNews(data!.title, plain || data!.title);
       setAiText(result);
     } catch (err) {
       setAiError(`${zhCN.news.aiFailed}：${err instanceof Error ? err.message : String(err)}`);
@@ -169,8 +183,14 @@ export function NewsWindow({ payload }: NewsWindowProps) {
             <Spinner className="py-8" label={zhCN.news.contentLoading} />
           ) : contentFailed ? (
             <p className="py-4 text-[length:var(--size-font-xs)] text-[var(--fg-muted)]">{zhCN.news.contentFailed}</p>
+          ) : isHtml ? (
+            <div
+              className="news-article select-text"
+              onClick={handleContentClick}
+              dangerouslySetInnerHTML={{ __html: content }}
+            />
           ) : (
-            <p className="whitespace-pre-wrap text-[length:var(--size-font-sm)] leading-relaxed text-[var(--fg-secondary)]">
+            <p className="select-text whitespace-pre-wrap text-[length:var(--size-font-sm)] leading-relaxed text-[var(--fg-secondary)]">
               {content}
             </p>
           )}

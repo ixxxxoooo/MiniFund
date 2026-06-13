@@ -38,30 +38,43 @@ func TestRollItemPattern(t *testing.T) {
 	}
 }
 
-// TestParseArticleContent 校验文章正文提取（取 #ContentBody 内 <p>，剔除引流广告段）。
-func TestParseArticleContent(t *testing.T) {
+// TestParseArticleHTML 校验文章正文清洗：保留股票超链接与正文图片，剔除引流广告段与开户引流图。
+func TestParseArticleHTML(t *testing.T) {
 	htmlDoc := `<html><body>
 		<div id="ContentBody">
+			<p style="display:none;height:1px;"><br/></p>
 			<p>　　在东方财富看资讯行情，选东方财富证券一站式开户交易&gt;&gt;</p>
-			<p>　　6月13日，景顺长城基金公告称，增聘基金经理孟棋。</p>
-			<p>　　Wind数据显示，管理规模10.74亿元。</p>
+			<p>　　多股异动，<span id="stock_1.688668"><a target="_blank" href="http://quote.eastmoney.com/unify/r/1.688668" class="keytip" data-code="1,688668">鼎通科技</a></span>快速拉升。</p>
+			<center><img src="https://np-newspic.dfcfw.com/download/x.jpg" width="580" /></center>
+			<p style="text-align:center;"><a href="https://acttg.eastmoney.com/pub/x"><img src="https://np-newspic.dfcfw.com/download/ad.jpg" class="em_handle_adv_close" /></a></p>
+			<p class="em_media">（文章来源：财联社）</p>
 		</div>
 	</body></html>`
-	text, err := parseArticleContent(htmlDoc)
+	out, err := parseArticleHTML(htmlDoc)
 	if err != nil {
 		t.Fatalf("解析正文失败: %v", err)
 	}
-	if strings.Contains(text, "一站式开户") {
-		t.Errorf("未剔除引流广告段: %q", text)
+	// 保留股票超链接（href 与链接文本）
+	if !strings.Contains(out, `href="http://quote.eastmoney.com/unify/r/1.688668"`) || !strings.Contains(out, "鼎通科技") {
+		t.Errorf("股票超链接未保留: %q", out)
 	}
-	if !strings.Contains(text, "景顺长城基金") || !strings.Contains(text, "Wind数据") {
-		t.Errorf("正文内容缺失: %q", text)
+	// 保留正文图片
+	if !strings.Contains(out, `<img src="https://np-newspic.dfcfw.com/download/x.jpg"`) {
+		t.Errorf("正文图片未保留: %q", out)
+	}
+	// 剔除引流广告段
+	if strings.Contains(out, "一站式开户") || strings.Contains(out, "文章来源") {
+		t.Errorf("未剔除引流广告段: %q", out)
+	}
+	// 剔除开户引流广告图与其链接
+	if strings.Contains(out, "acttg.eastmoney.com") || strings.Contains(out, "ad.jpg") {
+		t.Errorf("未剔除开户引流广告: %q", out)
 	}
 }
 
-// TestParseArticleContentMissing 无正文区域时应返回错误。
-func TestParseArticleContentMissing(t *testing.T) {
-	if _, err := parseArticleContent(`<html><body><div>无正文</div></body></html>`); err == nil {
+// TestParseArticleHTMLMissing 无正文区域时应返回错误。
+func TestParseArticleHTMLMissing(t *testing.T) {
+	if _, err := parseArticleHTML(`<html><body><div>无正文</div></body></html>`); err == nil {
 		t.Error("缺少 #ContentBody 时期望返回错误")
 	}
 }

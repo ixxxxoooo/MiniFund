@@ -368,6 +368,45 @@ select,
   }
 }
 
+/* ===== 资讯正文富文本（保留股票超链接与正文图片） ===== */
+@layer components {
+  .news-article {
+    font-size: var(--size-font-sm);
+    line-height: 1.75;
+    color: var(--fg-secondary);
+    word-break: break-word;
+  }
+  .news-article p {
+    margin-bottom: var(--size-gap);
+  }
+  .news-article p:last-child {
+    margin-bottom: 0;
+  }
+  /* 股票/板块等超链接：accent 色，可点击（由窗口拦截后用系统浏览器打开） */
+  .news-article a {
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .news-article a:hover {
+    text-decoration: underline;
+  }
+  /* 正文图片：自适应宽度、居中、带细边框圆角 */
+  .news-article img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin: var(--size-gap) auto;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
+  }
+  .news-article strong,
+  .news-article b {
+    font-weight: 600;
+    color: var(--fg);
+  }
+}
+
 /* 数值变化闪烁动画（估值刷新提示） */
 @keyframes quote-flash-up {
   0% { background-color: var(--quote-up-bg); }

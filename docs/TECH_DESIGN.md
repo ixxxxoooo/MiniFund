@@ -202,7 +202,7 @@ CREATE TABLE alert_log (id INTEGER PRIMARY KEY, rule_id INTEGER, fired_at INTEGE
 
 - 前端单一构建产物，`main.tsx` 读取 `location.hash` 决定渲染 `windows/` 下哪个根组件；窗口间不共享 React 状态，各自订阅 Go 事件保证一致。
 - `window_service.go` 提供 `OpenDetailWindow(code)`、`OpenNewsWindow(id, payload)`、`ShowMainWindow()`、`ToggleTrayPanel()`，统一管理窗口实例 map（带互斥锁），关闭即从 map 删除。
-- 新闻详情不再用页内弹窗：快讯按其 `id` 推导文章页 `https://finance.eastmoney.com/a/{id}.html` 尝试抓取完整正文（抓取失败回退短讯），资讯抓取 `roll` 文章正文；二者均在独立窗口展示并提供 AI 解读与原文链接。
+- 新闻详情不再用页内弹窗：快讯按其 `id` 推导文章页 `https://finance.eastmoney.com/a/{id}.html` 尝试抓取完整正文（抓取失败回退短讯），资讯抓取 `roll` 文章正文；二者均在独立窗口展示并提供 AI 解读与原文链接。正文由 `parseArticleHTML` 清洗为**白名单 HTML**（保留股票超链接 `<a>` 与正文图片 `<img>`），窗口以 `.news-article` 富文本渲染，**点击正文超链接经 `onClick` 拦截后用系统浏览器打开**（`Browser.OpenURL`），AI 解读前由前端去标签取纯文本。
 
 ### 6.2 窗口生命周期
 
@@ -248,7 +248,7 @@ GetIndexQuotes() / SetWatchedIndexes(symbols) / GetSectorList(kind string)
 GetFlashNews() ([]NewsFlash, error)         // 最近一轮快讯快照（来自调度器缓存，后续靠 news:flash 事件推送）
 RefreshFlashNews() error                    // 手动触发一轮快讯拉取
 GetRollNews() ([]NewsArticle, error)        // 基金滚动资讯列表（60s 缓存）
-GetArticleContent(url string) (string, error) // 抓取文章 #ContentBody 正文（30 分钟缓存）
+GetArticleContent(url string) (string, error) // 抓取文章 #ContentBody 正文，清洗为白名单 HTML（保留超链接与图片，30 分钟缓存）
 
 // AIService（OpenAI 兼容；外部请求收敛于 internal/datasource/ai）
 Available() (bool, error)                   // AI 是否启用且配置完整
