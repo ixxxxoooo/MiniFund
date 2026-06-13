@@ -25,6 +25,8 @@ export const zhCN = {
     klineFailed: "K 线加载失败，请稍后重试",
     quoteEmpty: "暂无指数行情",
     updatedAt: "更新于 {time}",
+    stat: { open: "今开", high: "最高", low: "最低", volume: "成交量" },
+    selectHint: "请选择左侧指数查看 K 线",
   },
   news: {
     tabs: { flash: "全球快讯", roll: "基金资讯" },

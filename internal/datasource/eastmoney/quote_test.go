@@ -29,7 +29,7 @@ func TestMarketCenterIndexesRegistry(t *testing.T) {
 		t.Fatal("指数清单不应为空")
 	}
 	for _, m := range MarketCenterIndexes {
-		if m.Secid == "" || m.Name == "" || m.Group == "" {
+		if m.Secid == "" || m.Tencent == "" || m.Name == "" || m.Group == "" {
 			t.Errorf("指数元信息字段缺失: %+v", m)
 		}
 		if n := len(m.Secid); n < 3 || m.Secid[1] != '.' && m.Secid[2] != '.' && m.Secid[3] != '.' {

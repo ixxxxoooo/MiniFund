@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"minifund/internal/datasource/eastmoney"
+	"minifund/internal/datasource/tencent"
 	"minifund/internal/model"
 	"minifund/internal/scheduler"
 )
@@ -76,21 +77,50 @@ func (s *MarketService) GetSectors(kind string) ([]model.SectorItem, error) {
 }
 
 // GetMarketCenterQuotes 拉取行情中心指数清单实时报价（5s 内存缓存，合并多窗口/多次事件触发的重复请求）。
+// 主源腾讯（稳定，A股/港股/美股全覆盖），失败回退东财 ulist.np。
 func (s *MarketService) GetMarketCenterQuotes() ([]model.MarketIndexQuote, error) {
 	if v, ok := s.quoteCache.get("center-quotes"); ok {
 		return v.([]model.MarketIndexQuote), nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	list, err := eastmoney.FetchMarketCenterQuotes(ctx)
-	if err != nil {
-		return nil, err
+
+	syms := make([]string, 0, len(eastmoney.MarketCenterIndexes))
+	for _, m := range eastmoney.MarketCenterIndexes {
+		syms = append(syms, m.Tencent)
 	}
-	s.quoteCache.set("center-quotes", list)
-	return list, nil
+	quotes, err := tencent.Source{}.FetchIndexQuotes(ctx, syms)
+	if err != nil {
+		// 腾讯失败时回退东财，仍失败才向上报错。
+		list, eerr := eastmoney.FetchMarketCenterQuotes(ctx)
+		if eerr != nil {
+			return nil, err
+		}
+		s.quoteCache.set("center-quotes", list)
+		return list, nil
+	}
+
+	bySym := make(map[string]model.IndexQuote, len(quotes))
+	for _, q := range quotes {
+		bySym[q.Symbol] = q
+	}
+	// 按清单顺序输出，保证分组展示稳定；缺失项占位展示名称。
+	out := make([]model.MarketIndexQuote, 0, len(eastmoney.MarketCenterIndexes))
+	for _, m := range eastmoney.MarketCenterIndexes {
+		mq := model.MarketIndexQuote{Secid: m.Secid, Name: m.Name, Group: m.Group}
+		if q, ok := bySym[m.Tencent]; ok {
+			mq.Price = q.Price
+			mq.Change = q.Change
+			mq.ChangePercent = q.ChangePercent
+		}
+		out = append(out, mq)
+	}
+	s.quoteCache.set("center-quotes", out)
+	return out, nil
 }
 
 // GetIndexKline 按指数 secid 与周期（day/week/month）拉取 K 线（60s 内存缓存）。
+// 主源腾讯（A股/港股可取完整历史）；美股/北证 50 腾讯仅返回最新一根，自动回退东财 push2his。
 func (s *MarketService) GetIndexKline(secid, period string) ([]model.Kline, error) {
 	klt, ok := klinePeriods[period]
 	if !ok {
@@ -107,9 +137,23 @@ func (s *MarketService) GetIndexKline(secid, period string) ([]model.Kline, erro
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	list, err := eastmoney.FetchIndexKline(ctx, secid, klt, limit)
-	if err != nil {
-		return nil, err
+
+	meta, _ := eastmoney.FindIndexBySecid(secid)
+
+	var list []model.Kline
+	if meta.Tencent != "" {
+		if kl, err := tencent.Source{}.FetchIndexKline(ctx, meta.Tencent, period, limit); err == nil && len(kl) >= 2 {
+			list = kl
+		}
+	}
+	// 腾讯不足两根（美股/北证 50 历史缺失或腾讯失败）时回退东财。
+	if len(list) < 2 {
+		if kl, err := eastmoney.FetchIndexKline(ctx, secid, klt, limit); err == nil && len(kl) >= 2 {
+			list = kl
+		}
+	}
+	if len(list) < 2 {
+		return nil, fmt.Errorf("该指数历史 K 线暂不可用（数据源限制），请稍后重试")
 	}
 	s.cache.set(key, list)
 	return list, nil

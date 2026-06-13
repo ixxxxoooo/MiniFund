@@ -75,7 +75,8 @@ export function NewsWindow({ payload }: NewsWindowProps) {
     const unsubs = [
       onAIChunk((p) => {
         if (p.id !== streamIdRef.current) return;
-        setAiText((prev) => prev + p.delta);
+        // 载荷为累计全文：取更长者，避免乱序到达的较短旧帧回退覆盖新帧。
+        setAiText((prev) => (p.text.length >= prev.length ? p.text : prev));
       }),
       onAIDone((p) => {
         if (p.id !== streamIdRef.current) return;

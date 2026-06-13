@@ -135,12 +135,12 @@ stateDiagram-v2
 | `monitor:state` | `{phase, nextChange, paused}` | 时段状态切换/暂停恢复 |
 | `datasource:degraded` | `{source, reason}` | 熔断/降级发生与恢复 |
 | `news:flash` | `NewsFlash[]` | 每轮快讯拉取完成（推送最新列表） |
-| `ai:chunk` | `{id, delta}` | AI 流式解读增量片段（`id` 为前端生成的会话 ID） |
+| `ai:chunk` | `{id, text}` | AI 流式解读「累计全文」（每次为截至当前的完整文本，前端取最长者；`id` 为前端生成的会话 ID） |
 | `ai:done` | `{id}` | AI 流式解读完成 |
 | `ai:error` | `{id, message}` | AI 流式解读失败 |
 
 - 使用 Wails3 `application.RegisterEvent[T]` 注册强类型事件（对齐 MiniDB updater 的做法）；前端在 `lib/wails/events.ts` 统一封装订阅。
-- **AI 流式解读**：`AIService.InterpretNewsStream(streamID, title, content)` 立即返回并在后台 goroutine 中以 SSE 读取大模型增量（`ai.ChatStream`），按 `streamID` 经上述 `ai:*` 事件推送；前端按 `streamID` 过滤后增量拼接并实时 Markdown 渲染。`AIService` 经 `SetApp` 注入 `*application.App` 以发事件。
+- **AI 流式解读**：`AIService.InterpretNewsStream(streamID, title, content)` 立即返回并在后台 goroutine 中以 SSE 读取大模型增量（`ai.ChatStream`）。后台 goroutine 将增量累计为「全文」，按 `streamID` 经 `ai:chunk` 事件推送**累计全文**（节流 60ms，收尾必补发一次完整文本）。前端按 `streamID` 过滤、取最长文本渲染——因 Wails 高频事件投递不保证顺序，按「增量片段」拼接会乱序串字，改推「累计全文 + 取最长」即可免疫乱序。`AIService` 经 `SetApp` 注入 `*application.App` 以发事件。
 - **财经快讯轮询**：调度器在主循环按 `SettingsProvider.NewsPollInterval()`（默认 60s，最小 30s）定时执行 `runNewsRound`，**独立于交易时段与暂停状态**。每轮拉取后广播 `news:flash`，并以 `settings.news_last_id` 游标判断新增条目；存在新增且开启「快讯桌面通知」时，经注入的 `newsNotify` 回调调用 Wails 通知服务（`pkg/services/notifications`）弹系统通知，首轮与重启后不补推历史。手动刷新经 `RefreshNewsNow()`（独立 channel）触发。
 
 ## 5. 本地存储（internal/storage，SQLite）
@@ -247,8 +247,8 @@ GetSummary() (*PortfolioSummary, error)   // 总市值/当日预估/累计收益
 
 // MarketService
 GetIndexQuotes() / SetWatchedIndexes(symbols) / GetSectorList(kind string)
-GetMarketCenterQuotes() ([]MarketIndexQuote, error)        // 行情中心指数清单批量实时（东财 ulist.np，5s 缓存）
-GetIndexKline(secid, period string) ([]Kline, error)        // 指数 K 线（东财 push2his；period: day/week/month，60s 缓存）
+GetMarketCenterQuotes() ([]MarketIndexQuote, error)        // 行情中心指数清单批量实时（腾讯主源，东财 ulist.np 兜底，5s 缓存）
+GetIndexKline(secid, period string) ([]Kline, error)        // 指数 K 线（腾讯主源；美股/北证 50 回退东财 push2his；period: day/week/month，60s 缓存）
 
 // NewsService
 GetFlashNews() ([]NewsFlash, error)         // 最近一轮快讯快照（来自调度器缓存，后续靠 news:flash 事件推送）

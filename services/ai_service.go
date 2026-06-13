@@ -14,10 +14,14 @@ import (
 
 // AI 流式解读事件名（与前端 lib/wails/events.ts 保持一致）。
 const (
-	EventAIChunk = "ai:chunk" // 增量文本片段：{ id, delta }
+	EventAIChunk = "ai:chunk" // 累计全文：{ id, text }
 	EventAIDone  = "ai:done"  // 解读完成：{ id }
 	EventAIError = "ai:error" // 解读失败：{ id, message }
 )
+
+// aiStreamFlushInterval 流式推送节流间隔：每个增量都重发「累计全文」，
+// 但节流到该间隔，避免逐字模型产生过多事件；收尾必定补发一次完整文本。
+const aiStreamFlushInterval = 60 * time.Millisecond
 
 // AI 解读统一系统提示词：要求 Markdown 结构化输出，便于前端渲染。
 const aiInterpretSystemPrompt = "你是专业的财经分析助手。请用简洁的中文、以 Markdown 格式解读下面这条财经新闻：" +
@@ -92,10 +96,27 @@ func (s *AIService) InterpretNewsStream(streamID, title, content string) error {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
+
+		// 关键修复：Wails 高频事件投递不保证顺序，按「增量片段」拼接会乱序串字。
+		// 改为每次推送「累计全文」，前端只取最长文本即可，天然免疫乱序与重复。
+		var full strings.Builder
+		var lastFlush time.Time
+		emitFull := func() {
+			s.app.Event.Emit(EventAIChunk, map[string]string{"id": streamID, "text": full.String()})
+		}
+
 		err := ai.ChatStream(ctx, ai.Config{BaseURL: base, APIKey: key, Model: mdl}, aiInterpretSystemPrompt, user,
 			func(delta string) {
-				s.app.Event.Emit(EventAIChunk, map[string]string{"id": streamID, "delta": delta})
+				full.WriteString(delta)
+				if now := time.Now(); now.Sub(lastFlush) >= aiStreamFlushInterval {
+					lastFlush = now
+					emitFull()
+				}
 			})
+		// 无论成功或失败，先补发已累计的完整文本，避免节流吞掉最后一段或保留已生成内容。
+		if full.Len() > 0 {
+			emitFull()
+		}
 		if err != nil {
 			logger.Warn("AI 流式解读失败: %v", err)
 			s.app.Event.Emit(EventAIError, map[string]string{"id": streamID, "message": err.Error()})

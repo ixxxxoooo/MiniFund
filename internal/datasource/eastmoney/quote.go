@@ -11,30 +11,41 @@ import (
 	"minifund/internal/model"
 )
 
-// IndexMeta 行情中心指数元信息（名称、分组与东财 secid）。
+// IndexMeta 行情中心指数元信息（名称、分组、东财 secid 与腾讯符号）。
 type IndexMeta struct {
-	Secid string // 东财证券 id：市场.代码（1=上证 0=深证/北证 100=港美国际指数）
-	Name  string
-	Group string
+	Secid   string // 东财证券 id：市场.代码（1=上证 0=深证/北证 100=港美国际指数）；K 线兜底源
+	Tencent string // 腾讯符号（如 sh000001 / hkHSI / usDJI）；实时报价与 A股/港股 K 线主源
+	Name    string
+	Group   string
 }
 
 // MarketCenterIndexes 行情中心展示的常见指数清单（A股 / 港股 / 美股）。
-// 全部 secid 均已实测可经 ulist.np 实时报价与 push2his K 线访问。
+// 实时报价统一走腾讯（稳定，覆盖全部）；K 线 A股/港股走腾讯，美股/北证 50 走东财 push2his 兜底。
 var MarketCenterIndexes = []IndexMeta{
-	{"1.000001", "上证指数", "A股"},
-	{"0.399001", "深证成指", "A股"},
-	{"0.399006", "创业板指", "A股"},
-	{"1.000688", "科创50", "A股"},
-	{"0.899050", "北证50", "A股"},
-	{"1.000300", "沪深300", "A股"},
-	{"1.000016", "上证50", "A股"},
-	{"1.000905", "中证500", "A股"},
-	{"1.000852", "中证1000", "A股"},
-	{"100.HSI", "恒生指数", "港股"},
-	{"100.HSCEI", "国企指数", "港股"},
-	{"100.DJIA", "道琼斯", "美股"},
-	{"100.NDX", "纳斯达克", "美股"},
-	{"100.SPX", "标普500", "美股"},
+	{"1.000001", "sh000001", "上证指数", "A股"},
+	{"0.399001", "sz399001", "深证成指", "A股"},
+	{"0.399006", "sz399006", "创业板指", "A股"},
+	{"1.000688", "sh000688", "科创50", "A股"},
+	{"0.899050", "bj899050", "北证50", "A股"},
+	{"1.000300", "sh000300", "沪深300", "A股"},
+	{"1.000016", "sh000016", "上证50", "A股"},
+	{"1.000905", "sh000905", "中证500", "A股"},
+	{"1.000852", "sh000852", "中证1000", "A股"},
+	{"100.HSI", "hkHSI", "恒生指数", "港股"},
+	{"100.HSCEI", "hkHSCEI", "国企指数", "港股"},
+	{"100.DJIA", "usDJI", "道琼斯", "美股"},
+	{"100.NDX", "usIXIC", "纳斯达克", "美股"},
+	{"100.SPX", "usINX", "标普500", "美股"},
+}
+
+// FindIndexBySecid 按 secid 查找行情中心指数元信息（服务层做主源/兜底切换用）。
+func FindIndexBySecid(secid string) (IndexMeta, bool) {
+	for _, m := range MarketCenterIndexes {
+		if m.Secid == secid {
+			return m, true
+		}
+	}
+	return IndexMeta{}, false
 }
 
 // 行情中心接口 Referer（缺省 UA 也能取，但带 Referer 更接近浏览器，降低被反爬概率）。

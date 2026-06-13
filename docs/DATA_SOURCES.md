@@ -228,33 +228,41 @@ Header: Referer: https://finance.sina.com.cn/
 
 上证指数（sh000001）、深证成指（sz399001）、创业板指（sz399006）、沪深300（sh000300）、恒生指数（hkHSI）、纳斯达克（usIXIC）、标普500（usINX）。用户可在设置中增删。
 
-### 3.4 行情中心（东财 `push2his` K 线 + `ulist.np` 实时）
+### 3.4 行情中心（腾讯主源 + 东财兜底）
 
-行情中心展示常见 A 股/港股/美股指数清单及选中指数的 K 线，统一使用东财 `secid`（`市场.代码`，1=上证 / 0=深证·北证 / 100=港美国际指数）。实现见 `internal/datasource/eastmoney/quote.go`。
+行情中心展示常见 A 股/港股/美股指数清单及选中指数的 K 线。指数清单（含东财 `secid` 与腾讯符号的映射）硬编码在 `internal/datasource/eastmoney/quote.go` 的 `MarketCenterIndexes`；服务层 `MarketService` 负责「腾讯主源 / 东财兜底」的切换。
 
-**指数清单（硬编码，已实测可达）**：上证指数 `1.000001`、深证成指 `0.399001`、创业板指 `0.399006`、科创50 `1.000688`、北证50 `0.899050`、沪深300 `1.000300`、上证50 `1.000016`、中证500 `1.000905`、中证1000 `1.000852`、恒生指数 `100.HSI`、国企指数 `100.HSCEI`、道琼斯 `100.DJIA`、纳斯达克 `100.NDX`、标普500 `100.SPX`。
+> ⚠️ **重要：东财 `push2`/`push2his` 域名对非浏览器客户端会被指纹拦截**（连接直接关闭、返回空响应；高频访问后整段时间不可用）。因此行情中心**实时报价与 A 股/港股 K 线一律走腾讯**（与全局指数行情同源，稳定），**仅美股、北证 50 的历史 K 线**（腾讯不提供完整历史）回退东财 `push2his`。
 
-**批量实时报价**：
+**指数清单（secid ↔ 腾讯符号）**：上证 `1.000001`/`sh000001`、深证成指 `0.399001`/`sz399001`、创业板指 `0.399006`/`sz399006`、科创50 `1.000688`/`sh000688`、北证50 `0.899050`/`bj899050`、沪深300 `1.000300`/`sh000300`、上证50 `1.000016`/`sh000016`、中证500 `1.000905`/`sh000905`、中证1000 `1.000852`/`sh000852`、恒生 `100.HSI`/`hkHSI`、国企 `100.HSCEI`/`hkHSCEI`、道琼斯 `100.DJIA`/`usDJI`、纳斯达克 `100.NDX`/`usIXIC`、标普500 `100.SPX`/`usINX`。
+
+**批量实时报价（主源：腾讯 `qt.gtimg.cn`）**：
 
 ```
-GET https://push2.eastmoney.com/api/qt/ulist.np/get?secids=1.000001,100.NDX,...&fields=f2,f3,f4,f12,f13,f14&fltt=2
+GET https://qt.gtimg.cn/q=s_sh000001,s_hkHSI,s_usDJI,...
+```
+
+- 复用 `tencent.Source.FetchIndexQuotes`（GBK 文本，`~` 分隔，取名称/点位/涨跌点/涨跌幅）；一次请求返回全部指数。
+- 后端 5s 内存缓存合并多窗口/多次事件触发的重复请求；按清单顺序输出并补名称占位。
+- 兜底：腾讯整体失败时回退东财 `ulist.np`（`https://push2.eastmoney.com/api/qt/ulist.np/get?secids=...&fields=f2,f3,f4,f12,f13,f14`），仍失败才报错。
+
+**K 线（主源：腾讯 `web.ifzq.gtimg.cn`）**：
+
+```
+GET https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000001,day,,,240,qfq
+```
+
+- 实现见 `internal/datasource/tencent/kline.go` 的 `FetchIndexKline`。`param=代码,周期,起,止,条数,复权`，周期 `day`/`week`/`month`。
+- 响应 `data.{代码}.{周期}` 为二维数组，每行 `[日期, 开, 收, 高, 低, 量, ...]`；指数无复权概念，涨跌幅由相邻收盘价推算，成交额腾讯不提供置 0。
+- A 股/港股可取完整历史；**美股、北证 50 腾讯仅返回最新一根**（≤1 条），此时自动回退东财 `push2his`：
+
+```
+GET https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=100.NDX&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&end=20500101&lmt=240
 Referer: https://quote.eastmoney.com/center/
 ```
 
-- `data.diff[]`：`f2` 最新价、`f3` 涨跌幅(%)、`f4` 涨跌点、`f12` 代码、`f13` 市场、`f14` 名称（`secid = f13.f12`）。
-- 一次请求返回全部指数实时，避免逐只请求；后端 5s 内存缓存合并多窗口/多次事件触发的重复请求。
-- ⚠️ 同域名的 `clist/get`（列表枚举接口）对非浏览器客户端会被指纹拦截（空响应），故清单**硬编码**而非枚举；`ulist.np`（指定 secids）实测可达。
-
-**K 线**：
-
-```
-GET https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.000001&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&end=20500101&lmt=240
-Referer: https://quote.eastmoney.com/center/
-```
-
-- `data.klines[]` 每行 `日期,开,收,高,低,量,额,涨跌幅`。
-- `klt`：101 日 / 102 周 / 103 月（分钟级 1/5/15/30/60 同样可用）；A 股/港股/美股指数均可取。
-- 后端 60s 内存缓存（按 `secid + 周期` 维度）；K 线为按需请求（用户选中指数/切换周期时拉取），不进入调度器周期轮询。
+- 切换逻辑（`MarketService.GetIndexKline`）：腾讯 → 不足 2 根则东财 → 仍不足 2 根返回「该指数历史 K 线暂不可用」。东财被拦截期间美股/北证 50 可能短暂不可用，A 股/港股不受影响。
+- `klt`：101 日 / 102 周 / 103 月。后端 60s 内存缓存（按 `secid + 周期` 维度）；K 线按需请求（选中指数/切换周期时拉取），不进入调度器轮询。
 
 ## 4. 限频、缓存与降级策略
 

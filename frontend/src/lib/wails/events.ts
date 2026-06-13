@@ -63,10 +63,10 @@ export function onNewsFlash(cb: (data: NewsFlash[]) => void): () => void {
   return EventsOn("news:flash", cb);
 }
 
-/** AI 流式增量片段载荷 */
+/** AI 流式累计全文载荷（每次推送均为「截至当前的完整文本」，前端取最长即可，免疫乱序） */
 export interface AIChunkPayload {
   id: string;
-  delta: string;
+  text: string;
 }
 
 /** AI 流式完成载荷 */
