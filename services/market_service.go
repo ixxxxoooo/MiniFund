@@ -13,15 +13,29 @@ import (
 // 板块/主题列表内存缓存时效（页面可见才请求，60s 足够新鲜并大幅提速）。
 const marketCacheTTL = 60 * time.Second
 
+// 行情中心指数实时报价缓存时效：偏短以保证盘中刷新及时，又能合并多窗口/多次事件触发的重复请求。
+const indexQuoteCacheTTL = 5 * time.Second
+
+// klinePeriods 行情中心 K 线周期键 → 东财 klt 编码。
+var klinePeriods = map[string]int{
+	"day":   101, // 日 K
+	"week":  102, // 周 K
+	"month": 103, // 月 K
+}
+
 // MarketService 市场行情服务：指数、板块、监控状态控制。
 type MarketService struct {
-	sched *scheduler.Scheduler
-	cache *ttlCache
+	sched      *scheduler.Scheduler
+	cache      *ttlCache
+	quoteCache *ttlCache
 }
 
 // NewMarketService 创建市场行情服务。
 func NewMarketService() *MarketService {
-	return &MarketService{cache: newTTLCache(marketCacheTTL)}
+	return &MarketService{
+		cache:      newTTLCache(marketCacheTTL),
+		quoteCache: newTTLCache(indexQuoteCacheTTL),
+	}
 }
 
 // SetScheduler 注入调度器（装配时调用，不暴露给前端使用）。
@@ -54,6 +68,46 @@ func (s *MarketService) GetSectors(kind string) ([]model.SectorItem, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	list, err := eastmoney.FetchSectors(ctx, kind)
+	if err != nil {
+		return nil, err
+	}
+	s.cache.set(key, list)
+	return list, nil
+}
+
+// GetMarketCenterQuotes 拉取行情中心指数清单实时报价（5s 内存缓存，合并多窗口/多次事件触发的重复请求）。
+func (s *MarketService) GetMarketCenterQuotes() ([]model.MarketIndexQuote, error) {
+	if v, ok := s.quoteCache.get("center-quotes"); ok {
+		return v.([]model.MarketIndexQuote), nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	list, err := eastmoney.FetchMarketCenterQuotes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s.quoteCache.set("center-quotes", list)
+	return list, nil
+}
+
+// GetIndexKline 按指数 secid 与周期（day/week/month）拉取 K 线（60s 内存缓存）。
+func (s *MarketService) GetIndexKline(secid, period string) ([]model.Kline, error) {
+	klt, ok := klinePeriods[period]
+	if !ok {
+		klt = klinePeriods["day"]
+		period = "day"
+	}
+	limit := 240
+	if period == "month" {
+		limit = 120
+	}
+	key := fmt.Sprintf("kline|%s|%s", secid, period)
+	if v, ok := s.cache.get(key); ok {
+		return v.([]model.Kline), nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	list, err := eastmoney.FetchIndexKline(ctx, secid, klt, limit)
 	if err != nil {
 		return nil, err
 	}

@@ -70,6 +70,7 @@ func (c *core) startup(wailsApp *application.App) {
 	c.PortfolioSvc.SetDetailProvider(c.FundSvc.GetFundDetail)
 	c.MarketSvc.SetScheduler(c.Scheduler)
 	c.NewsSvc.SetScheduler(c.Scheduler)
+	c.AISvc.SetApp(wailsApp)
 	c.SettingsSvc.SetOnChange(c.Scheduler.RefreshNow)
 
 	// 快讯桌面通知：调度器检测到新快讯时回调，封装 Wails 通知服务

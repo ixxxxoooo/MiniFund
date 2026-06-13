@@ -3,6 +3,7 @@
 package ai
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -96,4 +97,93 @@ func Chat(ctx context.Context, cfg Config, system, user string) (string, error) 
 		return "", fmt.Errorf("AI 未返回结果")
 	}
 	return strings.TrimSpace(parsed.Choices[0].Message.Content), nil
+}
+
+// streamChunk 流式响应的单个 SSE 数据块（OpenAI 兼容 delta 协议）。
+type streamChunk struct {
+	Choices []struct {
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
+	} `json:"choices"`
+	Error *struct {
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// ChatStream 发起一次流式对话补全，按 SSE 增量回调 onDelta（每次传入新增文本片段）。
+// 返回 nil 表示正常读到流结束（data: [DONE]）。
+func ChatStream(ctx context.Context, cfg Config, system, user string, onDelta func(string)) error {
+	if strings.TrimSpace(cfg.BaseURL) == "" || strings.TrimSpace(cfg.APIKey) == "" || strings.TrimSpace(cfg.Model) == "" {
+		return fmt.Errorf("AI 未配置：请在设置中填写服务地址、密钥与模型")
+	}
+	endpoint := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/") + "/chat/completions"
+
+	reqBody, err := json.Marshal(chatRequest{
+		Model: cfg.Model,
+		Messages: []chatMessage{
+			{Role: "system", Content: system},
+			{Role: "user", Content: user},
+		},
+		Temperature: 0.3,
+		Stream:      true,
+	})
+	if err != nil {
+		return fmt.Errorf("构造 AI 请求失败: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(reqBody))
+	if err != nil {
+		return fmt.Errorf("构造 AI 请求失败: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(cfg.APIKey))
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := aiClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("AI 请求失败: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		// 非 200 时多为 JSON 错误体，读出错误信息便于前端展示。
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		var parsed chatResponse
+		if json.Unmarshal(data, &parsed) == nil && parsed.Error != nil && parsed.Error.Message != "" {
+			return fmt.Errorf("AI 服务返回错误: %s", parsed.Error.Message)
+		}
+		return fmt.Errorf("AI 服务状态码异常: %d", resp.StatusCode)
+	}
+
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadString('\n')
+		if len(line) > 0 {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "data:") {
+				payload := strings.TrimSpace(line[len("data:"):])
+				if payload == "[DONE]" {
+					return nil
+				}
+				var chunk streamChunk
+				if json.Unmarshal([]byte(payload), &chunk) == nil {
+					if chunk.Error != nil && chunk.Error.Message != "" {
+						return fmt.Errorf("AI 服务返回错误: %s", chunk.Error.Message)
+					}
+					if len(chunk.Choices) > 0 {
+						if delta := chunk.Choices[0].Delta.Content; delta != "" {
+							onDelta(delta)
+						}
+					}
+				}
+			}
+		}
+		if err != nil {
+			if err == io.EOF {
+				return nil
+			}
+			return fmt.Errorf("读取 AI 流式响应失败: %w", err)
+		}
+	}
 }

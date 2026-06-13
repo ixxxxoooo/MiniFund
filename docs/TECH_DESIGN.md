@@ -135,8 +135,12 @@ stateDiagram-v2
 | `monitor:state` | `{phase, nextChange, paused}` | 时段状态切换/暂停恢复 |
 | `datasource:degraded` | `{source, reason}` | 熔断/降级发生与恢复 |
 | `news:flash` | `NewsFlash[]` | 每轮快讯拉取完成（推送最新列表） |
+| `ai:chunk` | `{id, delta}` | AI 流式解读增量片段（`id` 为前端生成的会话 ID） |
+| `ai:done` | `{id}` | AI 流式解读完成 |
+| `ai:error` | `{id, message}` | AI 流式解读失败 |
 
 - 使用 Wails3 `application.RegisterEvent[T]` 注册强类型事件（对齐 MiniDB updater 的做法）；前端在 `lib/wails/events.ts` 统一封装订阅。
+- **AI 流式解读**：`AIService.InterpretNewsStream(streamID, title, content)` 立即返回并在后台 goroutine 中以 SSE 读取大模型增量（`ai.ChatStream`），按 `streamID` 经上述 `ai:*` 事件推送；前端按 `streamID` 过滤后增量拼接并实时 Markdown 渲染。`AIService` 经 `SetApp` 注入 `*application.App` 以发事件。
 - **财经快讯轮询**：调度器在主循环按 `SettingsProvider.NewsPollInterval()`（默认 60s，最小 30s）定时执行 `runNewsRound`，**独立于交易时段与暂停状态**。每轮拉取后广播 `news:flash`，并以 `settings.news_last_id` 游标判断新增条目；存在新增且开启「快讯桌面通知」时，经注入的 `newsNotify` 回调调用 Wails 通知服务（`pkg/services/notifications`）弹系统通知，首轮与重启后不补推历史。手动刷新经 `RefreshNewsNow()`（独立 channel）触发。
 
 ## 5. 本地存储（internal/storage，SQLite）
@@ -243,6 +247,8 @@ GetSummary() (*PortfolioSummary, error)   // 总市值/当日预估/累计收益
 
 // MarketService
 GetIndexQuotes() / SetWatchedIndexes(symbols) / GetSectorList(kind string)
+GetMarketCenterQuotes() ([]MarketIndexQuote, error)        // 行情中心指数清单批量实时（东财 ulist.np，5s 缓存）
+GetIndexKline(secid, period string) ([]Kline, error)        // 指数 K 线（东财 push2his；period: day/week/month，60s 缓存）
 
 // NewsService
 GetFlashNews() ([]NewsFlash, error)         // 最近一轮快讯快照（来自调度器缓存，后续靠 news:flash 事件推送）
@@ -252,7 +258,9 @@ GetArticleContent(url string) (string, error) // 抓取文章 #ContentBody 正�
 
 // AIService（OpenAI 兼容；外部请求收敛于 internal/datasource/ai）
 Available() (bool, error)                   // AI 是否启用且配置完整
-InterpretNews(title, content string) (string, error) // 对单条新闻做解读
+InterpretNews(title, content string) (string, error)        // 对单条新闻做解读（非流式，兜底）
+InterpretNewsStream(streamID, title, content string) error  // 流式解读：经 ai:chunk/done/error 事件推送增量
+SetApp(app *application.App)                // 注入 Wails 实例以发流式事件（装配时调用）
 
 // SettingsService
 Get() (*AppSettings, error) / Update(patch AppSettings) error
@@ -275,7 +283,8 @@ OpenDetailWindow(code) / OpenNewsWindow(id, payload) / ShowMainWindow() / HideMa
 | `watchlist` | 分组与自选列表 + 实时估值合并视图 | Go SQLite |
 | `portfolio` | 持仓与盈亏汇总 | Go SQLite |
 | `market` | 指数、板块、监控状态（phase） | 否（事件驱动） |
-| `ui` | 面板开关、选中项、金额隐藏开关 | localStorage（部分） |
+| `marketCenter` | 行情中心指数清单 + 选中指数 K 线（借 `market:indexes` 事件驱动列表刷新，K 线按需拉取） | 否（事件驱动 + 按需） |
+| `ui` | 面板开关、选中项、金额隐藏开关（含主窗口当前页，默认「行情中心」） | localStorage（部分） |
 | `columns` | 各表格（排行/主题基金）列显隐配置 | localStorage |
 
 - 数据流约定：**写操作一律调用 bindings → Go 落库 → Go 发事件 → 各窗口 store 更新**，禁止前端先改本地再同步（避免多窗口状态漂移）。

@@ -228,6 +228,34 @@ Header: Referer: https://finance.sina.com.cn/
 
 上证指数（sh000001）、深证成指（sz399001）、创业板指（sz399006）、沪深300（sh000300）、恒生指数（hkHSI）、纳斯达克（usIXIC）、标普500（usINX）。用户可在设置中增删。
 
+### 3.4 行情中心（东财 `push2his` K 线 + `ulist.np` 实时）
+
+行情中心展示常见 A 股/港股/美股指数清单及选中指数的 K 线，统一使用东财 `secid`（`市场.代码`，1=上证 / 0=深证·北证 / 100=港美国际指数）。实现见 `internal/datasource/eastmoney/quote.go`。
+
+**指数清单（硬编码，已实测可达）**：上证指数 `1.000001`、深证成指 `0.399001`、创业板指 `0.399006`、科创50 `1.000688`、北证50 `0.899050`、沪深300 `1.000300`、上证50 `1.000016`、中证500 `1.000905`、中证1000 `1.000852`、恒生指数 `100.HSI`、国企指数 `100.HSCEI`、道琼斯 `100.DJIA`、纳斯达克 `100.NDX`、标普500 `100.SPX`。
+
+**批量实时报价**：
+
+```
+GET https://push2.eastmoney.com/api/qt/ulist.np/get?secids=1.000001,100.NDX,...&fields=f2,f3,f4,f12,f13,f14&fltt=2
+Referer: https://quote.eastmoney.com/center/
+```
+
+- `data.diff[]`：`f2` 最新价、`f3` 涨跌幅(%)、`f4` 涨跌点、`f12` 代码、`f13` 市场、`f14` 名称（`secid = f13.f12`）。
+- 一次请求返回全部指数实时，避免逐只请求；后端 5s 内存缓存合并多窗口/多次事件触发的重复请求。
+- ⚠️ 同域名的 `clist/get`（列表枚举接口）对非浏览器客户端会被指纹拦截（空响应），故清单**硬编码**而非枚举；`ulist.np`（指定 secids）实测可达。
+
+**K 线**：
+
+```
+GET https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=1.000001&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&end=20500101&lmt=240
+Referer: https://quote.eastmoney.com/center/
+```
+
+- `data.klines[]` 每行 `日期,开,收,高,低,量,额,涨跌幅`。
+- `klt`：101 日 / 102 周 / 103 月（分钟级 1/5/15/30/60 同样可用）；A 股/港股/美股指数均可取。
+- 后端 60s 内存缓存（按 `secid + 周期` 维度）；K 线为按需请求（用户选中指数/切换周期时拉取），不进入调度器周期轮询。
+
 ## 4. 限频、缓存与降级策略
 
 ### 4.1 限频规则（写入 datasource 层，硬约束）

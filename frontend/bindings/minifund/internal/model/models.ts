@@ -561,6 +561,89 @@ export class IndexQuote {
 }
 
 /**
+ * Kline 指数 K 线数据点（来自东财 push2his）。
+ */
+export class Kline {
+    /**
+     * 日期（日/周/月为 yyyy-MM-dd；分钟为 yyyy-MM-dd HH:mm）
+     */
+    "date": string;
+
+    /**
+     * 开盘
+     */
+    "open": number;
+
+    /**
+     * 收盘
+     */
+    "close": number;
+
+    /**
+     * 最高
+     */
+    "high": number;
+
+    /**
+     * 最低
+     */
+    "low": number;
+
+    /**
+     * 成交量（手）
+     */
+    "volume": number;
+
+    /**
+     * 成交额（元）
+     */
+    "amount": number;
+
+    /**
+     * 涨跌幅（%）
+     */
+    "changePercent": number;
+
+    /** Creates a new Kline instance. */
+    constructor($$source: Partial<Kline> = {}) {
+        if (!("date" in $$source)) {
+            this["date"] = "";
+        }
+        if (!("open" in $$source)) {
+            this["open"] = 0;
+        }
+        if (!("close" in $$source)) {
+            this["close"] = 0;
+        }
+        if (!("high" in $$source)) {
+            this["high"] = 0;
+        }
+        if (!("low" in $$source)) {
+            this["low"] = 0;
+        }
+        if (!("volume" in $$source)) {
+            this["volume"] = 0;
+        }
+        if (!("amount" in $$source)) {
+            this["amount"] = 0;
+        }
+        if (!("changePercent" in $$source)) {
+            this["changePercent"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Kline instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Kline {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new Kline($$parsedSource as Partial<Kline>);
+    }
+}
+
+/**
  * ManagerInfo 基金经理信息（含档案数据，来自 pingzhongdata）。
  */
 export class ManagerInfo {
@@ -753,6 +836,73 @@ export class MarketBreadth {
             $$parsedSource["bins"] = $$createField4_0($$parsedSource["bins"]);
         }
         return new MarketBreadth($$parsedSource as Partial<MarketBreadth>);
+    }
+}
+
+/**
+ * MarketIndexQuote 行情中心指数实时报价（来自东财 ulist.np，统一用 secid 标识）。
+ */
+export class MarketIndexQuote {
+    /**
+     * 东财证券 id（市场.代码，如 1.000001 / 100.NDX）
+     */
+    "secid": string;
+
+    /**
+     * 指数名称
+     */
+    "name": string;
+
+    /**
+     * 分组（A股 / 港股 / 美股）
+     */
+    "group": string;
+
+    /**
+     * 最新点位
+     */
+    "price": number;
+
+    /**
+     * 涨跌点数
+     */
+    "change": number;
+
+    /**
+     * 涨跌幅（%）
+     */
+    "changePercent": number;
+
+    /** Creates a new MarketIndexQuote instance. */
+    constructor($$source: Partial<MarketIndexQuote> = {}) {
+        if (!("secid" in $$source)) {
+            this["secid"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("group" in $$source)) {
+            this["group"] = "";
+        }
+        if (!("price" in $$source)) {
+            this["price"] = 0;
+        }
+        if (!("change" in $$source)) {
+            this["change"] = 0;
+        }
+        if (!("changePercent" in $$source)) {
+            this["changePercent"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MarketIndexQuote instance from a string or object.
+     */
+    static createFrom($$source: any = {}): MarketIndexQuote {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new MarketIndexQuote($$parsedSource as Partial<MarketIndexQuote>);
     }
 }
 

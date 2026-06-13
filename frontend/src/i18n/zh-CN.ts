@@ -6,12 +6,25 @@ export const zhCN = {
     dataDisclaimer: "数据来源：天天基金 / 腾讯财经（估算值，仅供参考，不构成投资建议）",
   },
   nav: {
+    market: "行情中心",
     watchlist: "自选监控",
     analysis: "分析",
     ranking: "基金排行",
     sectors: "热门主题",
     news: "财经快讯",
     settings: "设置",
+  },
+  market: {
+    title: "行情中心",
+    indexList: "指数",
+    latest: "最新",
+    change: "涨跌幅",
+    period: { day: "日K", week: "周K", month: "月K" },
+    klineLoading: "正在加载 K 线…",
+    klineEmpty: "暂无 K 线数据",
+    klineFailed: "K 线加载失败，请稍后重试",
+    quoteEmpty: "暂无指数行情",
+    updatedAt: "更新于 {time}",
   },
   news: {
     tabs: { flash: "全球快讯", roll: "基金资讯" },
@@ -67,7 +80,7 @@ export const zhCN = {
     refresh: "刷新分布",
   },
   hotkeys: {
-    hint: "⌘K 搜索 · ⌘R 刷新 · ⌘1-5 切换页面 · ⌘W 关闭窗口",
+    hint: "⌘K 搜索 · ⌘R 刷新 · ⌘1-7 切换页面 · ⌘W 关闭窗口",
   },
   main: {
     searchPlaceholder: "搜索基金（代码 / 名称 / 拼音）",

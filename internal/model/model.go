@@ -70,6 +70,28 @@ type IndexQuote struct {
 	ChangePercent float64 `json:"changePercent"` // 涨跌幅（%）
 }
 
+// MarketIndexQuote 行情中心指数实时报价（来自东财 ulist.np，统一用 secid 标识）。
+type MarketIndexQuote struct {
+	Secid         string  `json:"secid"`         // 东财证券 id（市场.代码，如 1.000001 / 100.NDX）
+	Name          string  `json:"name"`          // 指数名称
+	Group         string  `json:"group"`         // 分组（A股 / 港股 / 美股）
+	Price         float64 `json:"price"`         // 最新点位
+	Change        float64 `json:"change"`        // 涨跌点数
+	ChangePercent float64 `json:"changePercent"` // 涨跌幅（%）
+}
+
+// Kline 指数 K 线数据点（来自东财 push2his）。
+type Kline struct {
+	Date          string  `json:"date"`          // 日期（日/周/月为 yyyy-MM-dd；分钟为 yyyy-MM-dd HH:mm）
+	Open          float64 `json:"open"`          // 开盘
+	Close         float64 `json:"close"`         // 收盘
+	High          float64 `json:"high"`          // 最高
+	Low           float64 `json:"low"`           // 最低
+	Volume        float64 `json:"volume"`        // 成交量（手）
+	Amount        float64 `json:"amount"`        // 成交额（元）
+	ChangePercent float64 `json:"changePercent"` // 涨跌幅（%）
+}
+
 // NavRecord 历史净值记录。
 type NavRecord struct {
 	Date   string  `json:"date"`   // 净值日期

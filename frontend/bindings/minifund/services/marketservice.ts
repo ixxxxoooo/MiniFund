@@ -27,11 +27,20 @@ export function GetEstimates(): $CancellablePromise<model$0.FundEstimate[]> {
 }
 
 /**
+ * GetIndexKline 按指数 secid 与周期（day/week/month）拉取 K 线（60s 内存缓存）。
+ */
+export function GetIndexKline(secid: string, period: string): $CancellablePromise<model$0.Kline[]> {
+    return $Call.ByID(470939390, secid, period).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
  * GetIndexQuotes 返回最近一轮指数行情缓存（窗口初始化用，后续靠事件推送）。
  */
 export function GetIndexQuotes(): $CancellablePromise<model$0.IndexQuote[]> {
     return $Call.ByID(4091914254).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType5($result);
     });
 }
 
@@ -40,7 +49,16 @@ export function GetIndexQuotes(): $CancellablePromise<model$0.IndexQuote[]> {
  */
 export function GetMarketBreadth(): $CancellablePromise<model$0.MarketBreadth | null> {
     return $Call.ByID(153537417).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType7($result);
+    });
+}
+
+/**
+ * GetMarketCenterQuotes 拉取行情中心指数清单实时报价（5s 内存缓存，合并多窗口/多次事件触发的重复请求）。
+ */
+export function GetMarketCenterQuotes(): $CancellablePromise<model$0.MarketIndexQuote[]> {
+    return $Call.ByID(1417542945).then(($result: any) => {
+        return $$createType9($result);
     });
 }
 
@@ -49,7 +67,7 @@ export function GetMarketBreadth(): $CancellablePromise<model$0.MarketBreadth | 
  */
 export function GetMonitorState(): $CancellablePromise<model$0.MonitorState> {
     return $Call.ByID(3357847774).then(($result: any) => {
-        return $$createType6($result);
+        return $$createType10($result);
     });
 }
 
@@ -58,7 +76,7 @@ export function GetMonitorState(): $CancellablePromise<model$0.MonitorState> {
  */
 export function GetSectors(kind: string): $CancellablePromise<model$0.SectorItem[]> {
     return $Call.ByID(1239119416, kind).then(($result: any) => {
-        return $$createType8($result);
+        return $$createType12($result);
     });
 }
 
@@ -68,7 +86,7 @@ export function GetSectors(kind: string): $CancellablePromise<model$0.SectorItem
  */
 export function GetThemeFunds(bkCode: string, sortKey: string, sortType: string, pageIndex: number): $CancellablePromise<model$0.RankPage | null> {
     return $Call.ByID(3321145818, bkCode, sortKey, sortType, pageIndex).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType14($result);
     });
 }
 
@@ -78,7 +96,7 @@ export function GetThemeFunds(bkCode: string, sortKey: string, sortType: string,
  */
 export function GetTopicFunds(topicID: string, sortKey: string, sortType: string, pageIndex: number): $CancellablePromise<model$0.RankPage | null> {
     return $Call.ByID(2767582740, topicID, sortKey, sortType, pageIndex).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType14($result);
     });
 }
 
@@ -87,7 +105,7 @@ export function GetTopicFunds(topicID: string, sortKey: string, sortType: string
  */
 export function GetTopics(): $CancellablePromise<model$0.TopicItem[]> {
     return $Call.ByID(2510723945).then(($result: any) => {
-        return $$createType12($result);
+        return $$createType16($result);
     });
 }
 
@@ -122,14 +140,18 @@ export function SetScheduler(sched: scheduler$0.Scheduler | null): $CancellableP
 // Private type creation functions
 const $$createType0 = model$0.FundEstimate.createFrom;
 const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = model$0.IndexQuote.createFrom;
+const $$createType2 = model$0.Kline.createFrom;
 const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = model$0.MarketBreadth.createFrom;
-const $$createType5 = $Create.Nullable($$createType4);
-const $$createType6 = model$0.MonitorState.createFrom;
-const $$createType7 = model$0.SectorItem.createFrom;
-const $$createType8 = $Create.Array($$createType7);
-const $$createType9 = model$0.RankPage.createFrom;
-const $$createType10 = $Create.Nullable($$createType9);
-const $$createType11 = model$0.TopicItem.createFrom;
+const $$createType4 = model$0.IndexQuote.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = model$0.MarketBreadth.createFrom;
+const $$createType7 = $Create.Nullable($$createType6);
+const $$createType8 = model$0.MarketIndexQuote.createFrom;
+const $$createType9 = $Create.Array($$createType8);
+const $$createType10 = model$0.MonitorState.createFrom;
+const $$createType11 = model$0.SectorItem.createFrom;
 const $$createType12 = $Create.Array($$createType11);
+const $$createType13 = model$0.RankPage.createFrom;
+const $$createType14 = $Create.Nullable($$createType13);
+const $$createType15 = model$0.TopicItem.createFrom;
+const $$createType16 = $Create.Array($$createType15);

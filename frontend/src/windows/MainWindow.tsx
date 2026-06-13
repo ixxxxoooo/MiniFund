@@ -1,9 +1,10 @@
 import { useEffect } from "react";
-import { AlertTriangle, BarChart3, LayoutGrid, LineChart, ListOrdered, Newspaper, Pause, RefreshCw, Search, Settings } from "lucide-react";
+import { AlertTriangle, BarChart3, CandlestickChart, LayoutGrid, LineChart, ListOrdered, Newspaper, Pause, RefreshCw, Search, Settings } from "lucide-react";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { IndexBar } from "@/components/market/IndexBar";
 import { SearchPalette } from "@/components/fund/SearchPalette";
 import { Tooltip } from "@/components/ui/tooltip";
+import { MarketCenterPage } from "@/pages/MarketCenterPage";
 import { WatchlistPage } from "@/pages/WatchlistPage";
 import { AnalysisPage } from "@/pages/AnalysisPage";
 import { RankingPage } from "@/pages/RankingPage";
@@ -21,6 +22,7 @@ import { useSettingsStore } from "@/stores/settings";
 import { useUIStore, type PageId } from "@/stores/ui";
 
 const NAV_ITEMS: { id: PageId; label: string; icon: React.ReactNode }[] = [
+  { id: "market", label: zhCN.nav.market, icon: <CandlestickChart size={14} /> },
   { id: "watchlist", label: zhCN.nav.watchlist, icon: <LayoutGrid size={14} /> },
   { id: "analysis", label: zhCN.nav.analysis, icon: <LineChart size={14} /> },
   { id: "ranking", label: zhCN.nav.ranking, icon: <ListOrdered size={14} /> },
@@ -117,6 +119,7 @@ export function MainWindow() {
 
         {/* 内容区 */}
         <main className="flex min-w-0 flex-1 flex-col">
+          {page === "market" && <MarketCenterPage />}
           {page === "watchlist" && <WatchlistPage />}
           {page === "analysis" && <AnalysisPage />}
           {page === "ranking" && <RankingPage />}

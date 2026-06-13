@@ -62,3 +62,35 @@ export function onTrayPanelShown(cb: () => void): () => void {
 export function onNewsFlash(cb: (data: NewsFlash[]) => void): () => void {
   return EventsOn("news:flash", cb);
 }
+
+/** AI 流式增量片段载荷 */
+export interface AIChunkPayload {
+  id: string;
+  delta: string;
+}
+
+/** AI 流式完成载荷 */
+export interface AIDonePayload {
+  id: string;
+}
+
+/** AI 流式错误载荷 */
+export interface AIErrorPayload {
+  id: string;
+  message: string;
+}
+
+/** 订阅 AI 解读增量（调用方按 streamID 过滤归属） */
+export function onAIChunk(cb: (data: AIChunkPayload) => void): () => void {
+  return EventsOn("ai:chunk", cb);
+}
+
+/** 订阅 AI 解读完成 */
+export function onAIDone(cb: (data: AIDonePayload) => void): () => void {
+  return EventsOn("ai:done", cb);
+}
+
+/** 订阅 AI 解读错误 */
+export function onAIError(cb: (data: AIErrorPayload) => void): () => void {
+  return EventsOn("ai:error", cb);
+}

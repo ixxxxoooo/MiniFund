@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, Sparkles } from "lucide-react";
 import { Window } from "@wailsio/runtime";
 import { AIService, NewsService } from "@bindings/minifund/services";
@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
+import { onAIChunk, onAIDone, onAIError } from "@/lib/wails/events";
+import { renderMarkdown } from "@/lib/markdown";
 import { OpenExternalURL } from "@/lib/wails/runtime";
 import { useHotkeys } from "@/lib/hotkeys";
 
@@ -55,14 +57,37 @@ export function NewsWindow({ payload }: NewsWindowProps) {
   const [aiAvailable, setAiAvailable] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [aiText, setAiText] = useState("");
-  const [aiLoading, setAiLoading] = useState(false);
+  // aiStreaming：从发起到结束（含等待首字节与逐字输出）；用于展示加载态与流式光标
+  const [aiStreaming, setAiStreaming] = useState(false);
   const [aiError, setAiError] = useState("");
+  // 当前流式会话 ID：用于在事件回调中过滤归属，避免多次点击解读串流
+  const streamIdRef = useRef("");
 
   useEffect(() => {
     void (async () => {
       const ok = await call("检查 AI 配置", () => AIService.Available());
       setAiAvailable(ok ?? false);
     })();
+  }, []);
+
+  // 订阅 AI 流式事件：按 streamID 过滤后增量拼接、完成与报错
+  useEffect(() => {
+    const unsubs = [
+      onAIChunk((p) => {
+        if (p.id !== streamIdRef.current) return;
+        setAiText((prev) => prev + p.delta);
+      }),
+      onAIDone((p) => {
+        if (p.id !== streamIdRef.current) return;
+        setAiStreaming(false);
+      }),
+      onAIError((p) => {
+        if (p.id !== streamIdRef.current) return;
+        setAiError(`${zhCN.news.aiFailed}：${p.message}`);
+        setAiStreaming(false);
+      }),
+    ];
+    return () => unsubs.forEach((u) => u());
   }, []);
 
   // 抓取正文：资讯必抓；快讯有对应文章页（finance.eastmoney.com/a/{id}.html）时也抓，失败则保留短讯
@@ -97,22 +122,24 @@ export function NewsWindow({ payload }: NewsWindowProps) {
 
   const handleAI = async () => {
     setAiOpen(true);
+    setAiText("");
+    setAiError("");
     if (!aiAvailable) {
       setAiError(zhCN.news.aiDisabledHint);
       return;
     }
-    setAiLoading(true);
-    setAiError("");
-    setAiText("");
+    // 生成本次流式会话 ID（多次点击以最后一次为准）
+    const id = crypto.randomUUID?.() ?? `ai-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    streamIdRef.current = id;
+    setAiStreaming(true);
+    // 富文本正文先去标签再交给 AI，避免把 HTML 标签当正文
+    const plain = isHtml ? content.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : content;
     try {
-      // 富文本正文先去标签再交给 AI，避免把 HTML 标签当正文
-      const plain = isHtml ? content.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim() : content;
-      const result = await AIService.InterpretNews(data!.title, plain || data!.title);
-      setAiText(result);
+      await AIService.InterpretNewsStream(id, data!.title, plain || data!.title);
     } catch (err) {
+      if (streamIdRef.current !== id) return;
       setAiError(`${zhCN.news.aiFailed}：${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setAiLoading(false);
+      setAiStreaming(false);
     }
   };
 
@@ -151,7 +178,7 @@ export function NewsWindow({ payload }: NewsWindowProps) {
                 {zhCN.news.openOriginal}
               </Button>
             )}
-            <Button size="sm" disabled={aiLoading} onClick={() => void handleAI()}>
+            <Button size="sm" disabled={aiStreaming} onClick={() => void handleAI()}>
               <Sparkles size={12} className="mr-1" />
               {zhCN.news.aiInterpret}
             </Button>
@@ -165,14 +192,19 @@ export function NewsWindow({ payload }: NewsWindowProps) {
               <Sparkles size={12} />
               {zhCN.news.aiTitle}
             </div>
-            {aiLoading ? (
-              <Spinner className="justify-start py-1" size={14} label={zhCN.news.aiLoading} />
-            ) : aiError ? (
+            {aiError ? (
               <p className="text-2xs leading-relaxed text-[var(--danger)]">{aiError}</p>
+            ) : aiStreaming && aiText === "" ? (
+              <Spinner className="justify-start py-1" size={14} label={zhCN.news.aiLoading} />
             ) : (
-              <p className="max-h-[40vh] overflow-y-auto whitespace-pre-wrap text-[length:var(--size-font-xs)] leading-relaxed text-[var(--fg)]">
-                {aiText}
-              </p>
+              <div className="max-h-[40vh] overflow-y-auto">
+                <div
+                  className="markdown-body select-text"
+                  onClick={handleContentClick}
+                  dangerouslySetInnerHTML={{ __html: renderMarkdown(aiText) }}
+                />
+                {aiStreaming && <span className="ai-caret" aria-hidden="true" />}
+              </div>
             )}
           </section>
         )}
