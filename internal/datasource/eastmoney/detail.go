@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"minifund/internal/datasource"
@@ -40,6 +41,28 @@ type managerRaw struct {
 			} `json:"data"`
 		} `json:"series"`
 	} `json:"profit"`
+}
+
+// calcMaxDrawdown 由单位净值序列计算历史最大回撤（%）。
+// 回撤 = (谷值 - 此前峰值) / 此前峰值；取整段最小者。无有效数据返回 0。
+func calcMaxDrawdown(trend []model.TrendPoint) float64 {
+	peak := 0.0
+	maxDD := 0.0
+	for _, p := range trend {
+		if p.Value <= 0 {
+			continue
+		}
+		if p.Value > peak {
+			peak = p.Value
+		}
+		if peak > 0 {
+			dd := (p.Value - peak) / peak * 100
+			if dd < maxDD {
+				maxDD = dd
+			}
+		}
+	}
+	return maxDD
 }
 
 // parsePingzhong 解析 pingzhongdata 脚本中的核心变量。
@@ -81,6 +104,7 @@ func parsePingzhong(script string) (*model.FundDetail, error) {
 				}
 				detail.NetWorthTrend = append(detail.NetWorthTrend, p)
 			}
+			detail.MaxDrawdown = calcMaxDrawdown(detail.NetWorthTrend)
 		}
 	}
 
@@ -133,9 +157,10 @@ func parsePingzhong(script string) (*model.FundDetail, error) {
 type rawPositionResponse struct {
 	Datas struct {
 		FundStocks []struct {
-			GPDM string `json:"GPDM"` // 股票代码
-			GPJC string `json:"GPJC"` // 股票简称
-			JZBL string `json:"JZBL"` // 占净值比例
+			GPDM     string `json:"GPDM"`     // 股票代码
+			GPJC     string `json:"GPJC"`     // 股票简称
+			JZBL     string `json:"JZBL"`     // 占净值比例
+			PCTNVCHG string `json:"PCTNVCHG"` // 个股当日涨跌幅
 		} `json:"fundStocks"`
 	} `json:"Datas"`
 }
@@ -150,6 +175,7 @@ func parseHoldings(body string) ([]model.Holding, error) {
 	for _, st := range raw.Datas.FundStocks {
 		h := model.Holding{StockCode: st.GPDM, StockName: st.GPJC}
 		h.Percent, _ = strconv.ParseFloat(st.JZBL, 64)
+		h.ChangePercent, _ = strconv.ParseFloat(strings.TrimSpace(st.PCTNVCHG), 64)
 		holdings = append(holdings, h)
 	}
 	return holdings, nil
@@ -164,7 +190,21 @@ type rawInfoResponse struct {
 		RISKLEVEL string `json:"RISKLEVEL"` // 风险等级 1-5
 		ESTABDATE string `json:"ESTABDATE"` // 成立日期
 		ENDNAV    string `json:"ENDNAV"`    // 最新规模（元）
+		// 交易状态（QDII 常见单日限额，字段可能缺失，缺失时为空不展示）
+		SGZT  string `json:"SGZT"`  // 申购状态
+		SHZT  string `json:"SHZT"`  // 赎回状态
+		MAXSG string `json:"MAXSG"` // 单日累计申购上限（元）
 	} `json:"Datas"`
+}
+
+// cleanField 过滤东财空值占位（空 / "--" / "0"），返回有效值或空串。
+func cleanField(s string) string {
+	switch s {
+	case "", "--", "0":
+		return ""
+	default:
+		return s
+	}
 }
 
 // parseFundInfo 解析基金标签信息并填充到详情。
@@ -182,6 +222,9 @@ func parseFundInfo(body string, detail *model.FundDetail) error {
 	detail.RiskLevel = d.RISKLEVEL
 	detail.EstabDate = d.ESTABDATE
 	detail.Scale = d.ENDNAV
+	detail.SubStatus = cleanField(d.SGZT)
+	detail.RedeemStatus = cleanField(d.SHZT)
+	detail.DayLimit = cleanField(d.MAXSG)
 	return nil
 }
 
@@ -216,6 +259,13 @@ func FetchFundDetail(ctx context.Context, code string) (*model.FundDetail, error
 		}
 	} else {
 		logger.Warn("拉取基金信息失败: code=%s err=%v", code, err)
+	}
+
+	// 阶段涨幅（近1月/近3月/近6月/近1年/近3年/成立来等）拉取失败不影响主体
+	if returns, err := FetchFundPeriodReturns(ctx, code); err == nil {
+		detail.PeriodReturns = returns
+	} else {
+		logger.Warn("拉取阶段涨幅失败: code=%s err=%v", code, err)
 	}
 	return detail, nil
 }

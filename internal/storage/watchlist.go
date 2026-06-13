@@ -136,3 +136,26 @@ func (s *Store) RemoveItem(code string, groupID int64) error {
 	}
 	return nil
 }
+
+// MoveItem 将自选从源分组移动到目标分组（保留 created_at；目标分组已存在则合并；排到目标分组末尾）。
+func (s *Store) MoveItem(code string, fromGroupID, toGroupID int64) error {
+	if fromGroupID == toGroupID {
+		return nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开启移动事务失败: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(`INSERT OR IGNORE INTO watch_item (code, group_id, sort, pinned, created_at)
+		SELECT code, ?, (SELECT COALESCE(MAX(sort),0)+1 FROM watch_item WHERE group_id = ?), pinned, created_at
+		FROM watch_item WHERE code = ? AND group_id = ?`,
+		toGroupID, toGroupID, code, fromGroupID); err != nil {
+		return fmt.Errorf("写入目标分组失败: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM watch_item WHERE code = ? AND group_id = ?", code, fromGroupID); err != nil {
+		return fmt.Errorf("从源分组移除失败: %w", err)
+	}
+	return tx.Commit()
+}

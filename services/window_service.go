@@ -24,6 +24,7 @@ type WindowService struct {
 	main      *application.WebviewWindow
 	trayPanel *application.WebviewWindow
 	details   map[string]*application.WebviewWindow
+	news      map[string]*application.WebviewWindow
 }
 
 // NewWindowService 创建窗口管理服务。
@@ -31,6 +32,7 @@ func NewWindowService(settings *SettingsService) *WindowService {
 	return &WindowService{
 		settings: settings,
 		details:  make(map[string]*application.WebviewWindow),
+		news:     make(map[string]*application.WebviewWindow),
 	}
 }
 
@@ -54,10 +56,10 @@ func (s *WindowService) CreateMainWindow() *application.WebviewWindow {
 	win := s.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      "main",
 		Title:     version.AppName,
-		Width:     1180,
-		Height:    760,
-		MinWidth:  960,
-		MinHeight: 600,
+		Width:     1560,
+		Height:    1000,
+		MinWidth:  1160,
+		MinHeight: 720,
 		URL:       "/#/main",
 		// 隐藏原生标题栏，使用前端自绘窗口控制按钮
 		Frameless:        true,
@@ -162,10 +164,10 @@ func (s *WindowService) OpenDetailWindow(code string) error {
 	win := s.app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:      "detail-" + code,
 		Title:     version.AppName,
-		Width:     900,
-		Height:    680,
-		MinWidth:  720,
-		MinHeight: 520,
+		Width:     1120,
+		Height:    840,
+		MinWidth:  900,
+		MinHeight: 640,
 		URL:       "/#/detail/" + code,
 		Frameless:        true,
 		BackgroundType:   application.BackgroundTypeTransparent,
@@ -182,6 +184,44 @@ func (s *WindowService) OpenDetailWindow(code string) error {
 	})
 	s.details[code] = win
 	logger.Info("打开基金详情窗口: %s", code)
+	return nil
+}
+
+// OpenNewsWindow 打开新闻详情独立窗口；同一新闻 id 复用已存在的窗口。
+// payload 为前端 base64(JSON) 序列化的新闻数据，通过 hash 路由 /#/news/{payload} 传入窗口。
+func (s *WindowService) OpenNewsWindow(id string, payload string) error {
+	if id == "" || payload == "" {
+		return fmt.Errorf("新闻参数不能为空")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if win, ok := s.news[id]; ok {
+		win.Show()
+		win.Focus()
+		return nil
+	}
+	win := s.app.Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:      "news-" + id,
+		Title:     version.AppName,
+		Width:     880,
+		Height:    680,
+		MinWidth:  560,
+		MinHeight: 420,
+		URL:       "/#/news/" + payload,
+		Frameless:        true,
+		BackgroundType:   application.BackgroundTypeTransparent,
+		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
+		Mac: application.MacWindow{
+			Appearance: application.NSAppearanceNameAqua,
+		},
+	})
+	win.OnWindowEvent(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		s.mu.Lock()
+		delete(s.news, id)
+		s.mu.Unlock()
+	})
+	s.news[id] = win
+	logger.Info("打开新闻详情窗口: %s", id)
 	return nil
 }
 

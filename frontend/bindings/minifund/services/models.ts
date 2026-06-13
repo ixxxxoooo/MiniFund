@@ -49,6 +49,36 @@ export class AppSettings {
      */
     "watchedIndexes": string[];
 
+    /**
+     * NewsNotify 收到新的财经快讯时是否弹桌面通知
+     */
+    "newsNotify": boolean;
+
+    /**
+     * NewsPollSec 快讯定时拉取间隔（秒），最小 30
+     */
+    "newsPollSec": number;
+
+    /**
+     * AIEnabled 是否启用 AI 解读
+     */
+    "aiEnabled": boolean;
+
+    /**
+     * AIBaseURL AI 服务地址（OpenAI 兼容，如 https://api.deepseek.com/v1）
+     */
+    "aiBaseURL": string;
+
+    /**
+     * AIKey AI 服务密钥
+     */
+    "aiKey": string;
+
+    /**
+     * AIModel 模型名（如 deepseek-chat）
+     */
+    "aiModel": string;
+
     /** Creates a new AppSettings instance. */
     constructor($$source: Partial<AppSettings> = {}) {
         if (!("theme" in $$source)) {
@@ -74,6 +104,24 @@ export class AppSettings {
         }
         if (!("watchedIndexes" in $$source)) {
             this["watchedIndexes"] = [];
+        }
+        if (!("newsNotify" in $$source)) {
+            this["newsNotify"] = false;
+        }
+        if (!("newsPollSec" in $$source)) {
+            this["newsPollSec"] = 0;
+        }
+        if (!("aiEnabled" in $$source)) {
+            this["aiEnabled"] = false;
+        }
+        if (!("aiBaseURL" in $$source)) {
+            this["aiBaseURL"] = "";
+        }
+        if (!("aiKey" in $$source)) {
+            this["aiKey"] = "";
+        }
+        if (!("aiModel" in $$source)) {
+            this["aiModel"] = "";
         }
 
         Object.assign(this, $$source);

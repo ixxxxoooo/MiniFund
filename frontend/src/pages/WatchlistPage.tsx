@@ -5,6 +5,7 @@ import { PositionDialog } from "@/components/fund/PositionDialog";
 import { ProfitCards } from "@/components/fund/ProfitCards";
 import { WatchlistTable } from "@/components/fund/WatchlistTable";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,8 @@ export function WatchlistPage() {
   const [editing, setEditing] = useState<WatchItem | null>(null);
   const [addingGroup, setAddingGroup] = useState(false);
   const [groupName, setGroupName] = useState("");
+  // 待确认删除的分组 id（应用内确认弹窗，替代 Wails WebView 不支持的 window.confirm）
+  const [deletingGroup, setDeletingGroup] = useState<number | null>(null);
 
   useEffect(() => {
     void load();
@@ -64,11 +67,7 @@ export function WatchlistPage() {
               <Tooltip content={zhCN.watchlist.deleteGroup}>
                 <button
                   aria-label={zhCN.watchlist.deleteGroup}
-                  onClick={() => {
-                    if (window.confirm(zhCN.watchlist.deleteGroupConfirm)) {
-                      void deleteGroup(g.id);
-                    }
-                  }}
+                  onClick={() => setDeletingGroup(g.id)}
                   className="absolute -right-1 -top-1 hidden rounded-full bg-[var(--surface-elevated)] p-0.5 text-[var(--fg-muted)] shadow-[var(--shadow-sm)] hover:text-[var(--danger)] group-hover:block"
                 >
                   <X size={10} />
@@ -123,6 +122,19 @@ export function WatchlistPage() {
       )}
 
       <PositionDialog item={editing} onClose={() => setEditing(null)} />
+
+      <ConfirmDialog
+        open={deletingGroup != null}
+        title={zhCN.watchlist.deleteGroup}
+        message={zhCN.watchlist.deleteGroupConfirm}
+        confirmLabel={zhCN.watchlist.deleteGroup}
+        danger
+        onConfirm={() => {
+          if (deletingGroup != null) void deleteGroup(deletingGroup);
+          setDeletingGroup(null);
+        }}
+        onCancel={() => setDeletingGroup(null)}
+      />
     </div>
   );
 }

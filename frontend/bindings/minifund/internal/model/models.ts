@@ -80,6 +80,16 @@ export class FundDetail {
     "acWorthTrend": TrendPoint[];
 
     /**
+     * 历史最大回撤（%，由单位净值序列计算，负值如 -23.45）
+     */
+    "maxDrawdown": number;
+
+    /**
+     * 阶段涨幅（近1月/近3月/近6月/近1年/近3年/成立来等）
+     */
+    "periodReturns": PeriodReturn[];
+
+    /**
      * 前十重仓股
      */
     "holdings": Holding[];
@@ -120,6 +130,22 @@ export class FundDetail {
      */
     "scale": string;
 
+    /**
+     * 交易状态（来自移动端详情接口；QDII 常有单日限额）
+     * 申购状态（如 开放申购 / 暂停申购）
+     */
+    "subStatus": string;
+
+    /**
+     * 赎回状态
+     */
+    "redeemStatus": string;
+
+    /**
+     * 单日累计申购限额（原始字符串，空表示不限/未知）
+     */
+    "dayLimit": string;
+
     /** Creates a new FundDetail instance. */
     constructor($$source: Partial<FundDetail> = {}) {
         if (!("code" in $$source)) {
@@ -142,6 +168,12 @@ export class FundDetail {
         }
         if (!("acWorthTrend" in $$source)) {
             this["acWorthTrend"] = [];
+        }
+        if (!("maxDrawdown" in $$source)) {
+            this["maxDrawdown"] = 0;
+        }
+        if (!("periodReturns" in $$source)) {
+            this["periodReturns"] = [];
         }
         if (!("holdings" in $$source)) {
             this["holdings"] = [];
@@ -167,6 +199,15 @@ export class FundDetail {
         if (!("scale" in $$source)) {
             this["scale"] = "";
         }
+        if (!("subStatus" in $$source)) {
+            this["subStatus"] = "";
+        }
+        if (!("redeemStatus" in $$source)) {
+            this["redeemStatus"] = "";
+        }
+        if (!("dayLimit" in $$source)) {
+            this["dayLimit"] = "";
+        }
 
         Object.assign(this, $$source);
     }
@@ -177,8 +218,9 @@ export class FundDetail {
     static createFrom($$source: any = {}): FundDetail {
         const $$createField5_0 = $$createType1;
         const $$createField6_0 = $$createType1;
-        const $$createField7_0 = $$createType3;
-        const $$createField8_0 = $$createType5;
+        const $$createField8_0 = $$createType3;
+        const $$createField9_0 = $$createType5;
+        const $$createField10_0 = $$createType7;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("netWorthTrend" in $$parsedSource) {
             $$parsedSource["netWorthTrend"] = $$createField5_0($$parsedSource["netWorthTrend"]);
@@ -186,11 +228,14 @@ export class FundDetail {
         if ("acWorthTrend" in $$parsedSource) {
             $$parsedSource["acWorthTrend"] = $$createField6_0($$parsedSource["acWorthTrend"]);
         }
+        if ("periodReturns" in $$parsedSource) {
+            $$parsedSource["periodReturns"] = $$createField8_0($$parsedSource["periodReturns"]);
+        }
         if ("holdings" in $$parsedSource) {
-            $$parsedSource["holdings"] = $$createField7_0($$parsedSource["holdings"]);
+            $$parsedSource["holdings"] = $$createField9_0($$parsedSource["holdings"]);
         }
         if ("managers" in $$parsedSource) {
-            $$parsedSource["managers"] = $$createField8_0($$parsedSource["managers"]);
+            $$parsedSource["managers"] = $$createField10_0($$parsedSource["managers"]);
         }
         return new FundDetail($$parsedSource as Partial<FundDetail>);
     }
@@ -339,6 +384,73 @@ export class FundIndexItem {
 }
 
 /**
+ * FundIndexPage 基金索引搜索分页结果（排行页「就地搜索」用）。
+ */
+export class FundIndexPage {
+    "items": FundIndexItem[];
+    "total": number;
+
+    /** Creates a new FundIndexPage instance. */
+    constructor($$source: Partial<FundIndexPage> = {}) {
+        if (!("items" in $$source)) {
+            this["items"] = [];
+        }
+        if (!("total" in $$source)) {
+            this["total"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new FundIndexPage instance from a string or object.
+     */
+    static createFrom($$source: any = {}): FundIndexPage {
+        const $$createField0_0 = $$createType9;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("items" in $$parsedSource) {
+            $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
+        }
+        return new FundIndexPage($$parsedSource as Partial<FundIndexPage>);
+    }
+}
+
+/**
+ * FundTheme 基金所属主题/概念（东财 ztjj 体系，TTYPE 形如 BKxxxxxx）。
+ */
+export class FundTheme {
+    /**
+     * 主题/板块代码（BKxxxxxx）
+     */
+    "code": string;
+
+    /**
+     * 主题/板块名称（如 CPO、电力设备）
+     */
+    "name": string;
+
+    /** Creates a new FundTheme instance. */
+    constructor($$source: Partial<FundTheme> = {}) {
+        if (!("code" in $$source)) {
+            this["code"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new FundTheme instance from a string or object.
+     */
+    static createFrom($$source: any = {}): FundTheme {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new FundTheme($$parsedSource as Partial<FundTheme>);
+    }
+}
+
+/**
  * Holding 重仓股。
  */
 export class Holding {
@@ -357,6 +469,11 @@ export class Holding {
      */
     "percent": number;
 
+    /**
+     * 个股当日涨跌幅（%）
+     */
+    "changePercent": number;
+
     /** Creates a new Holding instance. */
     constructor($$source: Partial<Holding> = {}) {
         if (!("stockCode" in $$source)) {
@@ -367,6 +484,9 @@ export class Holding {
         }
         if (!("percent" in $$source)) {
             this["percent"] = 0;
+        }
+        if (!("changePercent" in $$source)) {
+            this["changePercent"] = 0;
         }
 
         Object.assign(this, $$source);
@@ -552,10 +672,10 @@ export class ManagerInfo {
      * Creates a new ManagerInfo instance from a string or object.
      */
     static createFrom($$source: any = {}): ManagerInfo {
-        const $$createField8_0 = $$createType6;
-        const $$createField9_0 = $$createType7;
-        const $$createField10_0 = $$createType6;
-        const $$createField11_0 = $$createType7;
+        const $$createField8_0 = $$createType10;
+        const $$createField9_0 = $$createType11;
+        const $$createField10_0 = $$createType10;
+        const $$createField11_0 = $$createType11;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("powerCategories" in $$parsedSource) {
             $$parsedSource["powerCategories"] = $$createField8_0($$parsedSource["powerCategories"]);
@@ -627,7 +747,7 @@ export class MarketBreadth {
      * Creates a new MarketBreadth instance from a string or object.
      */
     static createFrom($$source: any = {}): MarketBreadth {
-        const $$createField4_0 = $$createType9;
+        const $$createField4_0 = $$createType13;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("bins" in $$parsedSource) {
             $$parsedSource["bins"] = $$createField4_0($$parsedSource["bins"]);
@@ -702,7 +822,7 @@ export class NavPage {
      * Creates a new NavPage instance from a string or object.
      */
     static createFrom($$source: any = {}): NavPage {
-        const $$createField0_0 = $$createType11;
+        const $$createField0_0 = $$createType15;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("items" in $$parsedSource) {
             $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
@@ -759,6 +879,187 @@ export class NavRecord {
     static createFrom($$source: any = {}): NavRecord {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new NavRecord($$parsedSource as Partial<NavRecord>);
+    }
+}
+
+/**
+ * NewsArticle 基金滚动资讯（来自 roll.eastmoney.com，指向完整文章页，正文需抓取页面）。
+ */
+export class NewsArticle {
+    /**
+     * 文章编号（URL 中的数字，前 8 位为 yyyyMMdd）
+     */
+    "id": string;
+
+    /**
+     * 标题
+     */
+    "title": string;
+
+    /**
+     * 文章页地址（finance/fund.eastmoney.com/a/{id}.html）
+     */
+    "url": string;
+
+    /**
+     * 发布日期（由文章编号推导，yyyy-MM-dd）
+     */
+    "time": string;
+
+    /** Creates a new NewsArticle instance. */
+    constructor($$source: Partial<NewsArticle> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("title" in $$source)) {
+            this["title"] = "";
+        }
+        if (!("url" in $$source)) {
+            this["url"] = "";
+        }
+        if (!("time" in $$source)) {
+            this["time"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new NewsArticle instance from a string or object.
+     */
+    static createFrom($$source: any = {}): NewsArticle {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new NewsArticle($$parsedSource as Partial<NewsArticle>);
+    }
+}
+
+/**
+ * NewsFlash 全球财经快讯（7×24 短讯，来自东财 getFastNewsList，summary 即完整正文）。
+ */
+export class NewsFlash {
+    /**
+     * 快讯唯一编号（接口 code 字段）
+     */
+    "id": string;
+
+    /**
+     * 标题
+     */
+    "title": string;
+
+    /**
+     * 正文（短讯本身即完整内容，含【标题】前缀）
+     */
+    "summary": string;
+
+    /**
+     * 发布时间（yyyy-MM-dd HH:mm:ss）
+     */
+    "time": string;
+
+    /**
+     * 是否重要（接口 titleColor != 0，通常标红）
+     */
+    "important": boolean;
+
+    /**
+     * 关联标的代码（如 0.159940）
+     */
+    "stocks": string[];
+
+    /** Creates a new NewsFlash instance. */
+    constructor($$source: Partial<NewsFlash> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = "";
+        }
+        if (!("title" in $$source)) {
+            this["title"] = "";
+        }
+        if (!("summary" in $$source)) {
+            this["summary"] = "";
+        }
+        if (!("time" in $$source)) {
+            this["time"] = "";
+        }
+        if (!("important" in $$source)) {
+            this["important"] = false;
+        }
+        if (!("stocks" in $$source)) {
+            this["stocks"] = [];
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new NewsFlash instance from a string or object.
+     */
+    static createFrom($$source: any = {}): NewsFlash {
+        const $$createField5_0 = $$createType10;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("stocks" in $$parsedSource) {
+            $$parsedSource["stocks"] = $$createField5_0($$parsedSource["stocks"]);
+        }
+        return new NewsFlash($$parsedSource as Partial<NewsFlash>);
+    }
+}
+
+/**
+ * PeriodReturn 基金阶段涨幅（含同类平均与同类排名，来自 FundMNPeriodIncrease）。
+ */
+export class PeriodReturn {
+    /**
+     * 周期键：Y/3Y/6Y/1N/2N/3N/JN/LN 等
+     */
+    "period": string;
+
+    /**
+     * 本基金涨跌幅（%）
+     */
+    "value": number;
+
+    /**
+     * 同类平均（%）
+     */
+    "avg": number;
+
+    /**
+     * 同类排名
+     */
+    "rank": number;
+
+    /**
+     * 同类数量
+     */
+    "count": number;
+
+    /** Creates a new PeriodReturn instance. */
+    constructor($$source: Partial<PeriodReturn> = {}) {
+        if (!("period" in $$source)) {
+            this["period"] = "";
+        }
+        if (!("value" in $$source)) {
+            this["value"] = 0;
+        }
+        if (!("avg" in $$source)) {
+            this["avg"] = 0;
+        }
+        if (!("rank" in $$source)) {
+            this["rank"] = 0;
+        }
+        if (!("count" in $$source)) {
+            this["count"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PeriodReturn instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PeriodReturn {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PeriodReturn($$parsedSource as Partial<PeriodReturn>);
     }
 }
 
@@ -925,6 +1226,11 @@ export class RankItem {
     "nav": number;
 
     /**
+     * 累计净值
+     */
+    "accNav": number;
+
+    /**
      * 日涨幅（%）
      */
     "dayGrowth": number;
@@ -955,9 +1261,34 @@ export class RankItem {
     "year1": number;
 
     /**
+     * 近 2 年涨幅（%）
+     */
+    "year2": number;
+
+    /**
+     * 近 3 年涨幅（%）
+     */
+    "year3": number;
+
+    /**
      * 今年来涨幅（%）
      */
     "ytd": number;
+
+    /**
+     * 成立来涨幅（%）
+     */
+    "sinceStart": number;
+
+    /**
+     * 申购手续费（原始字符串，含 %，如 0.15%）
+     */
+    "fee": string;
+
+    /**
+     * 最新规模（元，来自移动端 FundMNFInfo 的 ENDNAV）
+     */
+    "scale": number;
 
     /** Creates a new RankItem instance. */
     constructor($$source: Partial<RankItem> = {}) {
@@ -972,6 +1303,9 @@ export class RankItem {
         }
         if (!("nav" in $$source)) {
             this["nav"] = 0;
+        }
+        if (!("accNav" in $$source)) {
+            this["accNav"] = 0;
         }
         if (!("dayGrowth" in $$source)) {
             this["dayGrowth"] = 0;
@@ -991,8 +1325,23 @@ export class RankItem {
         if (!("year1" in $$source)) {
             this["year1"] = 0;
         }
+        if (!("year2" in $$source)) {
+            this["year2"] = 0;
+        }
+        if (!("year3" in $$source)) {
+            this["year3"] = 0;
+        }
         if (!("ytd" in $$source)) {
             this["ytd"] = 0;
+        }
+        if (!("sinceStart" in $$source)) {
+            this["sinceStart"] = 0;
+        }
+        if (!("fee" in $$source)) {
+            this["fee"] = "";
+        }
+        if (!("scale" in $$source)) {
+            this["scale"] = 0;
         }
 
         Object.assign(this, $$source);
@@ -1030,7 +1379,7 @@ export class RankPage {
      * Creates a new RankPage instance from a string or object.
      */
     static createFrom($$source: any = {}): RankPage {
-        const $$createField0_0 = $$createType13;
+        const $$createField0_0 = $$createType17;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("items" in $$parsedSource) {
             $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
@@ -1054,9 +1403,19 @@ export class SectorItem {
     "name": string;
 
     /**
-     * 涨跌幅（%）
+     * 今日涨跌幅（%，f3）
      */
     "changePercent": number;
+
+    /**
+     * 近3月涨跌幅（%，f24=60日）
+     */
+    "month3": number;
+
+    /**
+     * 今年来涨跌幅（%，f25=年初至今）
+     */
+    "ytd": number;
 
     /**
      * 上涨家数
@@ -1073,6 +1432,16 @@ export class SectorItem {
      */
     "leadStock": string;
 
+    /**
+     * 主力资金净流入（元，f62）
+     */
+    "inflow": number;
+
+    /**
+     * 板块类别：industry / concept
+     */
+    "kind": string;
+
     /** Creates a new SectorItem instance. */
     constructor($$source: Partial<SectorItem> = {}) {
         if (!("code" in $$source)) {
@@ -1084,6 +1453,12 @@ export class SectorItem {
         if (!("changePercent" in $$source)) {
             this["changePercent"] = 0;
         }
+        if (!("month3" in $$source)) {
+            this["month3"] = 0;
+        }
+        if (!("ytd" in $$source)) {
+            this["ytd"] = 0;
+        }
         if (!("upCount" in $$source)) {
             this["upCount"] = 0;
         }
@@ -1092,6 +1467,12 @@ export class SectorItem {
         }
         if (!("leadStock" in $$source)) {
             this["leadStock"] = "";
+        }
+        if (!("inflow" in $$source)) {
+            this["inflow"] = 0;
+        }
+        if (!("kind" in $$source)) {
+            this["kind"] = "";
         }
 
         Object.assign(this, $$source);
@@ -1365,7 +1746,7 @@ export class XrayStock {
      * Creates a new XrayStock instance from a string or object.
      */
     static createFrom($$source: any = {}): XrayStock {
-        const $$createField3_0 = $$createType15;
+        const $$createField3_0 = $$createType19;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("funds" in $$parsedSource) {
             $$parsedSource["funds"] = $$createField3_0($$parsedSource["funds"]);
@@ -1377,17 +1758,21 @@ export class XrayStock {
 // Private type creation functions
 const $$createType0 = TrendPoint.createFrom;
 const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = Holding.createFrom;
+const $$createType2 = PeriodReturn.createFrom;
 const $$createType3 = $Create.Array($$createType2);
-const $$createType4 = ManagerInfo.createFrom;
+const $$createType4 = Holding.createFrom;
 const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = $Create.Array($Create.Any);
-const $$createType7 = $Create.Array($Create.Any);
-const $$createType8 = BreadthBin.createFrom;
+const $$createType6 = ManagerInfo.createFrom;
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = FundIndexItem.createFrom;
 const $$createType9 = $Create.Array($$createType8);
-const $$createType10 = NavRecord.createFrom;
-const $$createType11 = $Create.Array($$createType10);
-const $$createType12 = RankItem.createFrom;
+const $$createType10 = $Create.Array($Create.Any);
+const $$createType11 = $Create.Array($Create.Any);
+const $$createType12 = BreadthBin.createFrom;
 const $$createType13 = $Create.Array($$createType12);
-const $$createType14 = XrayFundRef.createFrom;
+const $$createType14 = NavRecord.createFrom;
 const $$createType15 = $Create.Array($$createType14);
+const $$createType16 = RankItem.createFrom;
+const $$createType17 = $Create.Array($$createType16);
+const $$createType18 = XrayFundRef.createFrom;
+const $$createType19 = $Create.Array($$createType18);

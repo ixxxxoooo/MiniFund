@@ -89,72 +89,114 @@ export function MultiLineChart({ series, height = 260 }: MultiLineChartProps) {
     return null;
   };
 
+  const fmtLabel = (d: string) => {
+    const m = /^\d{4}-(\d{2}-\d{2})$/.exec(d);
+    return m ? m[1] : d;
+  };
+  const tickCount = Math.min(5, dates.length);
+  const ticks = Array.from({ length: tickCount }, (_, i) =>
+    Math.round((i / Math.max(1, tickCount - 1)) * (dates.length - 1))
+  );
+
+  const hoverLeftPct = hoverIndex != null ? (xAt(hoverIndex) / width) * 100 : 0;
+  const tipTransform =
+    hoverLeftPct > 72 ? "translate(-100%, 0)" : hoverLeftPct < 16 ? "translate(0, 0)" : "translate(-50%, 0)";
+
   return (
-    <div
-      ref={containerRef}
-      className="relative w-full"
-      onMouseMove={handleMove}
-      onMouseLeave={() => setHoverIndex(null)}
-    >
-      {/* 悬停信息条：日期 + 各序列收益率 */}
-      <div className="quote-num mb-1 flex h-4 flex-wrap items-center gap-x-3 overflow-hidden text-2xs text-[var(--fg-secondary)]">
-        {hoverIndex != null ? (
-          <>
-            <span>{dates[hoverIndex]}</span>
+    <div className="w-full select-none">
+      <div
+        ref={containerRef}
+        className="relative w-full"
+        onMouseMove={handleMove}
+        onMouseLeave={() => setHoverIndex(null)}
+      >
+        <div className="quote-num mb-1 flex h-4 items-center text-2xs text-[var(--fg-secondary)]">
+          <span>
+            {fmtLabel(dates[0])} ~ {fmtLabel(dates[dates.length - 1])}
+          </span>
+        </div>
+        <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="block w-full" style={{ height }}>
+          {/* 0% 基准线 */}
+          <line
+            x1={0}
+            y1={zeroY}
+            x2={width}
+            y2={zeroY}
+            stroke="var(--border-color)"
+            strokeWidth="1"
+            strokeDasharray="4,4"
+            vectorEffect="non-scaling-stroke"
+          />
+          {lines.map((l) => {
+            let d = "";
+            let started = false;
+            for (let i = 0; i < l.values.length; i++) {
+              const v = l.values[i];
+              if (v == null) continue;
+              d += `${started ? "L" : "M"}${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`;
+              started = true;
+            }
+            return (
+              <path key={l.name} d={d} fill="none" stroke={l.color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+            );
+          })}
+          {hoverIndex != null && (
+            <>
+              <line
+                x1={xAt(hoverIndex)}
+                y1={0}
+                x2={xAt(hoverIndex)}
+                y2={height}
+                stroke="var(--fg-muted)"
+                strokeWidth="1"
+                strokeDasharray="3,3"
+                vectorEffect="non-scaling-stroke"
+              />
+              {lines.map((l) => {
+                const v = valueAt(l.values, hoverIndex);
+                return v == null ? null : (
+                  <circle key={l.name} cx={xAt(hoverIndex)} cy={yAt(v)} r="2.5" fill={l.color} />
+                );
+              })}
+            </>
+          )}
+        </svg>
+
+        {/* 悬停浮窗：日期 + 各序列收益率 */}
+        {hoverIndex != null && (
+          <div
+            className="pointer-events-none absolute z-10 whitespace-nowrap rounded-[var(--radius-sm)] border px-2 py-1 text-2xs shadow-[var(--shadow-md)]"
+            style={{
+              left: `${hoverLeftPct}%`,
+              top: 24,
+              transform: tipTransform,
+              background: "var(--surface-elevated)",
+              borderColor: "var(--border-color)",
+            }}
+          >
+            <div className="mb-0.5 text-[var(--fg-secondary)]">{dates[hoverIndex]}</div>
             {lines.map((l) => {
               const v = valueAt(l.values, hoverIndex);
               return (
-                <span key={l.name} className="flex items-center gap-1 whitespace-nowrap">
+                <div key={l.name} className="flex items-center gap-1.5">
                   <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: l.color }} />
-                  {v != null ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "--"}
-                </span>
+                  <span className="max-w-[120px] truncate text-[var(--fg-secondary)]">{l.name}</span>
+                  <span className="quote-num ml-auto font-semibold text-[var(--fg)]">
+                    {v != null ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "--"}
+                  </span>
+                </div>
               );
             })}
-          </>
-        ) : (
-          <span>
-            {dates[0]} ~ {dates[dates.length - 1]}
-          </span>
+          </div>
         )}
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="block w-full" style={{ height }}>
-        {/* 0% 基准线 */}
-        <line
-          x1={0}
-          y1={zeroY}
-          x2={width}
-          y2={zeroY}
-          stroke="var(--border-color)"
-          strokeWidth="1"
-          strokeDasharray="4,4"
-          vectorEffect="non-scaling-stroke"
-        />
-        {lines.map((l) => {
-          let d = "";
-          let started = false;
-          for (let i = 0; i < l.values.length; i++) {
-            const v = l.values[i];
-            if (v == null) continue;
-            d += `${started ? "L" : "M"}${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`;
-            started = true;
-          }
-          return (
-            <path key={l.name} d={d} fill="none" stroke={l.color} strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-          );
-        })}
-        {hoverIndex != null && (
-          <line
-            x1={xAt(hoverIndex)}
-            y1={0}
-            x2={xAt(hoverIndex)}
-            y2={height}
-            stroke="var(--fg-muted)"
-            strokeWidth="1"
-            strokeDasharray="3,3"
-            vectorEffect="non-scaling-stroke"
-          />
-        )}
-      </svg>
+
+      {/* 底部时间刻度 */}
+      <div className="quote-num mt-1 flex justify-between text-2xs text-[var(--fg-muted)]">
+        {ticks.map((idx) => (
+          <span key={idx}>{fmtLabel(dates[idx])}</span>
+        ))}
+      </div>
     </div>
   );
 }

@@ -10,6 +10,7 @@ import (
 	"minifund/services"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 )
 
 // core 应用核心：装配存储、数据源、调度器与所有服务实例。
@@ -22,6 +23,9 @@ type core struct {
 	PortfolioSvc *services.PortfolioService
 	MarketSvc    *services.MarketService
 	WindowSvc    *services.WindowService
+	NewsSvc      *services.NewsService
+	AISvc        *services.AIService
+	NotifySvc    *notifications.NotificationService
 }
 
 // newCore 创建应用核心并装配服务（依赖 Wails 实例的部分延迟到 startup）。
@@ -42,6 +46,9 @@ func newCore() (*core, error) {
 		PortfolioSvc: services.NewPortfolioService(store),
 		MarketSvc:    services.NewMarketService(),
 		WindowSvc:    services.NewWindowService(settingsSvc),
+		NewsSvc:      services.NewNewsService(),
+		AISvc:        services.NewAIService(settingsSvc),
+		NotifySvc:    notifications.New(),
 	}
 	logger.Info("所有服务实例创建完成")
 	return c, nil
@@ -62,7 +69,28 @@ func (c *core) startup(wailsApp *application.App) {
 	c.PortfolioSvc.SetScheduler(c.Scheduler)
 	c.PortfolioSvc.SetDetailProvider(c.FundSvc.GetFundDetail)
 	c.MarketSvc.SetScheduler(c.Scheduler)
+	c.NewsSvc.SetScheduler(c.Scheduler)
 	c.SettingsSvc.SetOnChange(c.Scheduler.RefreshNow)
+
+	// 快讯桌面通知：调度器检测到新快讯时回调，封装 Wails 通知服务
+	c.Scheduler.SetNewsNotifier(func(title, body, id string) {
+		if c.NotifySvc == nil {
+			return
+		}
+		if err := c.NotifySvc.SendNotification(notifications.NotificationOptions{
+			ID: id, Title: title, Body: body,
+		}); err != nil {
+			logger.Warn("发送桌面通知失败: %v", err)
+		}
+	})
+	// 启动时请求一次通知授权（macOS 需用户允许；失败不影响主流程）
+	go func() {
+		if ok, err := c.NotifySvc.RequestNotificationAuthorization(); err != nil {
+			logger.Warn("请求通知授权失败: %v", err)
+		} else if !ok {
+			logger.Info("用户未授权桌面通知，快讯将不弹通知")
+		}
+	}()
 
 	// 自选/持仓变更广播给所有窗口（主窗口与托盘面板保持同步）
 	emitWatchlistChanged := func() {
@@ -83,6 +111,9 @@ func (c *core) startup(wailsApp *application.App) {
 	go func() {
 		c.FundSvc.EnsureFundIndex()
 		c.Scheduler.Start()
+		// 后台预热排行/主题/板块列表，进入对应页面秒开（失败不影响主流程）
+		go c.FundSvc.PreloadRanking()
+		go c.MarketSvc.PreloadMarket()
 	}()
 }
 
@@ -95,6 +126,9 @@ func (c *core) services() []application.Service {
 		application.NewService(c.PortfolioSvc),
 		application.NewService(c.MarketSvc),
 		application.NewService(c.WindowSvc),
+		application.NewService(c.NewsSvc),
+		application.NewService(c.AISvc),
+		application.NewService(c.NotifySvc),
 	}
 }
 

@@ -39,3 +39,27 @@ export function formatMoney(value: number, hidden = false): string {
 export function formatNav(value: number): string {
   return value.toFixed(4);
 }
+
+/**
+ * 格式化资金流入（元）为易读金额：亿/万，带正负号。
+ * 例：123456789 -> +1.23亿；-8500000 -> -850.00万
+ */
+export function formatInflow(value: number): string {
+  if (!Number.isFinite(value) || value === 0) return "—";
+  const sign = value > 0 ? "+" : "-";
+  const abs = Math.abs(value);
+  if (abs >= 1e8) return `${sign}${(abs / 1e8).toFixed(2)}亿`;
+  if (abs >= 1e4) return `${sign}${(abs / 1e4).toFixed(2)}万`;
+  return `${sign}${abs.toFixed(0)}`;
+}
+
+/**
+ * 格式化基金规模（元）为易读金额：亿/万，无正负号。
+ * 例：1234567890 -> 12.35亿；85000000 -> 8500.00万；0/缺失 -> —
+ */
+export function formatScale(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  if (value >= 1e8) return `${(value / 1e8).toFixed(2)}亿`;
+  if (value >= 1e4) return `${(value / 1e4).toFixed(2)}万`;
+  return value.toFixed(0);
+}

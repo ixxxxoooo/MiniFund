@@ -110,3 +110,16 @@ func (s *WatchlistService) RemoveItem(code string, groupID int64) error {
 	s.refresh()
 	return nil
 }
+
+// MoveItem 将自选从源分组移动到目标分组。
+func (s *WatchlistService) MoveItem(code string, fromGroupID, toGroupID int64) error {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return fmt.Errorf("基金代码不能为空")
+	}
+	if err := s.store.MoveItem(code, fromGroupID, toGroupID); err != nil {
+		return err
+	}
+	s.refresh()
+	return nil
+}

@@ -27,6 +27,8 @@ interface WatchlistStore {
 
   addFund: (code: string) => Promise<void>;
   removeFund: (code: string) => Promise<void>;
+  /** 将基金从当前分组移动到目标分组 */
+  moveFund: (code: string, toGroupId: number) => Promise<void>;
   createGroup: (name: string) => Promise<void>;
   deleteGroup: (id: number) => Promise<void>;
   savePosition: (code: string, shares: number, costPrice: number) => Promise<void>;
@@ -90,6 +92,13 @@ export const useWatchlistStore = create<WatchlistStore>()((set, get) => ({
     const groupId = get().activeGroupId;
     if (groupId == null) return;
     const ok = await call("移除自选", () => WatchlistService.RemoveItem(code, groupId));
+    if (ok !== null) await get().reloadItems();
+  },
+
+  moveFund: async (code, toGroupId) => {
+    const fromGroupId = get().activeGroupId;
+    if (fromGroupId == null || fromGroupId === toGroupId) return;
+    const ok = await call("移动自选", () => WatchlistService.MoveItem(code, fromGroupId, toGroupId));
     if (ok !== null) await get().reloadItems();
   },
 

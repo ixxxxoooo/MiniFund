@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"minifund/internal/datasource/eastmoney"
@@ -18,14 +20,18 @@ const fundIndexMaxAge = 7 * 24 * time.Hour
 // detailCacheMaxAge 基金详情缓存时效：24 小时
 const detailCacheMaxAge = 24 * time.Hour
 
+// rankingCacheTTL 排行结果内存缓存时效（页面可见才轮询，60s 足够新鲜且大幅提速翻页）。
+const rankingCacheTTL = 60 * time.Second
+
 // FundService 基金数据服务：搜索、详情、历史净值、排行。
 type FundService struct {
-	store *storage.Store
+	store     *storage.Store
+	rankCache *ttlCache
 }
 
 // NewFundService 创建基金数据服务。
 func NewFundService(store *storage.Store) *FundService {
-	return &FundService{store: store}
+	return &FundService{store: store, rankCache: newTTLCache(rankingCacheTTL)}
 }
 
 // EnsureFundIndex 确保基金代码表存在且未过期（应用启动时后台调用，不暴露给前端）。
@@ -64,6 +70,92 @@ func (s *FundService) SearchFunds(keyword string, limit, offset int) ([]model.Fu
 	return s.store.SearchFunds(keyword, limit, offset)
 }
 
+// rankSearchPageSize 排行页「就地搜索」每页条数（与前端 SEARCH_PAGE_SIZE 保持一致）。
+const rankSearchPageSize = 30
+
+// themeCacheTTL 基金主题缓存时效：30 天（主题/概念归属变动缓慢）。
+const themeCacheTTL = 30 * 24 * time.Hour
+
+// themeFetchConcurrency 缺失主题的并发拉取上限（避免对搜索接口高频请求被限流）。
+const themeFetchConcurrency = 4
+
+// SearchFundsPage 排行页就地搜索（本地索引分页，含总数）：匹配名称/代码/拼音，
+// 公司名通常为基金名前缀（如「易方达」可命中全部易方达系基金）。pageIndex 从 1 开始。
+func (s *FundService) SearchFundsPage(keyword string, pageIndex int) (*model.FundIndexPage, error) {
+	return s.store.SearchFundsPage(keyword, pageIndex, rankSearchPageSize)
+}
+
+// GetFundThemes 批量获取一组基金所属的主题/概念标签（code → 主题列表）。
+// 命中缓存（30 天 TTL）直接返回；缺失项以受限并发从东财搜索接口拉取并落库缓存，
+// 拉取失败的基金会被跳过（前端不展示标签），不影响整体返回。
+func (s *FundService) GetFundThemes(codes []string) (map[string][]model.FundTheme, error) {
+	result := make(map[string][]model.FundTheme)
+	if len(codes) == 0 {
+		return result, nil
+	}
+	// 去重
+	seen := make(map[string]bool, len(codes))
+	uniq := make([]string, 0, len(codes))
+	for _, c := range codes {
+		c = strings.TrimSpace(c)
+		if c == "" || seen[c] {
+			continue
+		}
+		seen[c] = true
+		uniq = append(uniq, c)
+	}
+
+	caches, err := s.store.GetThemeCaches(uniq)
+	if err != nil {
+		logger.Warn("读取主题缓存失败: %v", err)
+		caches = map[string]storage.ThemeCacheRow{}
+	}
+
+	var missing []string
+	for _, c := range uniq {
+		if row, ok := caches[c]; ok && time.Since(time.Unix(row.UpdatedAt, 0)) < themeCacheTTL {
+			var themes []model.FundTheme
+			if json.Unmarshal([]byte(row.Themes), &themes) == nil {
+				result[c] = themes
+			}
+		} else {
+			missing = append(missing, c)
+		}
+	}
+
+	if len(missing) > 0 {
+		var mu sync.Mutex
+		sem := make(chan struct{}, themeFetchConcurrency)
+		var wg sync.WaitGroup
+		for _, c := range missing {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(code string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+				defer cancel()
+				themes, err := eastmoney.FetchFundThemes(ctx, code)
+				if err != nil {
+					logger.Warn("拉取基金主题失败: code=%s err=%v", code, err)
+					return
+				}
+				// 即使为空数组也缓存，避免对无主题基金反复请求
+				if data, err := json.Marshal(themes); err == nil {
+					if err := s.store.SaveThemeCache(code, string(data)); err != nil {
+						logger.Warn("写入主题缓存失败: code=%s err=%v", code, err)
+					}
+				}
+				mu.Lock()
+				result[code] = themes
+				mu.Unlock()
+			}(c)
+		}
+		wg.Wait()
+	}
+	return result, nil
+}
+
 // GetFundDetail 获取基金详情（缓存优先，24h 过期后重新抓取）。
 func (s *FundService) GetFundDetail(code string) (*model.FundDetail, error) {
 	if cached, err := s.store.GetDetailCache(code, detailCacheMaxAge); err == nil && cached != "" {
@@ -94,9 +186,24 @@ func (s *FundService) GetNavHistory(code string, pageIndex, pageSize int) (*mode
 	return eastmoney.FetchNavHistory(ctx, code, pageIndex, pageSize)
 }
 
-// GetFundRanking 获取基金排行。sortType：desc/asc。
+// GetFundRanking 获取基金排行（60s 内存缓存，配合前端翻页预取实现秒开）。sortType：desc/asc。
 func (s *FundService) GetFundRanking(fundType, sortKey, sortType string, pageIndex int) (*model.RankPage, error) {
+	key := fmt.Sprintf("%s|%s|%s|%d", fundType, sortKey, sortType, pageIndex)
+	if v, ok := s.rankCache.get(key); ok {
+		return v.(*model.RankPage), nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	return eastmoney.FetchRanking(ctx, fundType, sortKey, sortType, pageIndex, 50)
+	// FundMNRank 单页最多 30 条，与前端分页大小保持一致
+	page, err := eastmoney.FetchRanking(ctx, fundType, sortKey, sortType, pageIndex, 30)
+	if err != nil {
+		return nil, err
+	}
+	s.rankCache.set(key, page)
+	return page, nil
+}
+
+// PreloadRanking 后台预热默认排行首页（应用启动时调用，进入页面秒开）。
+func (s *FundService) PreloadRanking() {
+	_, _ = s.GetFundRanking("all", "rzdf", "desc", 1)
 }

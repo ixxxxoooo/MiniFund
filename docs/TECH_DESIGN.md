@@ -97,7 +97,11 @@ type IndexQuoteSource interface {
 
 - `eastmoney` 包实现：估值（fundgz）、代码表（fundcode_search）、历史净值（f10/lsjz）、详情（pingzhongdata + jjcc）、排行（rankhandler）、板块（push2）。
 - `tencent`/`sina` 实现 `IndexQuoteSource`，由 `FallbackIndexSource` 组合器做主备切换与退避。
-- 公共设施：带 UA/Referer 的 `http.Client`（超时 5s）、JSONP/JS 变量解析工具、GBK 解码、令牌桶限频器、熔断器（连续 5 次失败暂停 5 分钟）。
+- 公共设施：带 UA/Referer 的 `http.Client`（超时 5s，共享 keep-alive 连接池 + 透明 gzip）、JSONP/JS 变量解析工具、GBK 解码、令牌桶限频器、熔断器（连续 5 次失败暂停 5 分钟）。
+- 列表性能：排行/主题/板块在 `services/` 层做 60s TTL 内存缓存（`services/cache.go`，板块按 `all`/`industry`/`concept` 分键），并在启动时后台预加载（`FundService.PreloadRanking` / `MarketService.PreloadMarket` 预热「概念板块」热力）。
+- 板块热力（`SectorPage`，导航名「热门主题」）：行业(`m:90+t:2`)+概念(`m:90+t:3`) 合并为「全部」（默认概念），**按 `pn` 分页拉全（push2 单页上限 100）**，阶段取 push2 原生 `f3`/`f24`/`f25`（今日/近3月/今年来），按涨跌幅或主力净流入(`f62`)排序着色；点击板块尽力匹配 `FundTopicInterface` 主题，未命中则浏览器打开东财板块页。
+- 排行规模：`rankhandler` 无规模字段，`FetchRanking` 拉到一页后用 `FundMNFInfo` 批量取 `ENDNAV` 补全 `RankItem.Scale`；详情页历史最大回撤由 `Data_netWorthTrend` 单位净值序列计算（`calcMaxDrawdown`）。
+- macOS 打包：`wails3 task darwin:package ARCH=arm64` 生成带图标的 `.app`（codesign 前先 `xattr -cr` 清扩展属性，否则报 "detritus not allowed"）；`open bin/minifund.app` 以 .app 形式启动。
 
 ## 4. 监控调度器（internal/scheduler）
 
@@ -130,8 +134,10 @@ stateDiagram-v2
 | `fund:nav-confirmed` | `{code, date, nav, growth}` | 当日净值确认 |
 | `monitor:state` | `{phase, nextChange, paused}` | 时段状态切换/暂停恢复 |
 | `datasource:degraded` | `{source, reason}` | 熔断/降级发生与恢复 |
+| `news:flash` | `NewsFlash[]` | 每轮快讯拉取完成（推送最新列表） |
 
 - 使用 Wails3 `application.RegisterEvent[T]` 注册强类型事件（对齐 MiniDB updater 的做法）；前端在 `lib/wails/events.ts` 统一封装订阅。
+- **财经快讯轮询**：调度器在主循环按 `SettingsProvider.NewsPollInterval()`（默认 60s，最小 30s）定时执行 `runNewsRound`，**独立于交易时段与暂停状态**。每轮拉取后广播 `news:flash`，并以 `settings.news_last_id` 游标判断新增条目；存在新增且开启「快讯桌面通知」时，经注入的 `newsNotify` 回调调用 Wails 通知服务（`pkg/services/notifications`）弹系统通知，首轮与重启后不补推历史。手动刷新经 `RefreshNewsNow()`（独立 channel）触发。
 
 ## 5. 本地存储（internal/storage，SQLite）
 
@@ -167,7 +173,10 @@ CREATE TABLE daily_profit (
 CREATE TABLE nav_history (code TEXT, date TEXT, nav REAL, acc_nav REAL, growth REAL, PRIMARY KEY (code, date));
 CREATE TABLE detail_cache (code TEXT PRIMARY KEY, payload TEXT, fetched_at INTEGER);
 
--- 设置（KV）
+-- 基金所属主题/概念缓存（迁移 v2；themes 为 []FundTheme 的 JSON，30 天 TTL）
+CREATE TABLE fund_theme (code TEXT PRIMARY KEY, themes TEXT, updated_at INTEGER);
+
+-- 设置（KV）：key="app" 存整份 AppSettings JSON；key="news_last_id" 存最近一条已推送快讯 id（重启后避免重复通知）
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
 
 -- 提醒规则与触发历史（v1.1）
@@ -186,12 +195,14 @@ CREATE TABLE alert_log (id INTEGER PRIMARY KEY, rule_id INTEGER, fired_at INTEGE
 
 | 窗口 ID | URL（hash 路由） | 尺寸 | 特性 |
 | --- | --- | --- | --- |
-| `main` | `/#/main` | 1180×760（min 960×600） | frameless、透明背景、记忆位置 |
+| `main` | `/#/main` | 1360×900（min 1080×680） | frameless、透明背景、记忆位置 |
 | `tray-panel` | `/#/tray` | 320×420 固定 | frameless、AlwaysOnTop、隐藏任务栏、失焦隐藏 |
-| `detail:{code}` | `/#/detail/{code}` | 900×680 | 按基金代码复用已开窗口 |
+| `detail:{code}` | `/#/detail/{code}` | 1120×840（最小 900×640） | 按基金代码复用已开窗口；主区域无整页滚动，持仓/历史净值内部滚动，历史净值无限滚动加载 |
+| `news:{id}` | `/#/news/{payload}` | 880×680（最小 560×420） | 新闻详情独立窗口；`payload` 为前端 `base64(encodeURIComponent(JSON))` 序列化的新闻数据；按新闻 id 复用；正文区滚动，AI 解读结果在正文上方展示，含「打开原文」 |
 
 - 前端单一构建产物，`main.tsx` 读取 `location.hash` 决定渲染 `windows/` 下哪个根组件；窗口间不共享 React 状态，各自订阅 Go 事件保证一致。
-- `window_service.go` 提供 `OpenDetailWindow(code)`、`ShowMainWindow()`、`ToggleTrayPanel()`，统一管理窗口实例 map（带互斥锁），关闭即从 map 删除。
+- `window_service.go` 提供 `OpenDetailWindow(code)`、`OpenNewsWindow(id, payload)`、`ShowMainWindow()`、`ToggleTrayPanel()`，统一管理窗口实例 map（带互斥锁），关闭即从 map 删除。
+- 新闻详情不再用页内弹窗：快讯按其 `id` 推导文章页 `https://finance.eastmoney.com/a/{id}.html` 尝试抓取完整正文（抓取失败回退短讯），资讯抓取 `roll` 文章正文；二者均在独立窗口展示并提供 AI 解读与原文链接。
 
 ### 6.2 窗口生命周期
 
@@ -213,15 +224,18 @@ CREATE TABLE alert_log (id INTEGER PRIMARY KEY, rule_id INTEGER, fired_at INTEGE
 ```go
 // FundService
 SearchFunds(keyword string, limit int) ([]FundIndexItem, error)
+SearchFundsPage(keyword string, pageIndex int) (*FundIndexPage, error) // 排行页就地搜索（本地索引分页，含总数；每页 30 条，匹配名称/代码/拼音/公司前缀）
 GetFundDetail(code string) (*FundDetail, error)          // 详情快照（缓存优先）
 GetNavHistory(code string, page, size int) (*NavPage, error)
 GetFundRanking(fundType, sortKey string, page int) (*RankPage, error)
+GetFundThemes(codes []string) (map[string][]FundTheme, error) // 批量基金→所属主题/概念（30 天缓存，缺失项受限并发拉取）
 RefreshFundIndex() error                                  // 手动更新代码表
 
 // WatchlistService
 ListGroups() / CreateGroup(name) / RenameGroup(id, name) / DeleteGroup(id)
 ListItems(groupID) / AddItem(code, groupID) / RemoveItem(code, groupID)
-MoveItem(code, fromGroup, toGroup) / SetPinned(code, groupID, pinned) / Reorder(groupID, codes)
+MoveItem(code, fromGroup, toGroup)                        // 跨分组移动自选（保留 created_at，合并到目标分组末尾）
+SetPinned(code, groupID, pinned) / Reorder(groupID, codes)
 
 // PortfolioService
 GetPosition(code) / UpsertPosition(code, shares, costPrice) / DeletePosition(code)
@@ -230,12 +244,25 @@ GetSummary() (*PortfolioSummary, error)   // 总市值/当日预估/累计收益
 // MarketService
 GetIndexQuotes() / SetWatchedIndexes(symbols) / GetSectorList(kind string)
 
+// NewsService
+GetFlashNews() ([]NewsFlash, error)         // 最近一轮快讯快照（来自调度器缓存，后续靠 news:flash 事件推送）
+RefreshFlashNews() error                    // 手动触发一轮快讯拉取
+GetRollNews() ([]NewsArticle, error)        // 基金滚动资讯列表（60s 缓存）
+GetArticleContent(url string) (string, error) // 抓取文章 #ContentBody 正文（30 分钟缓存）
+
+// AIService（OpenAI 兼容；外部请求收敛于 internal/datasource/ai）
+Available() (bool, error)                   // AI 是否启用且配置完整
+InterpretNews(title, content string) (string, error) // 对单条新闻做解读
+
 // SettingsService
 Get() (*AppSettings, error) / Update(patch AppSettings) error
+// 新增字段：newsNotify(快讯桌面通知) / newsPollSec(快讯拉取间隔,≥30) / aiEnabled / aiBaseURL / aiKey / aiModel
 
 // WindowService
-OpenDetailWindow(code) / ShowMainWindow() / HideMainWindow() / QuitApp()
+OpenDetailWindow(code) / OpenNewsWindow(id, payload) / ShowMainWindow() / HideMainWindow() / QuitApp()
 ```
+
+- 桌面通知复用 Wails `pkg/services/notifications`：在 `core.go` 注册为服务并 `RequestNotificationAuthorization`，通过 `scheduler.SetNewsNotifier` 注入回调供快讯轮询调用（macOS 需已签名的 .app 包）。
 
 - 服务注册沿用 MiniDB 装配模式：`internal/app/core.go` 构造服务 → `services()` 返回 `[]application.Service` → `runner.go` 传入 `application.Options`。
 
@@ -249,6 +276,7 @@ OpenDetailWindow(code) / ShowMainWindow() / HideMainWindow() / QuitApp()
 | `portfolio` | 持仓与盈亏汇总 | Go SQLite |
 | `market` | 指数、板块、监控状态（phase） | 否（事件驱动） |
 | `ui` | 面板开关、选中项、金额隐藏开关 | localStorage（部分） |
+| `columns` | 各表格（排行/主题基金）列显隐配置 | localStorage |
 
 - 数据流约定：**写操作一律调用 bindings → Go 落库 → Go 发事件 → 各窗口 store 更新**，禁止前端先改本地再同步（避免多窗口状态漂移）。
 

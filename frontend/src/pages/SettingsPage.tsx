@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FundService } from "@bindings/minifund/services";
 import { Button } from "@/components/ui/button";
 import { zhCN } from "@/i18n/zh-CN";
@@ -57,24 +57,75 @@ function Select({
   );
 }
 
-/** 开关 */
+/**
+ * 主题样式的文本输入（设置项右侧）。
+ * 本地维护输入态，失焦或回车时才提交，避免每次按键都写库导致的卡顿/光标跳动。
+ */
+function TextField({
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: "text" | "password";
+}) {
+  const [local, setLocal] = useState(value);
+  useEffect(() => {
+    setLocal(value);
+  }, [value]);
+  const commit = () => {
+    if (local !== value) onChange(local);
+  };
+  return (
+    <input
+      type={type}
+      value={local}
+      placeholder={placeholder}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+      className="h-[var(--size-input-sm)] w-[220px] rounded-[var(--radius-input)] border border-[var(--border-color)] bg-[var(--surface)] px-2 text-[length:var(--size-font-xs)] text-[var(--fg)] outline-none focus:border-[var(--accent)]"
+    />
+  );
+}
+
+/**
+ * 开关：使用固定像素尺寸（内联 style），避免被 flex/全局按钮样式拉伸导致显示异常。
+ * 轨道 38×22，滑块 18×18，开/关分别贴右/贴左。
+ */
 function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
     <button
+      type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
       onClick={() => onChange(!checked)}
-      className={cn(
-        "relative h-5 w-9 rounded-full transition-colors",
-        checked ? "bg-[var(--accent)]" : "bg-[var(--border-color)]"
-      )}
+      style={{
+        width: 38,
+        height: 22,
+        borderRadius: 11,
+        padding: 0,
+        flex: "none",
+        backgroundColor: checked ? "var(--accent)" : "var(--border-color)",
+      }}
+      className="relative inline-flex shrink-0 items-center transition-colors"
     >
       <span
-        className={cn(
-          "absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-[var(--shadow-sm)] transition-transform",
-          checked ? "translate-x-[18px]" : "translate-x-0.5"
-        )}
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: "9999px",
+          backgroundColor: "#fff",
+          transform: checked ? "translateX(18px)" : "translateX(2px)",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.25)",
+        }}
+        className="block transition-transform"
       />
     </button>
   );
@@ -185,6 +236,55 @@ export function SettingsPage() {
                 );
               })}
             </div>
+          </Row>
+        </Section>
+
+        <Section title={zhCN.settings.news}>
+          <Row label={zhCN.settings.newsNotify} desc={zhCN.settings.newsNotifyDesc}>
+            <Toggle
+              checked={settings.newsNotify}
+              onChange={(v) => void update({ newsNotify: v })}
+              label={zhCN.settings.newsNotify}
+            />
+          </Row>
+          <Row label={zhCN.settings.newsPoll}>
+            <Select
+              value={String(settings.newsPollSec)}
+              options={[30, 60, 120, 300].map((v) => ({ value: String(v), label: `${v} ${zhCN.settings.intervalUnit}` }))}
+              onChange={(v) => void update({ newsPollSec: Number(v) })}
+            />
+          </Row>
+        </Section>
+
+        <Section title={zhCN.settings.ai}>
+          <Row label={zhCN.settings.aiEnable} desc={zhCN.settings.aiEnableDesc}>
+            <Toggle
+              checked={settings.aiEnabled}
+              onChange={(v) => void update({ aiEnabled: v })}
+              label={zhCN.settings.aiEnable}
+            />
+          </Row>
+          <Row label={zhCN.settings.aiBaseURL}>
+            <TextField
+              value={settings.aiBaseURL}
+              placeholder={zhCN.settings.aiBaseURLPlaceholder}
+              onChange={(v) => void update({ aiBaseURL: v })}
+            />
+          </Row>
+          <Row label={zhCN.settings.aiKey}>
+            <TextField
+              type="password"
+              value={settings.aiKey}
+              placeholder={zhCN.settings.aiKeyPlaceholder}
+              onChange={(v) => void update({ aiKey: v })}
+            />
+          </Row>
+          <Row label={zhCN.settings.aiModel}>
+            <TextField
+              value={settings.aiModel}
+              placeholder={zhCN.settings.aiModelPlaceholder}
+              onChange={(v) => void update({ aiModel: v })}
+            />
           </Row>
         </Section>
 

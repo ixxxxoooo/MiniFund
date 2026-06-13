@@ -10,6 +10,45 @@ type FundIndexItem struct {
 	PinyinFull string `json:"pinyinFull"` // 拼音全拼
 }
 
+// FundIndexPage 基金索引搜索分页结果（排行页「就地搜索」用）。
+type FundIndexPage struct {
+	Items []FundIndexItem `json:"items"`
+	Total int             `json:"total"`
+}
+
+// FundTheme 基金所属主题/概念（东财 ztjj 体系，TTYPE 形如 BKxxxxxx）。
+type FundTheme struct {
+	Code string `json:"code"` // 主题/板块代码（BKxxxxxx）
+	Name string `json:"name"` // 主题/板块名称（如 CPO、电力设备）
+}
+
+// PeriodReturn 基金阶段涨幅（含同类平均与同类排名，来自 FundMNPeriodIncrease）。
+type PeriodReturn struct {
+	Period string  `json:"period"` // 周期键：Y/3Y/6Y/1N/2N/3N/JN/LN 等
+	Value  float64 `json:"value"`  // 本基金涨跌幅（%）
+	Avg    float64 `json:"avg"`    // 同类平均（%）
+	Rank   int     `json:"rank"`   // 同类排名
+	Count  int     `json:"count"`  // 同类数量
+}
+
+// NewsFlash 全球财经快讯（7×24 短讯，来自东财 getFastNewsList，summary 即完整正文）。
+type NewsFlash struct {
+	ID        string   `json:"id"`        // 快讯唯一编号（接口 code 字段）
+	Title     string   `json:"title"`     // 标题
+	Summary   string   `json:"summary"`   // 正文（短讯本身即完整内容，含【标题】前缀）
+	Time      string   `json:"time"`      // 发布时间（yyyy-MM-dd HH:mm:ss）
+	Important bool      `json:"important"` // 是否重要（接口 titleColor != 0，通常标红）
+	Stocks    []string `json:"stocks"`    // 关联标的代码（如 0.159940）
+}
+
+// NewsArticle 基金滚动资讯（来自 roll.eastmoney.com，指向完整文章页，正文需抓取页面）。
+type NewsArticle struct {
+	ID    string `json:"id"`    // 文章编号（URL 中的数字，前 8 位为 yyyyMMdd）
+	Title string `json:"title"` // 标题
+	URL   string `json:"url"`   // 文章页地址（finance/fund.eastmoney.com/a/{id}.html）
+	Time  string `json:"time"`  // 发布日期（由文章编号推导，yyyy-MM-dd）
+}
+
 // FundEstimate 盘中估值。
 type FundEstimate struct {
 	Code           string  `json:"code"`           // 基金代码
@@ -47,9 +86,10 @@ type NavPage struct {
 
 // Holding 重仓股。
 type Holding struct {
-	StockCode string  `json:"stockCode"` // 股票代码
-	StockName string  `json:"stockName"` // 股票名称
-	Percent   float64 `json:"percent"`   // 占净值比例（%）
+	StockCode     string  `json:"stockCode"`     // 股票代码
+	StockName     string  `json:"stockName"`     // 股票名称
+	Percent       float64 `json:"percent"`       // 占净值比例（%）
+	ChangePercent float64 `json:"changePercent"` // 个股当日涨跌幅（%）
 }
 
 // ManagerInfo 基金经理信息（含档案数据，来自 pingzhongdata）。
@@ -86,6 +126,8 @@ type FundDetail struct {
 	MinPurchase    string       `json:"minPurchase"`    // 最小申购金额
 	NetWorthTrend  []TrendPoint `json:"netWorthTrend"`  // 单位净值走势
 	AcWorthTrend   []TrendPoint `json:"acWorthTrend"`   // 累计净值走势
+	MaxDrawdown    float64      `json:"maxDrawdown"`    // 历史最大回撤（%，由单位净值序列计算，负值如 -23.45）
+	PeriodReturns  []PeriodReturn `json:"periodReturns"` // 阶段涨幅（近1月/近3月/近6月/近1年/近3年/成立来等）
 	Holdings       []Holding    `json:"holdings"`       // 前十重仓股
 	Managers       []ManagerInfo `json:"managers"`      // 现任基金经理
 	FetchedAt      int64        `json:"fetchedAt"`      // 数据抓取时间（Unix 秒）
@@ -95,6 +137,10 @@ type FundDetail struct {
 	RiskLevel string `json:"riskLevel"` // 风险等级（1-5）
 	EstabDate string `json:"estabDate"` // 成立日期
 	Scale     string `json:"scale"`     // 最新规模（元，原始字符串）
+	// 交易状态（来自移动端详情接口；QDII 常有单日限额）
+	SubStatus    string `json:"subStatus"`    // 申购状态（如 开放申购 / 暂停申购）
+	RedeemStatus string `json:"redeemStatus"` // 赎回状态
+	DayLimit     string `json:"dayLimit"`     // 单日累计申购限额（原始字符串，空表示不限/未知）
 }
 
 // TopicItem 基金主题/板块条目（天天基金主题体系）。
@@ -146,13 +192,19 @@ type RankItem struct {
 	Name        string  `json:"name"`        // 基金名称
 	Date        string  `json:"date"`        // 净值日期
 	Nav         float64 `json:"nav"`         // 单位净值
+	AccNav      float64 `json:"accNav"`      // 累计净值
 	DayGrowth   float64 `json:"dayGrowth"`   // 日涨幅（%）
 	WeekGrowth  float64 `json:"weekGrowth"`  // 周涨幅（%）
 	MonthGrowth float64 `json:"monthGrowth"` // 月涨幅（%）
 	Month3      float64 `json:"month3"`      // 近 3 月涨幅（%）
 	Month6      float64 `json:"month6"`      // 近 6 月涨幅（%）
 	Year1       float64 `json:"year1"`       // 近 1 年涨幅（%）
+	Year2       float64 `json:"year2"`       // 近 2 年涨幅（%）
+	Year3       float64 `json:"year3"`       // 近 3 年涨幅（%）
 	Ytd         float64 `json:"ytd"`         // 今年来涨幅（%）
+	SinceStart  float64 `json:"sinceStart"`  // 成立来涨幅（%）
+	Fee         string  `json:"fee"`         // 申购手续费（原始字符串，含 %，如 0.15%）
+	Scale       float64 `json:"scale"`       // 最新规模（元，来自移动端 FundMNFInfo 的 ENDNAV）
 }
 
 // RankPage 基金排行分页结果。
@@ -165,10 +217,14 @@ type RankPage struct {
 type SectorItem struct {
 	Code          string  `json:"code"`          // 板块代码
 	Name          string  `json:"name"`          // 板块名称
-	ChangePercent float64 `json:"changePercent"` // 涨跌幅（%）
+	ChangePercent float64 `json:"changePercent"` // 今日涨跌幅（%，f3）
+	Month3        float64 `json:"month3"`        // 近3月涨跌幅（%，f24=60日）
+	Ytd           float64 `json:"ytd"`           // 今年来涨跌幅（%，f25=年初至今）
 	UpCount       int     `json:"upCount"`       // 上涨家数
 	DownCount     int     `json:"downCount"`     // 下跌家数
 	LeadStock     string  `json:"leadStock"`     // 领涨股名称
+	Inflow        float64 `json:"inflow"`        // 主力资金净流入（元，f62）
+	Kind          string  `json:"kind"`          // 板块类别：industry / concept
 }
 
 // WatchGroup 自选分组。

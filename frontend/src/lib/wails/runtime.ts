@@ -1,4 +1,4 @@
-import { Application, Events, Window } from "@wailsio/runtime";
+import { Application, Browser, Events, Window } from "@wailsio/runtime";
 
 /** 订阅 Go 侧事件，返回取消订阅函数 */
 export function EventsOn<T>(eventName: string, callback: (data: T) => void): () => void {
@@ -10,6 +10,11 @@ export function EventsOn<T>(eventName: string, callback: (data: T) => void): () 
 /** 退出应用 */
 export function Quit(): Promise<void> {
   return Application.Quit();
+}
+
+/** 用系统默认浏览器打开外部链接（如东方财富个股页） */
+export function OpenExternalURL(url: string): Promise<void> {
+  return Browser.OpenURL(url);
 }
 
 /** 最小化当前窗口 */

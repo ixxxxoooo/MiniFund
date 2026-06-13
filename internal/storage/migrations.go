@@ -63,6 +63,14 @@ var migrations = []string{
 		value TEXT
 	);
 	`,
+	// v2：基金所属主题/概念缓存（来自东财搜索接口 ZTJJInfo，变动缓慢，长 TTL 缓存避免重复请求）
+	`
+	CREATE TABLE IF NOT EXISTS fund_theme (
+		code TEXT PRIMARY KEY,
+		themes TEXT,
+		updated_at INTEGER
+	);
+	`,
 }
 
 // migrate 按 PRAGMA user_version 顺序执行未应用的迁移。

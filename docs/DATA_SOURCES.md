@@ -88,6 +88,7 @@ GET https://fund.eastmoney.com/pingzhongdata/{code}.js
 | `stockCodes` / `zqCodes` | 持仓股票/债券代码 |
 | `Data_netWorthTrend` | 单位净值走势（时间序列，含每日涨跌幅） |
 | `Data_ACWorthTrend` | 累计净值走势 |
+| （计算项）历史最大回撤 | 由 `Data_netWorthTrend` 单位净值序列计算：回撤=(谷值-此前峰值)/峰值，取整段最小者，写入 `FundDetail.MaxDrawdown`（%）。详情页以标签展示 |
 | `Data_grandTotal` | 累计收益率走势（与同类平均、沪深300 对比） |
 | `Data_currentFundManager` | 现任基金经理（含头像、任期、业绩） |
 | `Data_fluctuationScale` | 规模变动 |
@@ -99,8 +100,10 @@ GET https://fund.eastmoney.com/pingzhongdata/{code}.js
 
 ```
 GET https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition?deviceid=Wap&plat=Wap&product=EFund&version=2.0.0&FCODE={code}
-返回：{"Datas":{"fundStocks":[{"GPDM":"股票代码","GPJC":"股票简称","JZBL":"占净值比例"}]}}
+返回：{"Datas":{"fundStocks":[{"GPDM":"股票代码","GPJC":"股票简称","JZBL":"占净值比例","PCTNVCHG":"个股当日涨跌幅"}]}}
 ```
+
+补充：解析新增 `PCTNVCHG`（个股当日涨跌幅，映射到 `Holding.changePercent`）。详情页持仓行展示「占比 + 涨跌幅（红绿配色）」，并按代码推断东方财富个股页地址（沪 `sh`/深 `sz`/北 `bj`/港 `hk`/美 `us`），点击股票名用系统浏览器打开。详情页头部提供「天天基金主页」按钮，用系统浏览器打开 `https://fund.eastmoney.com/{code}.html`。
 
 备选（网页端 HTML 片段，解析成本高，不采用）：
 
@@ -109,34 +112,95 @@ GET https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code={code}&t
 Header: Referer: https://fundf10.eastmoney.com/
 ```
 
+### 2.4.1 基金交易状态（申购/赎回状态与单日限额）
+
+详情聚合接口 `FundMNDetailInformation`（已用于标签信息）额外解析字段：`SGZT`（申购状态）、`SHZT`（赎回状态）、`MAXSG`（单日累计申购上限，元）。空值占位（`""`/`--`/`0`）统一过滤，字段缺失时不展示标签。QDII 基金常有单日限额，在**基金详情页**以标签展示（不放入排行列表，避免逐行额外请求）。
+
 ### 2.5 基金排行
 
 ```
-GET https://fund.eastmoney.com/data/rankhandler.aspx?op=ph&dt=kf&ft={type}&rs=&gs=0&sc={sortKey}&st=desc&sd={start}&ed={end}&qdii=&tabSubtype=,,,,,&pi=1&pn=50&dx=1
-Header: Referer: https://fund.eastmoney.com/data/fundranking.html
+GET https://fundmobapi.eastmoney.com/FundMNewApi/FundMNRank?FundType={num}&SortColumn={col}&Sort={desc|asc}&pageIndex=1&pageSize=30&plat=Android&appType=ttjj&product=EFund&Version=1&deviceid=minifund
+Header: Referer: https://fund.eastmoney.com/
 ```
 
-- `ft`：基金类型（`all`全部 / `gp`股票 / `hh`混合 / `zq`债券 / `zs`指数 / `qdii` / `fof`）。
-- `sc`：排序键（`rzdf`日涨幅 / `zzf`周 / `1yzf`月 / `3yzf`季 / `6yzf`半年 / `1nzf`年 / `jnzf`今年来 / `lnzf`三年）。
-- 返回 JS 变量 `var rankData = {datas:[...]}`，每条为 `|` 分隔的字符串，需按位解析。
+- **数据源（重要，已切换）**：从 PC 端 `rankhandler.aspx` 切换为移动端排行接口 `FundMNRank`。原因：`rankhandler` 返回的 25 个字段中**不含基金规模**（位置 16 为成立日期、位置 18 为自定义区间收益），此前用 `FundMNFInfo` 补全 `ENDNAV` 是**错误接口**（`FundMNFInfo` 是实时估值接口，字段只有 `NAV/GSZ/GSZZL/...`，根本没有规模），导致「规模列全空」。`FundMNRank` **原生返回 `ENDNAV`（规模，元）**与各周期收益，一次请求即可，无需补全。
+- `FundType`：基金类型数字编码——`0`全部 / `25`股票 / `27`混合 / `31`债券 / `26`指数 / `6`QDII / `15`FOF（前端键 `all/gp/hh/zq/zs/qdii/fof` 在 `ranking.go` 的 `fundTypeToNum` 映射）。
+- `SortColumn`：排序列——`RZDF`日涨幅 / `SYL_Z`近1周 / `SYL_Y`近1月 / `SYL_3Y`近3月 / `SYL_6Y`近6月 / `SYL_1N`近1年 / `SYL_JN`今年来 / `SYL_3N`近3年（前端排序键经 `sortKeyToColumn` 映射）。
+- **分页大小固定 30**：`FundMNRank` 单页**最多返回 30 条**（传 `pageSize=50/100` 也只返回 30，已实测），故后端固定请求 30 条、前端 `RANK_PAGE_SIZE=30`，分页与行号据此计算。
+- 返回标准 JSON：`{"Datas":[{...}],"TotalCount":N,"ErrCode":0}`。字段映射：`FCODE`代码 / `SHORTNAME`简称 / `FSRQ`净值日期 / `DWJZ`单位净值 / `LJJZ`累计净值 / `RZDF`日 / `SYL_Z`周 / `SYL_Y`近1月 / `SYL_3Y`近3月 / `SYL_6Y`近6月 / `SYL_1N`近1年 / `SYL_2N`近2年 / `SYL_3N`近3年 / `SYL_JN`今年来 / `SYL_LN`成立来 / `ENDNAV`规模(元)。空值以 `"--"` 表示，统一解析为 0。
+- 字段取舍（前端列默认）：合并展示「单位净值+净值日期」一列（净值在上、日期在下）；必显——日/周/近1月/近3月/近6月/近1年/今年来、单位净值(含日期)、成立来、**规模**；默认隐藏（可在「列设置」开启）——累计净值、近2年、近3年。**已去掉手续费列，改为规模列**。前端列显隐配置持久化到 `localStorage`（`stores/columns`）。
 
-### 2.6 行业/概念板块行情（东财 push2）
+### 2.6 热门主题（东财天天基金 ztjj `GetZTJJListNew`）
 
 ```
-GET https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=100&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:90+t:2+f:!50&fields=f2,f3,f4,f12,f14,f104,f105,f128,f140,f136
+GET https://api.fund.eastmoney.com/ztjj/GetZTJJListNew?tt={类别}&dt=syl&st={周期}&pi=1&pn=500&_={毫秒时间戳}
+Referer: https://fund.eastmoney.com/ztjj/default.html
 ```
 
-- `fs=m:90+t:2` 行业板块；`m:90+t:3` 概念板块。
-- 关键字段：`f12` 板块代码、`f14` 板块名称、`f3` 涨跌幅、`f104`/`f105` 上涨/下跌家数、`f128`/`f140` 领涨股及其代码。
-- 标准 JSON，分钟级更新，用于"板块热力"页。
+- **数据源切换（重要修复）**：原先直连 `push2.eastmoney.com/api/qt/clist/get` 拉板块行情。实测桌面端 Go 客户端请求 push2 会在 **TLS 握手成功后被反爬静默断连（`EOF`）**，且无论补全 `Referer`/`ut` token/Cookie/浏览器请求头/HTTP1.1 均无法绕过（同一客户端访问 `fund.eastmoney.com`/`fundmobapi.eastmoney.com`/`api.fund.eastmoney.com` 均正常，浏览器访问 push2 也正常 —— 即 push2/quote 边缘对非浏览器客户端做了指纹拦截）。故改用**天天基金「主题基金」页（ztjj）同款、且主机可达**的 `api.fund.eastmoney.com/ztjj/GetZTJJListNew`。
+- 参数：`tt` 板块类别 —— `0` 全部 / `001002` 行业 / `001003` 概念；`dt=syl` 涨幅；`st` 周期同时也是返回值字段名 —— `D` 今日 / `Q` 近3月 / `SY` 今年来（另有 `W`/`M`/`Y` 等未用）；`pn=500` 一次取全。
+- 返回 `{"Data":[{"INDEXCODE":"BK000651","INDEXNAME":"光模块","SY":122.85}, ...]}`：`INDEXCODE` 主题代码、`INDEXNAME` 主题名、值字段名随 `st` 变化。值可能为数字、`"--"` 或 `null`，解析层（`parseZTJJ`/`rawNumber`）用 `RawMessage` 容错为 0；兼容纯 JSON 与 JSONP 包装。
+- **三档合并**：一个类别需 3 次请求（`st=D`/`Q`/`SY`）按 `INDEXCODE` 合并为 `ChangePercent`/`Month3`/`Ytd`。首档（今日）失败则整体失败，其余档失败仅该档为 0。顺序串行、按今日涨幅降序建序。
+- CPO/PCB/**光模块**/算力/液冷/存储芯片 等热门主题均在其中（如「光模块」今年来居首），覆盖了 push2 时代「缺热门主题」的诉求。
+- **阶段说明**：仅提供 今日(`D`)/近3月(`Q`)/今年来(`SY`) 三档；该接口仅返回涨幅值，不返回资金流入金额，故热力页移除「按资金流入」排序，统一按所选阶段涨幅降序着色（红涨绿跌跟随主题 token）。
+- **点击主题 → 相关基金（重要）**：点击热力格子直接进入「主题相关基金」列表，按主题代码 `BKxxxxxx` 调用 `api.fund.eastmoney.com/ZTJJ/GetBKRelTopicFundNew?tp={BK代码}&isbuy=1&sort={排序键}&sorttype={DESC|ASC}&pageindex=N&pagesize=50`（即天天基金 `fund.eastmoney.com/ztjj/#!curr/{BK代码}/fst/DESC` 同款接口）。返回 `{"Data":[{FCODE,SHORTNAME,DWJZ,RZDF,SYL_Z/Y/3Y/6Y/1N/2N/3N/JN/LN,SYRQ,...}],"TotalCount":n}`，字段多为数字（可能为 `null`），复用 `RankItem/RankPage` 解析；排序键 `RZDF`(日)/`SYL_Z`(周)/`SYL_Y`(月)/`SYL_3Y`(近3月)/`SYL_6Y`(近6月)/`SYL_1N`(近1年)/`SYL_JN`(今年来)。配套 `GetBKDetailInfoNew?tp={BK代码}` 提供主题自身各周期涨幅与排名（暂作展示备用）。
 
 ### 2.7 主题基金（按板块找基金）
+
+> 注：`FundTopicInterface`（dt=11）返回的是**过时主题集**（大数据/一带一路/二胎概念…约148个，无 CPO/PCB/光模块），仅作为「主题 → 相关基金」的尽力匹配用；热门主题页不再单列「基金主题」标签。点击主题时：先按名称匹配主题，命中则进入主题基金列表，未命中则用系统浏览器打开东财站内搜索 `https://so.eastmoney.com/web/s?keyword={主题名}`。
 
 ```
 GET https://fundztapi.eastmoney.com/FundSpecialTopicApi/FundSpecialTopicConcept?callback=&sort=ZDF&sorttype=DESC&pageindex=1&pagesize=50
 ```
 
 用于"板块 → 相关基金"的主题映射（v1 可先做行业板块行情，主题映射放 v2）。
+
+### 2.8 基金所属主题标签（东财搜索接口 `FundSearchAPI` 的 `ZTJJInfo`）
+
+```
+GET https://fundsuggest.eastmoney.com/FundSearch/api/FundSearchAPI.ashx?m=1&key={基金代码}&pageindex=1&pagesize=5&_={毫秒时间戳}
+Referer: https://fund.eastmoney.com/
+```
+
+- 用途：排行/搜索列表中，在每只基金名称下展示其**所属主题/概念标签**（如 CPO、电力设备、新能源）。东财无「基金→主题」批量接口，搜索接口按代码精确匹配返回的条目里带 `ZTJJInfo: [{TTYPE:"BKxxxxxx", TTYPENAME:"主题名"}]` 即所属主题列表。
+- 解析（`eastmoney/theme.go: FetchFundThemes`）：取 `Datas` 中 `CODE == 基金代码` 的条目，读取其 `ZTJJInfo` → `[]model.FundTheme{Code(BK码), Name}`。
+- **限频与缓存（重要）**：逐基金请求成本高，故 `FundService.GetFundThemes(codes)` 做 **30 天 SQLite 缓存（表 `fund_theme`）**；当前页缺失项以**并发上限 4** 拉取，失败的基金跳过（不展示标签、不影响整体），无主题也缓存空数组避免反复请求。前端按当前页 code 批量请求、增量合并、异步渲染，不阻塞表格。
+
+### 2.9 基金阶段涨幅（移动端 `FundMNPeriodIncrease`）
+
+```
+GET https://fundmobapi.eastmoney.com/FundMNewApi/FundMNPeriodIncrease?FCODE={基金代码}&RANGE=&deviceid=minifund&plat=Iphone&product=EFund&version=6.6.6
+Referer: https://fund.eastmoney.com/
+```
+
+- 用途：基金详情页展示**近1月/近3月/近6月/近1年/近3年/成立来**等阶段涨幅（红绿配色，附同类平均）。
+- `RANGE=` 空表示阶段涨幅；返回 `{"Datas":[{"title":"Y","syl":"-2.43","avg":"-0.43","rank":"803","sc":"1091"},...]}`。`title` 周期键：`Z`近1周/`Y`近1月/`3Y`近3月/`6Y`近6月/`1N`近1年/`2N`近2年/`3N`近3年/`5N`近5年/`JN`今年来/`LN`成立来；`syl` 本基金涨幅%、`avg` 同类平均%、`rank` 同类排名、`sc` 同类数量。解析为 `[]model.PeriodReturn`，在 `FetchFundDetail` 中并入详情（失败不影响主体）。
+
+### 2.10 全球财经快讯（东财 `getFastNewsList`）
+
+```
+GET https://np-weblist.eastmoney.com/comm/web/getFastNewsList?client=web&biz=web_724&fastColumn=109&sortEnd=&pageSize=50&req_trace={毫秒}&_={毫秒}
+Referer: https://kuaixun.eastmoney.com/
+```
+
+- 用途：「财经快讯」页「全球快讯」Tab，对应 `https://kuaixun.eastmoney.com/jj.html`（基金快讯，`fastColumn=109`）的 7×24 短讯。
+- 返回 `{"code":"1","data":{"fastNewsList":[{"code","title","summary","showTime","titleColor","stockList":[...]}]}}`，**`summary` 字段即完整短讯正文**（含【标题】前缀），无需二次抓取；`titleColor != 0` 表示重要快讯（标红）。
+- 解析（`eastmoney/news.go: FetchFlashNews`）→ `[]model.NewsFlash`。
+- **更新方式**：由 `internal/scheduler` 按设置 `newsPollSec`（默认 60s，最小 30s）定时拉取，与盘中估值/暂停状态解耦；通过 `news:flash` 事件广播最新列表；新增条目（以 `news_last_id` 游标判断）在开启「快讯桌面通知」时经 Wails 通知服务弹系统通知（首轮与重启后不补推历史）。
+
+### 2.11 基金滚动资讯与文章正文（`roll` 页 + `#ContentBody`）
+
+```
+GET https://roll.eastmoney.com/fund.html                 # 资讯列表（服务端渲染 HTML）
+GET https://finance.eastmoney.com/a/{文章编号}.html       # 文章正文页
+GET https://fund.eastmoney.com/a/{文章编号}.html
+Referer: https://kuaixun.eastmoney.com/
+```
+
+- 与快讯的区别：快讯是短讯（summary 即全文）；`roll/fund.html` 是**完整新闻文章**列表（标题 + 指向 `/a/{id}.html` 详情页），二者内容形态不同，故「财经快讯」页用「基金资讯」Tab 单独承载。
+- 列表解析（`FetchRollNews`）：正则提取页面中 `finance|fund.eastmoney.com/a/{id}.html` 的文章链接与标题，文章编号前 8 位即 `yyyyMMdd`（据此推导发布日期），去重后取前 50 条。
+- 正文解析（`FetchArticleContent` → `parseArticleContent`）：用 `golang.org/x/net/html` 解析文章页，取 `id="ContentBody"` 元素内 `<p>` 文本，剔除「在东方财富看资讯行情」等引流广告段。
+- 缓存：列表 60s、正文 30 分钟（正文不可变）；均为按需抓取（进入页/点击时），不参与定时轮询与通知。
 
 ## 3. 指数行情接口规格
 
@@ -179,6 +243,8 @@ Header: Referer: https://finance.sina.com.cn/
 
 - **SQLite 持久缓存**：基金代码表、历史净值、基金详情快照（带 `fetched_at` 时效字段）。
 - **内存缓存**：盘中估值、指数行情（仅保留最新值 + 当日时间序列，用于走势小图）。
+- **服务层 TTL 缓存**：排行 / 主题列表 / 主题基金 / 板块（按 `all`/`industry`/`concept` 分键）60s 内存缓存（`services/cache.go`），配合前端翻页预取实现秒开；应用启动后后台预加载默认排行首页与「全部板块」热力。
+- **连接复用**：`internal/datasource` 共享 `http.Transport` 开启 keep-alive 长连接池与透明 gzip，降低天天基金多接口多域名请求的 TLS/TCP 握手开销。
 - 所有列表页先渲染缓存数据再异步刷新（stale-while-revalidate）。
 
 ### 4.3 降级与容错
@@ -188,7 +254,20 @@ Header: Referer: https://finance.sina.com.cn/
 3. 所有 HTTP 请求统一超时 5s、重试 1 次；解析失败记录原始响应到日志（截断）。
 4. 全局熔断：单接口连续 5 次失败暂停该接口 5 分钟，事件通知前端展示降级横幅。
 
-## 5. 风险声明与合规
+## 5. AI 解读数据源（OpenAI 兼容）
+
+```
+POST {aiBaseURL}/chat/completions
+Authorization: Bearer {aiKey}
+Content-Type: application/json
+{"model":"{aiModel}","messages":[{"role":"system",...},{"role":"user",...}],"temperature":0.3,"stream":false}
+```
+
+- 用途：「财经快讯」页对单条新闻一键「AI 解读」。请求收敛在 `internal/datasource/ai`（遵守「外部请求只允许出现在 datasource 子包」约束），超时 60s。
+- 兼容 OpenAI Chat Completions 协议，可对接 DeepSeek / 通义 / Moonshot / OpenAI 等；服务地址、密钥、模型均在「设置 - AI 解读」中配置（默认地址 `https://api.deepseek.com/v1`、模型 `deepseek-chat`，密钥需用户自填）。
+- 解析 `choices[0].message.content` 作为解读文本；`error.message` 或非 200 状态返回错误并在弹窗中提示。
+
+## 6. 风险声明与合规
 
 1. 上述接口均为**非官方公开 Web 接口**，可能随时变更格式或加风控。架构上要求：所有解析逻辑收敛在 `internal/datasource/eastmoney`、`internal/datasource/tencent` 包内，上层仅依赖接口抽象。
 2. 估值数据按基金历史持仓和指数走势估算，**不代表真实净值**，UI 必须明确标注"估算值，仅供参考"。

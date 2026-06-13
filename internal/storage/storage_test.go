@@ -45,6 +45,34 @@ func TestFundIndexSearch(t *testing.T) {
 	}
 }
 
+func TestSearchFundsPage(t *testing.T) {
+	s := newTestStore(t)
+	items := []model.FundIndexItem{
+		{Code: "110011", Name: "易方达中小盘混合", Type: "混合型", PinyinAbbr: "YFDZXPHH", PinyinFull: "YIFANGDA1"},
+		{Code: "110022", Name: "易方达消费行业", Type: "股票型", PinyinAbbr: "YFDXFHY", PinyinFull: "YIFANGDA2"},
+		{Code: "110033", Name: "易方达蓝筹精选", Type: "混合型", PinyinAbbr: "YFDLCJX", PinyinFull: "YIFANGDA3"},
+	}
+	if err := s.ReplaceFundIndex(items); err != nil {
+		t.Fatalf("写入代码表失败: %v", err)
+	}
+
+	// 公司名（基金名前缀）+ 分页：每页 2 条，第 1 页应有 2 条且总数 3
+	p1, err := s.SearchFundsPage("易方达", 1, 2)
+	if err != nil || p1.Total != 3 || len(p1.Items) != 2 {
+		t.Fatalf("分页搜索第 1 页失败: %v total=%d len=%d", err, p1.Total, len(p1.Items))
+	}
+	// 第 2 页应剩 1 条
+	p2, _ := s.SearchFundsPage("易方达", 2, 2)
+	if p2.Total != 3 || len(p2.Items) != 1 {
+		t.Fatalf("分页搜索第 2 页失败: total=%d len=%d", p2.Total, len(p2.Items))
+	}
+	// 空关键字返回空集且不报错
+	empty, err := s.SearchFundsPage("  ", 1, 2)
+	if err != nil || empty.Total != 0 || len(empty.Items) != 0 {
+		t.Fatalf("空关键字应返回空集: %v %+v", err, empty)
+	}
+}
+
 func TestWatchlistAndPosition(t *testing.T) {
 	s := newTestStore(t)
 	groups, err := s.ListGroups()
@@ -78,6 +106,44 @@ func TestWatchlistAndPosition(t *testing.T) {
 	ok, _ := s.HasDailyProfit("000001", "2026-06-12")
 	if !ok {
 		t.Fatal("净值确认状态查询错误")
+	}
+}
+
+func TestMoveItem(t *testing.T) {
+	s := newTestStore(t)
+	groups, _ := s.ListGroups()
+	g1 := groups[0].ID
+	g2, err := s.CreateGroup("成长")
+	if err != nil {
+		t.Fatalf("创建分组失败: %v", err)
+	}
+	if err := s.AddItem("000001", g1); err != nil {
+		t.Fatalf("添加自选失败: %v", err)
+	}
+	if err := s.MoveItem("000001", g1, g2.ID); err != nil {
+		t.Fatalf("移动自选失败: %v", err)
+	}
+	src, _ := s.ListItems(g1)
+	dst, _ := s.ListItems(g2.ID)
+	if len(src) != 0 {
+		t.Fatalf("源分组应为空: %+v", src)
+	}
+	if len(dst) != 1 || dst[0].Code != "000001" {
+		t.Fatalf("目标分组应含该基金: %+v", dst)
+	}
+}
+
+func TestThemeCache(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.SaveThemeCache("003834", `[{"code":"BK000226","name":"新能源"}]`); err != nil {
+		t.Fatalf("写入主题缓存失败: %v", err)
+	}
+	got, err := s.GetThemeCaches([]string{"003834", "000001"})
+	if err != nil || len(got) != 1 {
+		t.Fatalf("读取主题缓存失败: %v %+v", err, got)
+	}
+	if got["003834"].Themes == "" || got["003834"].UpdatedAt == 0 {
+		t.Fatalf("主题缓存内容错误: %+v", got["003834"])
 	}
 }
 

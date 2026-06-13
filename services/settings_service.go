@@ -31,6 +31,18 @@ type AppSettings struct {
 	CloseAction string `json:"closeAction"`
 	// WatchedIndexes 订阅的指数列表
 	WatchedIndexes []string `json:"watchedIndexes"`
+	// NewsNotify 收到新的财经快讯时是否弹桌面通知
+	NewsNotify bool `json:"newsNotify"`
+	// NewsPollSec 快讯定时拉取间隔（秒），最小 30
+	NewsPollSec int `json:"newsPollSec"`
+	// AIEnabled 是否启用 AI 解读
+	AIEnabled bool `json:"aiEnabled"`
+	// AIBaseURL AI 服务地址（OpenAI 兼容，如 https://api.deepseek.com/v1）
+	AIBaseURL string `json:"aiBaseURL"`
+	// AIKey AI 服务密钥
+	AIKey string `json:"aiKey"`
+	// AIModel 模型名（如 deepseek-chat）
+	AIModel string `json:"aiModel"`
 }
 
 // defaultSettings 返回默认设置。
@@ -44,6 +56,11 @@ func defaultSettings() AppSettings {
 		StealthMode:        false,
 		CloseAction:        "hide",
 		WatchedIndexes:     []string{"sh000001", "sz399001", "sz399006", "sh000300", "hkHSI", "usIXIC"},
+		NewsNotify:         false,
+		NewsPollSec:        60,
+		AIEnabled:          false,
+		AIBaseURL:          "https://api.deepseek.com/v1",
+		AIModel:            "deepseek-chat",
 	}
 }
 
@@ -90,6 +107,9 @@ func (s *SettingsService) Update(next AppSettings) error {
 	if next.QuoteColorScheme != "intl" {
 		next.QuoteColorScheme = "cn"
 	}
+	if next.NewsPollSec < 30 {
+		next.NewsPollSec = 30
+	}
 	data, err := json.Marshal(next)
 	if err != nil {
 		return fmt.Errorf("序列化设置失败: %w", err)
@@ -123,6 +143,9 @@ func (s *SettingsService) load() {
 	}
 	if len(loaded.WatchedIndexes) == 0 {
 		loaded.WatchedIndexes = defaultSettings().WatchedIndexes
+	}
+	if loaded.NewsPollSec < 30 {
+		loaded.NewsPollSec = defaultSettings().NewsPollSec
 	}
 	s.mu.Lock()
 	s.settings = loaded
@@ -159,4 +182,29 @@ func (s *SettingsService) StealthMode() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.settings.StealthMode
+}
+
+// NewsPollInterval 财经快讯定时拉取间隔。
+func (s *SettingsService) NewsPollInterval() time.Duration {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sec := s.settings.NewsPollSec
+	if sec < 30 {
+		sec = 30
+	}
+	return time.Duration(sec) * time.Second
+}
+
+// NewsNotifyEnabled 是否在收到新快讯时弹桌面通知。
+func (s *SettingsService) NewsNotifyEnabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.settings.NewsNotify
+}
+
+// AIConfig 返回 AI 解读配置（启用状态 + 服务地址/密钥/模型）。
+func (s *SettingsService) AIConfig() (enabled bool, baseURL, apiKey, mdl string) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.settings.AIEnabled, s.settings.AIBaseURL, s.settings.AIKey, s.settings.AIModel
 }

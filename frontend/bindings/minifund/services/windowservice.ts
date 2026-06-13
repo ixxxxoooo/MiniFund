@@ -48,6 +48,14 @@ export function OpenDetailWindow(code: string): $CancellablePromise<void> {
 }
 
 /**
+ * OpenNewsWindow 打开新闻详情独立窗口；同一新闻 id 复用已存在的窗口。
+ * payload 为前端 base64(JSON) 序列化的新闻数据，通过 hash 路由 /#/news/{payload} 传入窗口。
+ */
+export function OpenNewsWindow(id: string, payload: string): $CancellablePromise<void> {
+    return $Call.ByID(3524971032, id, payload);
+}
+
+/**
  * QuitApp 退出应用（托盘菜单/设置页调用）。
  */
 export function QuitApp(): $CancellablePromise<void> {

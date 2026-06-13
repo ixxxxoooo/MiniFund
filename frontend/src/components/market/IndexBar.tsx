@@ -1,11 +1,10 @@
 import { useMarketStore } from "@/stores/market";
 import { useSettingsStore } from "@/stores/settings";
-import { BreadthIndicator } from "./BreadthIndicator";
 import { QuoteText } from "./QuoteText";
 
 /**
  * 指数行情条：展示在主窗口标题栏中间，数据来自 market store（事件驱动）。
- * 末尾附大盘涨跌分布指示器（悬停看完整分布图）。
+ * 注：大盘涨跌分布仅在托盘监控面板中展示，标题栏不再附带。
  */
 export function IndexBar() {
   const indexes = useMarketStore((s) => s.indexes);
@@ -20,7 +19,6 @@ export function IndexBar() {
           <QuoteText value={q.changePercent} neutral={stealth} />
         </div>
       ))}
-      <BreadthIndicator />
     </div>
   );
 }

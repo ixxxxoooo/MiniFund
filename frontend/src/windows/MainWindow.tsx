@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { AlertTriangle, BarChart3, LayoutGrid, LineChart, ListOrdered, Pause, RefreshCw, Search, Settings } from "lucide-react";
+import { AlertTriangle, BarChart3, LayoutGrid, LineChart, ListOrdered, Newspaper, Pause, RefreshCw, Search, Settings } from "lucide-react";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { IndexBar } from "@/components/market/IndexBar";
 import { SearchPalette } from "@/components/fund/SearchPalette";
@@ -8,6 +8,7 @@ import { WatchlistPage } from "@/pages/WatchlistPage";
 import { AnalysisPage } from "@/pages/AnalysisPage";
 import { RankingPage } from "@/pages/RankingPage";
 import { SectorPage } from "@/pages/SectorPage";
+import { NewsPage } from "@/pages/NewsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
@@ -15,6 +16,7 @@ import { useHotkeys } from "@/lib/hotkeys";
 import { cn } from "@/lib/utils";
 import { WindowService } from "@bindings/minifund/services";
 import { useMarketStore } from "@/stores/market";
+import { useNewsStore } from "@/stores/news";
 import { useSettingsStore } from "@/stores/settings";
 import { useUIStore, type PageId } from "@/stores/ui";
 
@@ -23,6 +25,7 @@ const NAV_ITEMS: { id: PageId; label: string; icon: React.ReactNode }[] = [
   { id: "analysis", label: zhCN.nav.analysis, icon: <LineChart size={14} /> },
   { id: "ranking", label: zhCN.nav.ranking, icon: <ListOrdered size={14} /> },
   { id: "sectors", label: zhCN.nav.sectors, icon: <BarChart3 size={14} /> },
+  { id: "news", label: zhCN.nav.news, icon: <Newspaper size={14} /> },
   { id: "settings", label: zhCN.nav.settings, icon: <Settings size={14} /> },
 ];
 
@@ -38,11 +41,21 @@ export function MainWindow() {
   const monitor = useMarketStore((s) => s.monitor);
   const degraded = useMarketStore((s) => s.degraded);
   const loadSettings = useSettingsStore((s) => s.load);
+  const initNews = useNewsStore((s) => s.init);
+  const newsUnread = useNewsStore((s) => s.unread);
+  const markNewsRead = useNewsStore((s) => s.markRead);
 
   useEffect(() => {
     void loadSettings();
     initMarket();
-  }, [loadSettings, initMarket]);
+    const unsub = initNews();
+    return unsub;
+  }, [loadSettings, initMarket, initNews]);
+
+  // 进入快讯页即清除未读红点
+  useEffect(() => {
+    if (page === "news") markNewsRead();
+  }, [page, markNewsRead]);
 
   // 全局快捷键：⌘K 搜索、⌘R 刷新、⌘1-5 切页、⌘W 隐藏主窗口（与系统行为一致）
   useHotkeys({
@@ -92,7 +105,12 @@ export function MainWindow() {
               )}
             >
               {item.icon}
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.id === "news" && newsUnread > 0 && (
+                <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1 text-2xs font-medium text-[var(--accent-fg)]">
+                  {newsUnread > 99 ? "99+" : newsUnread}
+                </span>
+              )}
             </button>
           ))}
         </aside>
@@ -103,6 +121,7 @@ export function MainWindow() {
           {page === "analysis" && <AnalysisPage />}
           {page === "ranking" && <RankingPage />}
           {page === "sectors" && <SectorPage />}
+          {page === "news" && <NewsPage />}
           {page === "settings" && <SettingsPage />}
         </main>
       </div>

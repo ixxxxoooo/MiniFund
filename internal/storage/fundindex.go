@@ -83,6 +83,57 @@ func (s *Store) SearchFunds(keyword string, limit, offset int) ([]model.FundInde
 	return items, rows.Err()
 }
 
+// SearchFundsPage 本地模糊搜索（分页）：在 SearchFunds 同款匹配规则基础上附带总数，
+// 供排行页「就地搜索」按页展示。pageIndex 从 1 开始。
+func (s *Store) SearchFundsPage(keyword string, pageIndex, pageSize int) (*model.FundIndexPage, error) {
+	if pageSize <= 0 || pageSize > 100 {
+		pageSize = 20
+	}
+	if pageIndex < 1 {
+		pageIndex = 1
+	}
+	page := &model.FundIndexPage{Items: []model.FundIndexItem{}, Total: 0}
+	kw := strings.TrimSpace(keyword)
+	if kw == "" {
+		return page, nil
+	}
+	upper := strings.ToUpper(kw)
+	// 匹配条件：代码前缀 / 名称包含 / 拼音首字母前缀 / 全拼包含（与 SearchFunds 保持一致）
+	where := "WHERE code LIKE ? OR name LIKE ? OR pinyin_abbr LIKE ? OR pinyin_full LIKE ?"
+	whereArgs := []any{kw + "%", "%" + kw + "%", upper + "%", "%" + upper + "%"}
+
+	if err := s.db.QueryRow("SELECT COUNT(*) FROM fund_index "+where, whereArgs...).Scan(&page.Total); err != nil {
+		return nil, fmt.Errorf("统计搜索结果失败: %w", err)
+	}
+	if page.Total == 0 {
+		return page, nil
+	}
+
+	offset := (pageIndex - 1) * pageSize
+	args := append([]any{}, whereArgs...)
+	args = append(args, kw, kw+"%", upper+"%", pageSize, offset)
+	rows, err := s.db.Query(`
+		SELECT code, name, type, pinyin_abbr, pinyin_full FROM fund_index `+where+`
+		ORDER BY
+			CASE WHEN code = ? THEN 0 WHEN code LIKE ? THEN 1 WHEN pinyin_abbr LIKE ? THEN 2 ELSE 3 END,
+			code
+		LIMIT ? OFFSET ?`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("搜索基金失败: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	page.Items = make([]model.FundIndexItem, 0, pageSize)
+	for rows.Next() {
+		var it model.FundIndexItem
+		if err := rows.Scan(&it.Code, &it.Name, &it.Type, &it.PinyinAbbr, &it.PinyinFull); err != nil {
+			return nil, fmt.Errorf("读取搜索结果失败: %w", err)
+		}
+		page.Items = append(page.Items, it)
+	}
+	return page, rows.Err()
+}
+
 // FundTypes 批量查询基金类型（code → type），用于调度器区分场内/场外。
 func (s *Store) FundTypes(codes []string) (map[string]string, error) {
 	out := make(map[string]string, len(codes))

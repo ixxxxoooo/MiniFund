@@ -109,11 +109,17 @@ func TestParseHoldings(t *testing.T) {
 	if len(holdings) != 2 || holdings[0].StockName != "贵州茅台" || holdings[0].Percent != 9.52 {
 		t.Errorf("重仓股解析错误: %+v", holdings)
 	}
+	if holdings[0].ChangePercent != 0.5 || holdings[1].ChangePercent != -0.2 {
+		t.Errorf("重仓股涨跌幅解析错误: %+v", holdings)
+	}
 }
 
 func TestParseRanking(t *testing.T) {
-	body := `var rankData = {datas:["000001,华夏成长混合,HXCZHH,2026-06-11,1.2345,3.4567,0.52,1.20,3.40,5.60,8.90,15.20,20.10,30.50,12.80,200.10,2001-12-18,1,15.20,0.15%,0.15%,1,,,",` +
-		`"110011,易方达优质精选混合,YFDYZJXHH,2026-06-11,5.6789,6.7890,-0.31,0.80,2.10,4.30,7.20,12.10,18.30,25.40,9.60,500.20,2008-06-19,1,12.10,0.15%,0.15%,1,,,"],allRecords:8000,pageIndex:1,pageNum:50};`
+	// FundMNRank 移动端排行 JSON：原生含规模（ENDNAV）与各周期收益。空字段以 "--" 表示。
+	body := `{"Datas":[` +
+		`{"FCODE":"000001","SHORTNAME":"华夏成长混合","FSRQ":"2026-06-11","DWJZ":"1.2345","LJJZ":"3.4567","RZDF":"0.52","SYL_Z":"1.20","SYL_Y":"3.40","SYL_3Y":"5.60","SYL_6Y":"8.90","SYL_1N":"15.20","SYL_2N":"20.10","SYL_3N":"30.50","SYL_JN":"12.80","SYL_LN":"200.10","ENDNAV":"1933605682.29"},` +
+		`{"FCODE":"110011","SHORTNAME":"易方达优质精选混合","FSRQ":"2026-06-11","DWJZ":"5.6789","LJJZ":"6.7890","RZDF":"-0.31","SYL_Z":"0.80","SYL_Y":"2.10","SYL_3Y":"4.30","SYL_6Y":"7.20","SYL_1N":"12.10","SYL_2N":"18.30","SYL_3N":"25.40","SYL_JN":"9.60","SYL_LN":"500.20","ENDNAV":"--"}` +
+		`],"ErrCode":0,"TotalCount":8000}`
 	page, err := parseRanking(body)
 	if err != nil {
 		t.Fatalf("解析排行失败: %v", err)
@@ -124,6 +130,14 @@ func TestParseRanking(t *testing.T) {
 	first := page.Items[0]
 	if first.Code != "000001" || first.DayGrowth != 0.52 || first.Year1 != 15.20 || first.Ytd != 12.80 {
 		t.Errorf("排行条目解析错误: %+v", first)
+	}
+	// 累计净值 / 近2年 / 近3年 / 成立来 / 规模
+	if first.AccNav != 3.4567 || first.Year2 != 20.10 || first.Year3 != 30.50 || first.SinceStart != 200.10 || first.Scale != 1933605682.29 {
+		t.Errorf("排行新增字段解析错误: %+v", first)
+	}
+	// 规模为 "--" 时应解析为 0
+	if page.Items[1].Scale != 0 {
+		t.Errorf("空规模应为 0: %+v", page.Items[1])
 	}
 }
 
@@ -178,13 +192,54 @@ func TestParseBreadth(t *testing.T) {
 	}
 }
 
-func TestParseSectors(t *testing.T) {
-	body := `{"rc":0,"data":{"total":86,"diff":[{"f3":2.45,"f12":"BK0475","f14":"银行","f104":40,"f105":2,"f128":"招商银行"},{"f3":-1.23,"f12":"BK0438","f14":"食品饮料","f104":10,"f105":35,"f128":"贵州茅台"}]}}`
-	items, err := parseSectors(body)
+// TestParseZTJJ 覆盖热门主题（GetZTJJListNew）解析：含数字、"--" 与 null 的值字段。
+func TestParseZTJJ(t *testing.T) {
+	body := `{"Data":[{"INDEXCODE":"BK000651","INDEXNAME":"光模块","D":3.21},{"INDEXCODE":"BK000049","INDEXNAME":"工业金属","D":"--"},{"INDEXCODE":"BK000292","INDEXNAME":"黄金股","D":null}]}`
+	items, err := parseZTJJ(body)
 	if err != nil {
-		t.Fatalf("解析板块失败: %v", err)
+		t.Fatalf("解析热门主题失败: %v", err)
 	}
-	if len(items) != 2 || items[0].Name != "银行" || items[0].ChangePercent != 2.45 || items[0].UpCount != 40 {
-		t.Errorf("板块条目解析错误: %+v", items[0])
+	if len(items) != 3 || items[0].Code != "BK000651" || items[0].Name != "光模块" {
+		t.Fatalf("热门主题条目解析错误: %+v", items)
+	}
+	if v := rawNumber(items[0].D); v != 3.21 {
+		t.Errorf("数字值解析错误: %v", v)
+	}
+	if v := rawNumber(items[1].D); v != 0 {
+		t.Errorf(`"--" 应解析为 0，实际: %v`, v)
+	}
+	if v := rawNumber(items[2].D); v != 0 {
+		t.Errorf("null 应解析为 0，实际: %v", v)
+	}
+}
+
+// TestParseThemeFunds 覆盖主题相关基金（GetBKRelTopicFundNew）解析：数字字段与 null 容错。
+func TestParseThemeFunds(t *testing.T) {
+	body := `{"Data":[{"FCODE":"580001","SHORTNAME":"东吴嘉禾优势精选混合A","SYRQ":"2026-06-12","DWJZ":1.8821,"RZDF":0.13,"SYL_Z":-2.56,"SYL_Y":-2.19,"SYL_3Y":29.99,"SYL_6Y":29.64,"SYL_1N":131.33,"SYL_2N":193.25,"SYL_3N":190.17,"SYL_JN":27.71,"SYL_LN":934.14},{"FCODE":"001322","SHORTNAME":"东吴新趋势价值线混合","SYRQ":"2026-06-12","DWJZ":4.4794,"RZDF":null,"SYL_1N":null}],"ErrCode":0,"TotalCount":484}`
+	page, err := parseThemeFunds(body)
+	if err != nil {
+		t.Fatalf("解析主题基金失败: %v", err)
+	}
+	if page.Total != 484 || len(page.Items) != 2 {
+		t.Fatalf("主题基金分页错误: total=%d n=%d", page.Total, len(page.Items))
+	}
+	first := page.Items[0]
+	if first.Code != "580001" || first.Nav != 1.8821 || first.DayGrowth != 0.13 || first.Year1 != 131.33 || first.SinceStart != 934.14 {
+		t.Errorf("主题基金条目解析错误: %+v", first)
+	}
+	if page.Items[1].DayGrowth != 0 || page.Items[1].Year1 != 0 {
+		t.Errorf("null 字段应为 0: %+v", page.Items[1])
+	}
+}
+
+// TestParseZTJJJSONP 覆盖 JSONP 包装形态。
+func TestParseZTJJJSONP(t *testing.T) {
+	body := `jQuery123_456({"Data":[{"INDEXCODE":"BK000651","INDEXNAME":"光模块","SY":122.85}]});`
+	items, err := parseZTJJ(body)
+	if err != nil {
+		t.Fatalf("解析 JSONP 热门主题失败: %v", err)
+	}
+	if len(items) != 1 || rawNumber(items[0].SY) != 122.85 {
+		t.Errorf("JSONP 热门主题解析错误: %+v", items)
 	}
 }

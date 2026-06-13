@@ -20,6 +20,13 @@ import * as time$0 from "../../time/models.js";
 import * as $models from "./models.js";
 
 /**
+ * AIConfig 返回 AI 解读配置（启用状态 + 服务地址/密钥/模型）。
+ */
+export function AIConfig(): $CancellablePromise<[boolean, string, string, string]> {
+    return $Call.ByID(3125909122);
+}
+
+/**
  * EstimateInterval 盘中估值轮询间隔。
  */
 export function EstimateInterval(): $CancellablePromise<time$0.Duration> {
@@ -33,6 +40,20 @@ export function Get(): $CancellablePromise<$models.AppSettings> {
     return $Call.ByID(202649858).then(($result: any) => {
         return $$createType0($result);
     });
+}
+
+/**
+ * NewsNotifyEnabled 是否在收到新快讯时弹桌面通知。
+ */
+export function NewsNotifyEnabled(): $CancellablePromise<boolean> {
+    return $Call.ByID(2667774721);
+}
+
+/**
+ * NewsPollInterval 财经快讯定时拉取间隔。
+ */
+export function NewsPollInterval(): $CancellablePromise<time$0.Duration> {
+    return $Call.ByID(2872691109);
 }
 
 /**

@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import { ExternalLink, Trash2, Wallet } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { ExternalLink, FolderInput, Trash2, Wallet } from "lucide-react";
 import type { WatchItem } from "@bindings/minifund/internal/model";
 import { WindowService } from "@bindings/minifund/services";
 import { QuoteText } from "@/components/market/QuoteText";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { Pager } from "@/components/ui/pager";
 import { SortableHeader } from "@/components/ui/sortable-header";
 import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
@@ -14,6 +17,9 @@ import { useMarketStore } from "@/stores/market";
 import { useSettingsStore } from "@/stores/settings";
 import { useUIStore } from "@/stores/ui";
 import { useWatchlistStore } from "@/stores/watchlist";
+
+/** 自选表格每页条数 */
+const WATCH_PAGE_SIZE = 20;
 
 interface WatchlistTableProps {
   /** 点击"持仓"按钮回调（弹出持仓编辑） */
@@ -35,6 +41,8 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
   // 记录上一轮估值，用于判断闪烁方向
   const prevRef = useRef<Record<string, number>>({});
   const [flashes, setFlashes] = useState<Record<string, "up" | "down">>({});
+  // 待确认移除的基金代码（应用内确认弹窗，替代 Wails WebView 不支持的 window.confirm）
+  const [removeCode, setRemoveCode] = useState<string | null>(null);
 
   useEffect(() => {
     const next: Record<string, "up" | "down"> = {};
@@ -61,7 +69,13 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
     return { est, pos, todayProfit, marketValue };
   };
 
-  const { sorted, sortState, toggle } = useLocalSort(items, {
+  // 默认按加入时间倒序（最新在前）；列头排序可覆盖该默认顺序
+  const orderedItems = useMemo(
+    () => [...items].sort((a, b) => b.createdAt - a.createdAt),
+    [items]
+  );
+
+  const { sorted, sortState, toggle } = useLocalSort(orderedItems, {
     name: (it) => it.name || it.code,
     nav: (it) => estimates[it.code]?.prevNav ?? -Infinity,
     estimate: (it) => {
@@ -76,6 +90,12 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
     marketValue: (it) => metrics(it).marketValue ?? -Infinity,
   });
 
+  // 分页：默认每页 20 条；条目数变化或翻页越界时自动钳制
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(sorted.length / WATCH_PAGE_SIZE));
+  const pageClamped = Math.min(page, totalPages);
+  const pageItems = sorted.slice((pageClamped - 1) * WATCH_PAGE_SIZE, pageClamped * WATCH_PAGE_SIZE);
+
   const hidden = hideAmounts || stealth;
   const cols = zhCN.watchlist.columns;
   const header = (key: string, label: string, align: "left" | "right" = "right") => (
@@ -89,6 +109,7 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
   );
 
   return (
+    <>
     <div className="scroll-always min-h-0 flex-1 overflow-auto rounded-[var(--radius-panel)] border border-[var(--border-subtle)]">
       <table className="w-full border-collapse">
         <thead className="sticky top-0 z-10">
@@ -103,7 +124,7 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
           </tr>
         </thead>
         <tbody>
-          {sorted.map((item) => {
+          {pageItems.map((item) => {
             const { est, todayProfit, marketValue } = metrics(item);
             const flash = flashes[item.code];
 
@@ -162,14 +183,8 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
                     <RowAction label={zhCN.watchlist.actionPosition} onClick={() => onEditPosition(item)}>
                       <Wallet size={12} />
                     </RowAction>
-                    <RowAction
-                      label={zhCN.watchlist.actionRemove}
-                      onClick={() => {
-                        if (window.confirm(zhCN.watchlist.removeConfirm)) {
-                          void removeFund(item.code);
-                        }
-                      }}
-                    >
+                    <MoveMenu code={item.code} />
+                    <RowAction label={zhCN.watchlist.actionRemove} onClick={() => setRemoveCode(item.code)}>
                       <Trash2 size={12} />
                     </RowAction>
                   </div>
@@ -180,6 +195,22 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
         </tbody>
       </table>
     </div>
+    {sorted.length > WATCH_PAGE_SIZE && (
+      <Pager pageIndex={pageClamped} totalPages={totalPages} onGoto={setPage} />
+    )}
+    <ConfirmDialog
+      open={removeCode != null}
+      title={zhCN.watchlist.actionRemove}
+      message={zhCN.watchlist.removeConfirm}
+      confirmLabel={zhCN.watchlist.actionRemove}
+      danger
+      onConfirm={() => {
+        if (removeCode) void removeFund(removeCode);
+        setRemoveCode(null);
+      }}
+      onCancel={() => setRemoveCode(null)}
+    />
+    </>
   );
 }
 
@@ -202,5 +233,93 @@ function RowAction({
         {children}
       </button>
     </Tooltip>
+  );
+}
+
+/**
+ * 移动到分组：下拉列出其他分组，点击即移动当前基金。
+ * 下拉菜单通过 Portal 渲染到 body，并用 fixed 定位，避免被自选表格的 overflow-auto 容器裁剪遮挡。
+ */
+function MoveMenu({ code }: { code: string }) {
+  const groups = useWatchlistStore((s) => s.groups);
+  const activeGroupId = useWatchlistStore((s) => s.activeGroupId);
+  const moveFund = useWatchlistStore((s) => s.moveFund);
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ left: number; top: number }>({ left: 0, top: 0 });
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const others = groups.filter((g) => g.id !== activeGroupId);
+  // 只有一个分组时无处可移，禁用
+  const disabled = others.length === 0;
+
+  const MENU_W = 128;
+  // 打开时按按钮位置计算固定坐标：右对齐按钮、优先在下方展开，下方空间不足则向上展开
+  useLayoutEffect(() => {
+    if (!open || !btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const estHeight = Math.min(others.length * 28 + 26, 240);
+    const openUp = r.bottom + estHeight + 8 > window.innerHeight;
+    const left = Math.max(8, Math.min(r.right - MENU_W, window.innerWidth - MENU_W - 8));
+    const top = openUp ? r.top - estHeight - 4 : r.bottom + 4;
+    setPos({ left, top });
+  }, [open, others.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || menuRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    const onScroll = () => setOpen(false);
+    window.addEventListener("mousedown", handler);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("mousedown", handler);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <Tooltip content={zhCN.watchlist.actionMove}>
+        <button
+          ref={btnRef}
+          aria-label={zhCN.watchlist.actionMove}
+          disabled={disabled}
+          onClick={() => setOpen((o) => !o)}
+          className={cn(
+            "rounded-[var(--radius-sm)] p-1 text-[var(--fg-muted)] hover:bg-[var(--row-selected)] hover:text-[var(--fg)] disabled:opacity-30 disabled:hover:bg-transparent",
+            open && "bg-[var(--row-selected)] text-[var(--accent)]"
+          )}
+        >
+          <FolderInput size={12} />
+        </button>
+      </Tooltip>
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            style={{ position: "fixed", left: pos.left, top: pos.top, width: MENU_W }}
+            className="z-[100] max-h-60 overflow-y-auto rounded-[var(--radius-panel)] border border-[var(--border-color)] bg-[var(--surface-elevated)] py-1 shadow-[var(--shadow-lg)]"
+          >
+            <div className="px-3 py-0.5 text-2xs text-[var(--fg-muted)]">{zhCN.watchlist.moveTitle}</div>
+            {others.map((g) => (
+              <button
+                key={g.id}
+                onClick={() => {
+                  setOpen(false);
+                  void moveFund(code, g.id);
+                }}
+                className="block w-full truncate px-3 py-1 text-left text-2xs text-[var(--fg)] hover:bg-[var(--row-hover)]"
+              >
+                {g.name}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+    </>
   );
 }

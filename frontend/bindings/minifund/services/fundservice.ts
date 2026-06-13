@@ -31,7 +31,7 @@ export function GetFundDetail(code: string): $CancellablePromise<model$0.FundDet
 }
 
 /**
- * GetFundRanking 获取基金排行。sortType：desc/asc。
+ * GetFundRanking 获取基金排行（60s 内存缓存，配合前端翻页预取实现秒开）。sortType：desc/asc。
  */
 export function GetFundRanking(fundType: string, sortKey: string, sortType: string, pageIndex: number): $CancellablePromise<model$0.RankPage | null> {
     return $Call.ByID(1525782339, fundType, sortKey, sortType, pageIndex).then(($result: any) => {
@@ -40,12 +40,30 @@ export function GetFundRanking(fundType: string, sortKey: string, sortType: stri
 }
 
 /**
+ * GetFundThemes 批量获取一组基金所属的主题/概念标签（code → 主题列表）。
+ * 命中缓存（30 天 TTL）直接返回；缺失项以受限并发从东财搜索接口拉取并落库缓存，
+ * 拉取失败的基金会被跳过（前端不展示标签），不影响整体返回。
+ */
+export function GetFundThemes(codes: string[]): $CancellablePromise<{ [_ in string]?: model$0.FundTheme[] }> {
+    return $Call.ByID(436451321, codes).then(($result: any) => {
+        return $$createType6($result);
+    });
+}
+
+/**
  * GetNavHistory 获取历史净值（分页）。
  */
 export function GetNavHistory(code: string, pageIndex: number, pageSize: number): $CancellablePromise<model$0.NavPage | null> {
     return $Call.ByID(4059753423, code, pageIndex, pageSize).then(($result: any) => {
-        return $$createType5($result);
+        return $$createType8($result);
     });
+}
+
+/**
+ * PreloadRanking 后台预热默认排行首页（应用启动时调用，进入页面秒开）。
+ */
+export function PreloadRanking(): $CancellablePromise<void> {
+    return $Call.ByID(769203069);
 }
 
 /**
@@ -60,7 +78,17 @@ export function RefreshFundIndex(): $CancellablePromise<void> {
  */
 export function SearchFunds(keyword: string, limit: number, offset: number): $CancellablePromise<model$0.FundIndexItem[]> {
     return $Call.ByID(925186620, keyword, limit, offset).then(($result: any) => {
-        return $$createType7($result);
+        return $$createType10($result);
+    });
+}
+
+/**
+ * SearchFundsPage 排行页就地搜索（本地索引分页，含总数）：匹配名称/代码/拼音，
+ * 公司名通常为基金名前缀（如「易方达」可命中全部易方达系基金）。pageIndex 从 1 开始。
+ */
+export function SearchFundsPage(keyword: string, pageIndex: number): $CancellablePromise<model$0.FundIndexPage | null> {
+    return $Call.ByID(215218647, keyword, pageIndex).then(($result: any) => {
+        return $$createType12($result);
     });
 }
 
@@ -69,7 +97,12 @@ const $$createType0 = model$0.FundDetail.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
 const $$createType2 = model$0.RankPage.createFrom;
 const $$createType3 = $Create.Nullable($$createType2);
-const $$createType4 = model$0.NavPage.createFrom;
-const $$createType5 = $Create.Nullable($$createType4);
-const $$createType6 = model$0.FundIndexItem.createFrom;
-const $$createType7 = $Create.Array($$createType6);
+const $$createType4 = model$0.FundTheme.createFrom;
+const $$createType5 = $Create.Array($$createType4);
+const $$createType6 = $Create.Map($Create.Any, $$createType5);
+const $$createType7 = model$0.NavPage.createFrom;
+const $$createType8 = $Create.Nullable($$createType7);
+const $$createType9 = model$0.FundIndexItem.createFrom;
+const $$createType10 = $Create.Array($$createType9);
+const $$createType11 = model$0.FundIndexPage.createFrom;
+const $$createType12 = $Create.Nullable($$createType11);

@@ -59,6 +59,13 @@ export function ListItems(groupID: number): $CancellablePromise<model$0.WatchIte
 }
 
 /**
+ * MoveItem 将自选从源分组移动到目标分组。
+ */
+export function MoveItem(code: string, fromGroupID: number, toGroupID: number): $CancellablePromise<void> {
+    return $Call.ByID(3531129398, code, fromGroupID, toGroupID);
+}
+
+/**
  * RemoveItem 移除自选。
  */
 export function RemoveItem(code: string, groupID: number): $CancellablePromise<void> {

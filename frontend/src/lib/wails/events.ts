@@ -3,7 +3,7 @@
  * 与 internal/scheduler/scheduler.go 中的事件名保持一致。
  */
 import { EventsOn } from "./runtime";
-import type { FundEstimate, IndexQuote, MonitorState } from "@bindings/minifund/internal/model";
+import type { FundEstimate, IndexQuote, MonitorState, NewsFlash } from "@bindings/minifund/internal/model";
 
 /**
  * 当日净值确认事件载荷。
@@ -56,4 +56,9 @@ export function onWatchlistChanged(cb: () => void): () => void {
 /** 订阅托盘面板弹出（面板每次显示时重新加载数据） */
 export function onTrayPanelShown(cb: () => void): () => void {
   return EventsOn("traypanel:shown", cb);
+}
+
+/** 订阅财经快讯刷新（调度器定时拉取后推送最新快讯列表） */
+export function onNewsFlash(cb: (data: NewsFlash[]) => void): () => void {
+  return EventsOn("news:flash", cb);
 }

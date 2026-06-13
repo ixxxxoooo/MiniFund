@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ExternalLink } from "lucide-react";
 import { Window } from "@wailsio/runtime";
 import type { FundDetail, ManagerInfo, NavPage } from "@bindings/minifund/internal/model";
 import { FundService } from "@bindings/minifund/services";
@@ -12,16 +12,19 @@ import { SortableHeader } from "@/components/ui/sortable-header";
 import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
+import { OpenExternalURL } from "@/lib/wails/runtime";
 import { formatNav } from "@/lib/format";
 import { useHotkeys } from "@/lib/hotkeys";
-import { usePrefetchPager } from "@/lib/pager";
 import { useLocalSort } from "@/lib/sort";
+import { eastmoneyStockURL } from "@/lib/stock";
 import { cn } from "@/lib/utils";
 import { useMarketStore } from "@/stores/market";
 import { useSettingsStore } from "@/stores/settings";
 
-/** 历史净值每页条数 */
-const NAV_PAGE_SIZE = 10;
+/** 历史净值每页条数（滚动到底自动加载下一页） */
+const NAV_PAGE_SIZE = 20;
+
+type NavItem = NonNullable<NavPage["items"]>[number];
 
 /** 将规模原始字符串（元）格式化为亿元 */
 function formatScale(raw: string): string {
@@ -30,9 +33,70 @@ function formatScale(raw: string): string {
   return (v / 1e8).toFixed(2) + zhCN.detail.tags.scaleUnit;
 }
 
+/** 将单日限额原始字符串（元）格式化为易读金额（万/亿元） */
+function formatDayLimit(raw: string): string {
+  const v = parseFloat(raw);
+  if (!Number.isFinite(v) || v <= 0) return raw;
+  if (v >= 1e8) return (v / 1e8).toFixed(2) + "亿元";
+  if (v >= 1e4) return (v / 1e4).toFixed(0) + "万元";
+  return v.toFixed(0) + "元";
+}
+
 interface DetailWindowProps {
   /** 基金代码，来自 hash 路由 /#/detail/{code} */
   code: string;
+}
+
+/** 详情页展示的阶段涨幅周期（顺序即展示顺序，键与后端 PeriodReturn.period 一致） */
+const PERIOD_ORDER = ["Y", "3Y", "6Y", "1N", "3N", "LN"] as const;
+
+/**
+ * 阶段涨幅栅格：近1月/近3月/近6月/近1年/近3年/成立来，涨跌红绿、附同类平均。
+ */
+function PeriodReturns({
+  returns,
+  stealth,
+}: {
+  returns: NonNullable<FundDetail["periodReturns"]>;
+  stealth: boolean;
+}) {
+  const map = new Map(returns.map((r) => [r.period, r]));
+  const cells = PERIOD_ORDER.map((p) => ({ key: p, label: zhCN.detail.periodLabels[p], data: map.get(p) }));
+  // 无任何周期数据则不渲染该区块
+  if (!cells.some((c) => c.data)) return null;
+
+  return (
+    <section className="shrink-0 rounded-[var(--radius-panel)] border border-[var(--border-subtle)] p-[var(--size-padding-sm)]">
+      <div className="flex items-center gap-3">
+        <span className="shrink-0 text-[length:var(--size-font-xs)] font-medium text-[var(--fg)]">
+          {zhCN.detail.periodTitle}
+        </span>
+        <div className="grid flex-1 grid-cols-6 gap-2">
+          {cells.map((c) => (
+            <div key={c.key} className="flex flex-col items-center gap-0.5">
+              <span className="text-2xs text-[var(--fg-muted)]">{c.label}</span>
+              {c.data ? (
+                <>
+                  <QuoteText
+                    value={c.data.value}
+                    neutral={stealth}
+                    className="text-[length:var(--size-font-sm)] font-semibold"
+                  />
+                  {c.data.avg !== 0 && (
+                    <span className="text-[10px] text-[var(--fg-muted)]">
+                      {zhCN.detail.periodAvg} {c.data.avg.toFixed(2)}%
+                    </span>
+                  )}
+                </>
+              ) : (
+                <span className="text-[length:var(--size-font-sm)] text-[var(--fg-muted)]">—</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
 }
 
 type RangeKey = keyof typeof zhCN.detail.ranges;
@@ -81,16 +145,58 @@ export function DetailWindow({ code }: DetailWindowProps) {
     });
   }, [code, loadSettings, initMarket]);
 
-  // 历史净值分页（带下一页预取，翻页零等待）
-  const {
-    page: navPage,
-    pageIndex: navIndex,
-    loading: navLoading,
-    goto: navGoto,
-  } = usePrefetchPager<NavPage>(
-    (pi) => call("加载历史净值", () => FundService.GetNavHistory(code, pi, NAV_PAGE_SIZE)),
-    code
-  );
+  // 历史净值无限滚动：累积所有已加载条目，滚动到底自动加载下一页
+  const [navItems, setNavItems] = useState<NavItem[]>([]);
+  const [navTotal, setNavTotal] = useState(0);
+  const [navLoading, setNavLoading] = useState(false);
+  const navPageRef = useRef(0); // 已加载到的页码
+  const navLoadingRef = useRef(false);
+
+  // 切换基金时重置并加载第一页
+  useEffect(() => {
+    let cancelled = false;
+    setNavItems([]);
+    setNavTotal(0);
+    navPageRef.current = 0;
+    navLoadingRef.current = true;
+    setNavLoading(true);
+    void call("加载历史净值", () => FundService.GetNavHistory(code, 1, NAV_PAGE_SIZE)).then((page) => {
+      if (cancelled) return;
+      if (page) {
+        setNavItems(page.items ?? []);
+        setNavTotal(page.total);
+        navPageRef.current = 1;
+      }
+      navLoadingRef.current = false;
+      setNavLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [code]);
+
+  const navHasMore = navTotal === 0 || navItems.length < navTotal;
+
+  const loadMoreNav = useCallback(async () => {
+    if (navLoadingRef.current) return;
+    if (navTotal > 0 && navItems.length >= navTotal) return;
+    navLoadingRef.current = true;
+    setNavLoading(true);
+    const next = navPageRef.current + 1;
+    const page = await call("加载历史净值", () => FundService.GetNavHistory(code, next, NAV_PAGE_SIZE));
+    if (page) {
+      setNavItems((prev) => [...prev, ...(page.items ?? [])]);
+      setNavTotal(page.total);
+      navPageRef.current = next;
+    }
+    navLoadingRef.current = false;
+    setNavLoading(false);
+  }, [code, navTotal, navItems.length]);
+
+  const onNavScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) void loadMoreNav();
+  };
 
   const est = estimates[code];
 
@@ -104,14 +210,13 @@ export function DetailWindow({ code }: DetailWindowProps) {
 
   const latest = detail?.netWorthTrend?.[detail.netWorthTrend.length - 1];
 
-  // 历史净值当前页本地排序
-  const navSort = useLocalSort(navPage?.items ?? [], {
+  // 历史净值本地排序（作用于已累积的全部条目）
+  const navSort = useLocalSort(navItems, {
     date: (r) => r.date,
     nav: (r) => r.nav,
     accNav: (r) => r.accNav,
     growth: (r) => r.growth,
   });
-  const navTotalPages = navPage ? Math.max(1, Math.ceil(navPage.total / NAV_PAGE_SIZE)) : 1;
 
   return (
     <div className="flex h-full flex-col bg-[var(--surface)]">
@@ -131,15 +236,25 @@ export function DetailWindow({ code }: DetailWindowProps) {
           {zhCN.detail.loading}
         </main>
       ) : (
-        <main className="scroll-always flex min-h-0 flex-1 flex-col gap-[var(--size-gap)] overflow-y-auto p-[var(--size-padding)]">
+        <main className="flex min-h-0 flex-1 flex-col gap-[var(--size-gap)] overflow-hidden p-[var(--size-padding)]">
           {/* 头部信息 */}
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex shrink-0 items-start justify-between gap-4">
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
                 <span className="text-[length:var(--size-font-base)] font-semibold text-[var(--fg)]">
                   {detail.name}
                 </span>
                 {detail.rate && <Badge variant="secondary">{zhCN.detail.rate} {detail.rate}%</Badge>}
+                <Tooltip content={zhCN.detail.openHomepage}>
+                  <button
+                    aria-label={zhCN.detail.openHomepage}
+                    onClick={() => void OpenExternalURL(`https://fund.eastmoney.com/${detail.code}.html`)}
+                    className="flex items-center gap-1 rounded-[var(--radius-btn)] px-2 py-0.5 text-2xs text-[var(--accent)] hover:bg-[var(--row-hover)]"
+                  >
+                    <ExternalLink size={12} />
+                    {zhCN.detail.openHomepage}
+                  </button>
+                </Tooltip>
               </div>
               {/* 标签行：类型 / 公司 / 跟踪指数 / 风险等级 / 规模 / 成立日期 */}
               <div className="flex flex-wrap items-center gap-1.5">
@@ -164,6 +279,27 @@ export function DetailWindow({ code }: DetailWindowProps) {
                 {detail.estabDate && (
                   <Badge variant="secondary">
                     {zhCN.detail.tags.estab} {detail.estabDate}
+                  </Badge>
+                )}
+                {detail.maxDrawdown < 0 && (
+                  <Badge variant="secondary">
+                    {zhCN.detail.maxDrawdown} {detail.maxDrawdown.toFixed(2)}%
+                  </Badge>
+                )}
+                {/* 交易状态：申购/赎回状态 + 单日限额（QDII 常见限额，无数据时不展示） */}
+                {detail.subStatus && (
+                  <Badge variant="secondary">
+                    {zhCN.detail.tags.sub} {detail.subStatus}
+                  </Badge>
+                )}
+                {detail.redeemStatus && (
+                  <Badge variant="secondary">
+                    {zhCN.detail.tags.redeem} {detail.redeemStatus}
+                  </Badge>
+                )}
+                {detail.dayLimit && (
+                  <Badge variant="warning">
+                    {zhCN.detail.tags.dayLimit} {formatDayLimit(detail.dayLimit)}
                   </Badge>
                 )}
               </div>
@@ -192,8 +328,11 @@ export function DetailWindow({ code }: DetailWindowProps) {
             )}
           </div>
 
+          {/* 阶段涨幅：近1月/近3月/近6月/近1年/近3年/成立来（含同类平均，红绿配色） */}
+          <PeriodReturns returns={detail.periodReturns ?? []} stealth={stealth} />
+
           {/* 净值走势 */}
-          <section className="rounded-[var(--radius-panel)] border border-[var(--border-subtle)] p-[var(--size-padding-sm)]">
+          <section className="shrink-0 rounded-[var(--radius-panel)] border border-[var(--border-subtle)] p-[var(--size-padding-sm)]">
             <div className="mb-1 flex items-center justify-between">
               <span className="text-[length:var(--size-font-xs)] font-medium text-[var(--fg)]">
                 {zhCN.detail.trendTitle}
@@ -218,30 +357,54 @@ export function DetailWindow({ code }: DetailWindowProps) {
             <LineChart points={chartPoints} height={200} formatValue={formatNav} />
           </section>
 
-          <div className="grid grid-cols-2 gap-[var(--size-gap)]">
+          <div className="grid min-h-0 flex-1 grid-cols-2 gap-[var(--size-gap)]">
             {/* 前十重仓股 */}
-            <section className="rounded-[var(--radius-panel)] border border-[var(--border-subtle)] p-[var(--size-padding-sm)]">
-              <div className="mb-2 text-[length:var(--size-font-xs)] font-medium text-[var(--fg)]">
-                {zhCN.detail.holdingsTitle}
+            <section className="flex min-h-0 flex-col rounded-[var(--radius-panel)] border border-[var(--border-subtle)] p-[var(--size-padding-sm)]">
+              <div className="mb-2 flex shrink-0 items-center justify-between text-[length:var(--size-font-xs)] font-medium text-[var(--fg)]">
+                <span>{zhCN.detail.holdingsTitle}</span>
+                <span className="flex items-center gap-2 text-2xs font-normal text-[var(--fg-muted)]">
+                  <span className="w-12 text-right">{zhCN.detail.holdingPercent}</span>
+                  <span className="w-14 text-right">{zhCN.detail.holdingChange}</span>
+                </span>
               </div>
               {detail.holdings && detail.holdings.length > 0 ? (
-                <div className="flex flex-col gap-1.5">
-                  {detail.holdings.map((h) => (
-                    <div key={h.stockCode} className="flex items-center gap-2 text-2xs">
-                      <span className="quote-num w-[52px] shrink-0 text-[var(--fg-muted)]">{h.stockCode}</span>
-                      <span className="w-20 shrink-0 truncate text-[var(--fg)]">{h.stockName}</span>
-                      {/* 占比条 */}
-                      <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--surface-secondary)]">
-                        <div
-                          className="h-full rounded-full bg-[var(--accent)]"
-                          style={{ width: `${Math.min(100, h.percent * 5)}%` }}
+                <div className="scroll-always flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
+                  {detail.holdings.map((h) => {
+                    const url = eastmoneyStockURL(h.stockCode);
+                    return (
+                      <div key={h.stockCode} className="flex items-center gap-2 text-2xs">
+                        <span className="quote-num w-[52px] shrink-0 text-[var(--fg-muted)]">{h.stockCode}</span>
+                        {url ? (
+                          <button
+                            onClick={() => void OpenExternalURL(url)}
+                            className="w-20 shrink-0 truncate text-left text-[var(--accent)] hover:underline"
+                            title={h.stockName}
+                          >
+                            {h.stockName}
+                          </button>
+                        ) : (
+                          <span className="w-20 shrink-0 truncate text-[var(--fg)]" title={h.stockName}>
+                            {h.stockName}
+                          </span>
+                        )}
+                        {/* 占比条 */}
+                        <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--surface-secondary)]">
+                          <div
+                            className="h-full rounded-full bg-[var(--accent)]"
+                            style={{ width: `${Math.min(100, h.percent * 5)}%` }}
+                          />
+                        </div>
+                        <span className="quote-num w-12 shrink-0 text-right text-[var(--fg-secondary)]">
+                          {h.percent.toFixed(2)}%
+                        </span>
+                        <QuoteText
+                          value={h.changePercent}
+                          neutral={stealth}
+                          className="w-14 shrink-0 text-right"
                         />
                       </div>
-                      <span className="quote-num w-12 shrink-0 text-right text-[var(--fg-secondary)]">
-                        {h.percent.toFixed(2)}%
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="py-4 text-center text-2xs text-[var(--fg-muted)]">{zhCN.detail.holdingsEmpty}</div>
@@ -249,8 +412,8 @@ export function DetailWindow({ code }: DetailWindowProps) {
             </section>
 
             {/* 基金经理 + 历史净值 */}
-            <div className="flex flex-col gap-[var(--size-gap)]">
-              <section className="rounded-[var(--radius-panel)] border border-[var(--border-subtle)] p-[var(--size-padding-sm)]">
+            <div className="flex min-h-0 flex-col gap-[var(--size-gap)]">
+              <section className="shrink-0 rounded-[var(--radius-panel)] border border-[var(--border-subtle)] p-[var(--size-padding-sm)]">
                 <div className="mb-2 text-[length:var(--size-font-xs)] font-medium text-[var(--fg)]">
                   {zhCN.detail.managersTitle}
                 </div>
@@ -276,82 +439,66 @@ export function DetailWindow({ code }: DetailWindowProps) {
                 </div>
               </section>
 
-              <section className="rounded-[var(--radius-panel)] border border-[var(--border-subtle)] p-[var(--size-padding-sm)]">
-                <div className="mb-1 flex items-center justify-between">
+              <section className="flex min-h-0 flex-1 flex-col rounded-[var(--radius-panel)] border border-[var(--border-subtle)] p-[var(--size-padding-sm)]">
+                <div className="mb-1 flex shrink-0 items-center justify-between">
                   <span className="text-[length:var(--size-font-xs)] font-medium text-[var(--fg)]">
                     {zhCN.detail.navHistoryTitle}
-                    {navPage && (
+                    {navTotal > 0 && (
                       <span className="quote-num ml-2 text-2xs font-normal text-[var(--fg-muted)]">
-                        {zhCN.detail.navTotal.replace("{n}", String(navPage.total))}
+                        {zhCN.detail.navTotal.replace("{n}", String(navTotal))}
                       </span>
                     )}
                   </span>
-                  {/* 分页控制 */}
-                  <span className="flex items-center gap-1 text-2xs text-[var(--fg-secondary)]">
-                    <button
-                      disabled={navIndex <= 1 || navLoading}
-                      onClick={() => navGoto(navIndex - 1)}
-                      className="rounded-[var(--radius-sm)] p-0.5 hover:bg-[var(--row-hover)] disabled:opacity-40"
-                      aria-label={zhCN.ranking.prevPage}
-                    >
-                      <ChevronLeft size={12} />
-                    </button>
-                    <span className="quote-num">
-                      {navIndex} / {navTotalPages}
-                    </span>
-                    <button
-                      disabled={navIndex >= navTotalPages || navLoading}
-                      onClick={() => navGoto(navIndex + 1)}
-                      className="rounded-[var(--radius-sm)] p-0.5 hover:bg-[var(--row-hover)] disabled:opacity-40"
-                      aria-label={zhCN.ranking.nextPage}
-                    >
-                      <ChevronRight size={12} />
-                    </button>
-                  </span>
                 </div>
-                <table className={cn("w-full border-collapse", navLoading && "opacity-50")}>
-                  <thead>
-                    <tr>
-                      <SortableHeader
-                        label={zhCN.detail.navDate}
-                        align="left"
-                        active={navSort.sortState.key === "date"}
-                        dir={navSort.sortState.key === "date" ? navSort.sortState.dir : null}
-                        onClick={() => navSort.toggle("date")}
-                      />
-                      <SortableHeader
-                        label={zhCN.detail.navValue}
-                        active={navSort.sortState.key === "nav"}
-                        dir={navSort.sortState.key === "nav" ? navSort.sortState.dir : null}
-                        onClick={() => navSort.toggle("nav")}
-                      />
-                      <SortableHeader
-                        label={zhCN.detail.navAcc}
-                        active={navSort.sortState.key === "accNav"}
-                        dir={navSort.sortState.key === "accNav" ? navSort.sortState.dir : null}
-                        onClick={() => navSort.toggle("accNav")}
-                      />
-                      <SortableHeader
-                        label={zhCN.detail.navGrowth}
-                        active={navSort.sortState.key === "growth"}
-                        dir={navSort.sortState.key === "growth" ? navSort.sortState.dir : null}
-                        onClick={() => navSort.toggle("growth")}
-                      />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {navSort.sorted.map((r) => (
-                      <tr key={r.date} className="hover:bg-[var(--row-hover)]">
-                        <td className="data-grid-cell">{r.date}</td>
-                        <td className="data-grid-cell text-right">{formatNav(r.nav)}</td>
-                        <td className="data-grid-cell text-right">{formatNav(r.accNav)}</td>
-                        <td className="data-grid-cell text-right">
-                          <QuoteText value={r.growth} neutral={stealth} />
-                        </td>
+                {/* 滚动容器：滚动到底自动加载下一页 */}
+                <div className="scroll-always min-h-0 flex-1 overflow-y-auto" onScroll={onNavScroll}>
+                  <table className="w-full border-collapse">
+                    <thead className="sticky top-0 z-[1] bg-[var(--surface)]">
+                      <tr>
+                        <SortableHeader
+                          label={zhCN.detail.navDate}
+                          align="left"
+                          active={navSort.sortState.key === "date"}
+                          dir={navSort.sortState.key === "date" ? navSort.sortState.dir : null}
+                          onClick={() => navSort.toggle("date")}
+                        />
+                        <SortableHeader
+                          label={zhCN.detail.navValue}
+                          active={navSort.sortState.key === "nav"}
+                          dir={navSort.sortState.key === "nav" ? navSort.sortState.dir : null}
+                          onClick={() => navSort.toggle("nav")}
+                        />
+                        <SortableHeader
+                          label={zhCN.detail.navAcc}
+                          active={navSort.sortState.key === "accNav"}
+                          dir={navSort.sortState.key === "accNav" ? navSort.sortState.dir : null}
+                          onClick={() => navSort.toggle("accNav")}
+                        />
+                        <SortableHeader
+                          label={zhCN.detail.navGrowth}
+                          active={navSort.sortState.key === "growth"}
+                          dir={navSort.sortState.key === "growth" ? navSort.sortState.dir : null}
+                          onClick={() => navSort.toggle("growth")}
+                        />
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {navSort.sorted.map((r) => (
+                        <tr key={r.date} className="hover:bg-[var(--row-hover)]">
+                          <td className="data-grid-cell">{r.date}</td>
+                          <td className="data-grid-cell text-right">{formatNav(r.nav)}</td>
+                          <td className="data-grid-cell text-right">{formatNav(r.accNav)}</td>
+                          <td className="data-grid-cell text-right">
+                            <QuoteText value={r.growth} neutral={stealth} />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="py-2 text-center text-2xs text-[var(--fg-muted)]">
+                    {navLoading ? zhCN.detail.loadingMore : !navHasMore && navItems.length > 0 ? zhCN.detail.noMore : ""}
+                  </div>
+                </div>
               </section>
             </div>
           </div>

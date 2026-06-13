@@ -54,7 +54,7 @@ export function GetMonitorState(): $CancellablePromise<model$0.MonitorState> {
 }
 
 /**
- * GetSectors 拉取板块行情。kind：industry（行业）/ concept（概念）。
+ * GetSectors 拉取板块行情（60s 内存缓存）。kind：industry（行业）/ concept（概念）。
  */
 export function GetSectors(kind: string): $CancellablePromise<model$0.SectorItem[]> {
     return $Call.ByID(1239119416, kind).then(($result: any) => {
@@ -63,7 +63,17 @@ export function GetSectors(kind: string): $CancellablePromise<model$0.SectorItem
 }
 
 /**
- * GetTopicFunds 拉取某主题下的基金列表（服务端排序 + 分页）。
+ * GetThemeFunds 按主题（板块）代码拉取相关基金（服务端排序 + 分页；60s 内存缓存）。
+ * bkCode 形如 BK000641（CPO）；sortKey：RZDF/SYL_Z/SYL_Y/SYL_3Y/SYL_6Y/SYL_1N/SYL_JN；sortType：desc/asc。
+ */
+export function GetThemeFunds(bkCode: string, sortKey: string, sortType: string, pageIndex: number): $CancellablePromise<model$0.RankPage | null> {
+    return $Call.ByID(3321145818, bkCode, sortKey, sortType, pageIndex).then(($result: any) => {
+        return $$createType10($result);
+    });
+}
+
+/**
+ * GetTopicFunds 拉取某主题下的基金列表（服务端排序 + 分页；60s 内存缓存）。
  * sortKey：NAVCHGRT/SYL_Z/SYL_Y/SYL_3Y/SYL_6Y/SYL_1N/SYL_JN；sortType：desc/asc。
  */
 export function GetTopicFunds(topicID: string, sortKey: string, sortType: string, pageIndex: number): $CancellablePromise<model$0.RankPage | null> {
@@ -73,7 +83,7 @@ export function GetTopicFunds(topicID: string, sortKey: string, sortType: string
 }
 
 /**
- * GetTopics 拉取基金主题列表（约 150 个，含近 1 年涨幅）。
+ * GetTopics 拉取基金主题列表（约 150 个，含近 1 年涨幅；60s 内存缓存）。
  */
 export function GetTopics(): $CancellablePromise<model$0.TopicItem[]> {
     return $Call.ByID(2510723945).then(($result: any) => {
@@ -86,6 +96,13 @@ export function GetTopics(): $CancellablePromise<model$0.TopicItem[]> {
  */
 export function PauseMonitor(paused: boolean): $CancellablePromise<void> {
     return $Call.ByID(3729041663, paused);
+}
+
+/**
+ * PreloadMarket 后台预热热门主题（默认概念板块，应用启动时调用，进入页面秒开）。
+ */
+export function PreloadMarket(): $CancellablePromise<void> {
+    return $Call.ByID(791072036);
 }
 
 /**

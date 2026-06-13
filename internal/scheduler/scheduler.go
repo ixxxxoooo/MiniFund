@@ -28,7 +28,11 @@ const (
 	EventDegraded         = "datasource:degraded"
 	EventWatchlistChanged = "watchlist:changed" // 自选/持仓变更（所有窗口需重新加载）
 	EventTrayPanelShown   = "traypanel:shown"   // 托盘面板弹出（面板重新加载数据）
+	EventNewsFlash        = "news:flash"        // 财经快讯刷新（推送最新快讯列表）
 )
+
+// newsLastIDKey settings 表中记录最近一条已推送快讯 id 的键（重启后避免重复通知历史快讯）。
+const newsLastIDKey = "news_last_id"
 
 // SettingsProvider 调度器需要的设置读取接口（由 SettingsService 实现，避免包循环依赖）。
 type SettingsProvider interface {
@@ -36,6 +40,8 @@ type SettingsProvider interface {
 	WatchedIndexes() []string        // 订阅的指数代码
 	TrayTitleTarget() string         // 托盘标题展示目标（指数或基金代码，空为关闭）
 	StealthMode() bool               // 摸鱼模式
+	NewsPollInterval() time.Duration // 财经快讯定时拉取间隔
+	NewsNotifyEnabled() bool         // 是否在收到新快讯时弹桌面通知
 }
 
 // Scheduler 监控调度器。
@@ -47,6 +53,8 @@ type Scheduler struct {
 
 	// setTrayTitle 托盘标题更新回调（由 app 装配时注入）
 	setTrayTitle func(string)
+	// newsNotify 桌面通知回调（由 app 装配时注入，封装 Wails 通知服务）
+	newsNotify func(title, body, id string)
 
 	mu            sync.Mutex
 	paused        bool
@@ -56,27 +64,58 @@ type Scheduler struct {
 	confirmed     map[string]bool // 当日已确认净值的基金
 	confirmedDate string          // confirmed 对应的日期
 
-	refreshCh chan struct{}
-	stopCh    chan struct{}
-	stopOnce  sync.Once
+	lastFlash   []model.NewsFlash // 最近一轮快讯缓存
+	lastFlashID string            // 最近一条快讯 id（用于增量判断与持久化）
+	newsInit    bool              // 是否已完成首轮快讯拉取（首轮不弹通知）
+	newsBusy    bool              // 快讯拉取进行中（避免并发重入）
+
+	refreshCh     chan struct{}
+	newsRefreshCh chan struct{}
+	stopCh        chan struct{}
+	stopOnce      sync.Once
 }
 
 // New 创建调度器。
 func New(app *application.App, store *storage.Store, indexSrc datasource.IndexQuoteSource, settings SettingsProvider) *Scheduler {
 	return &Scheduler{
-		app:       app,
-		store:     store,
-		indexSrc:  indexSrc,
-		settings:  settings,
-		confirmed: make(map[string]bool),
-		refreshCh: make(chan struct{}, 1),
-		stopCh:    make(chan struct{}),
+		app:           app,
+		store:         store,
+		indexSrc:      indexSrc,
+		settings:      settings,
+		confirmed:     make(map[string]bool),
+		refreshCh:     make(chan struct{}, 1),
+		newsRefreshCh: make(chan struct{}, 1),
+		stopCh:        make(chan struct{}),
 	}
 }
 
 // SetTrayTitleUpdater 注入托盘标题更新回调。
 func (s *Scheduler) SetTrayTitleUpdater(fn func(string)) {
 	s.setTrayTitle = fn
+}
+
+// SetNewsNotifier 注入桌面通知回调（装配时调用）。
+func (s *Scheduler) SetNewsNotifier(fn func(title, body, id string)) {
+	s.mu.Lock()
+	s.newsNotify = fn
+	s.mu.Unlock()
+}
+
+// LastFlash 返回最近一轮快讯缓存（窗口初始化时拉取）。
+func (s *Scheduler) LastFlash() []model.NewsFlash {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]model.NewsFlash, len(s.lastFlash))
+	copy(out, s.lastFlash)
+	return out
+}
+
+// RefreshNewsNow 立即触发一轮快讯拉取（手动刷新时调用，非阻塞）。
+func (s *Scheduler) RefreshNewsNow() {
+	select {
+	case s.newsRefreshCh <- struct{}{}:
+	default:
+	}
 }
 
 // Start 启动调度循环（异步）。
@@ -154,15 +193,24 @@ func (s *Scheduler) CurrentState() model.MonitorState {
 
 // loop 调度主循环：每 2 秒评估一次任务到期情况。
 func (s *Scheduler) loop() {
+	// 启动时恢复最近一条已推送快讯 id（避免重启后把历史快讯当作新快讯通知）
+	if id, err := s.store.GetSetting(newsLastIDKey); err == nil && id != "" {
+		s.mu.Lock()
+		s.lastFlashID = id
+		s.mu.Unlock()
+	}
+
 	// 启动时无条件拉一轮（非交易时段 fundgz 也会返回最近数据，保证 UI 有初始内容）
 	s.runEstimateRound()
 	s.runIndexRound()
+	s.runNewsRound() // 首轮快讯：填充缓存并广播，但不弹通知
 	s.emitState()
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 
 	var lastEstimate, lastIndex, lastNav time.Time
+	lastNews := time.Now()
 	lastPhase := phaseAt(time.Now())
 
 	for {
@@ -172,7 +220,14 @@ func (s *Scheduler) loop() {
 		case <-s.refreshCh:
 			s.runEstimateRound()
 			s.runIndexRound()
+		case <-s.newsRefreshCh:
+			go s.runNewsRound()
 		case now := <-ticker.C:
+			// 快讯拉取独立于监控暂停与交易时段，按设置间隔定时拉取
+			if now.Sub(lastNews) >= s.settings.NewsPollInterval() {
+				lastNews = now
+				go s.runNewsRound()
+			}
 			if s.IsPaused() {
 				continue
 			}
@@ -362,6 +417,71 @@ func (s *Scheduler) runNavConfirmRound() {
 			Code: code, Date: latest.Date, Nav: latest.Nav, Growth: latest.Growth, Profit: profit,
 		})
 		logger.Info("当日净值已确认: code=%s nav=%.4f growth=%.2f%%", code, latest.Nav, latest.Growth)
+	}
+}
+
+// runNewsRound 拉取一轮财经快讯：广播最新列表，并对新增条目按设置弹桌面通知。
+func (s *Scheduler) runNewsRound() {
+	// 避免并发重入（定时与手动刷新可能叠加）
+	s.mu.Lock()
+	if s.newsBusy {
+		s.mu.Unlock()
+		return
+	}
+	s.newsBusy = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.newsBusy = false
+		s.mu.Unlock()
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	list, err := eastmoney.FetchFlashNews(ctx, 50)
+	if err != nil {
+		logger.Warn("快讯轮询失败: %v", err)
+		return
+	}
+	if len(list) == 0 {
+		return
+	}
+
+	s.mu.Lock()
+	prevID := s.lastFlashID
+	firstRun := !s.newsInit
+	s.newsInit = true
+	// list 按时间倒序，遇到上次最新 id 即停止，之前的均为新增
+	var fresh []model.NewsFlash
+	if prevID != "" {
+		for _, n := range list {
+			if n.ID == prevID {
+				break
+			}
+			fresh = append(fresh, n)
+		}
+	}
+	s.lastFlash = list
+	s.lastFlashID = list[0].ID
+	notify := s.newsNotify
+	s.mu.Unlock()
+
+	// 广播最新快讯列表（所有窗口整体更新）
+	s.app.Event.Emit(EventNewsFlash, list)
+	// 持久化最新 id
+	if err := s.store.SetSetting(newsLastIDKey, list[0].ID); err != nil {
+		logger.Warn("持久化快讯游标失败: %v", err)
+	}
+
+	// 桌面通知：仅在非首轮、存在新增、通知开启且回调就绪时
+	if !firstRun && len(fresh) > 0 && notify != nil && s.settings.NewsNotifyEnabled() {
+		latest := fresh[0]
+		body := latest.Title
+		if len(fresh) > 1 {
+			body = fmt.Sprintf("%s（等 %d 条新快讯）", latest.Title, len(fresh))
+		}
+		notify("财经快讯", body, latest.ID)
+		logger.Info("推送快讯通知: 新增 %d 条", len(fresh))
 	}
 }
 
