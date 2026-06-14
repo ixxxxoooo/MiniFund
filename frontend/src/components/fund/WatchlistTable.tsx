@@ -11,13 +11,14 @@ import { SortableHeader } from "@/components/ui/sortable-header";
 import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
-import { formatMoney, formatNav } from "@/lib/format";
+import { formatMoney, formatNav, formatPercent } from "@/lib/format";
+import { computePositionMetrics } from "@/lib/portfolio";
 import { useLocalSort } from "@/lib/sort";
 import { cn } from "@/lib/utils";
 import { useMarketStore } from "@/stores/market";
 import { useSettingsStore } from "@/stores/settings";
 import { useUIStore } from "@/stores/ui";
-import { useWatchlistStore } from "@/stores/watchlist";
+import { isSummaryGroup, useWatchlistStore } from "@/stores/watchlist";
 
 /** 自选表格每页条数兜底值（容器高度测量前/异常时使用） */
 const WATCH_PAGE_SIZE_FALLBACK = 20;
@@ -61,14 +62,22 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
     }
   }, [updatedAt, estimates]);
 
-  // 派生指标统一在此计算，供表格与排序复用
+  // 派生指标统一在此计算，供表格与排序复用（当日收益盘中/盘后兜底见 lib/portfolio）
   const metrics = (item: WatchItem) => {
     const est = estimates[item.code];
     const pos = positions[item.code];
-    const todayProfit = pos && est?.hasEstimate ? pos.shares * (est.estimate - est.prevNav) : null;
-    const marketValue = pos && est ? pos.shares * (est.hasEstimate ? est.estimate : est.prevNav) : null;
-    return { est, pos, todayProfit, marketValue };
+    return { est, pos, ...computePositionMetrics(est, pos) };
   };
+
+  // 当前分组持仓总市值（持仓占比分母，按全部条目而非当前页计算）
+  const groupMarketValue = useMemo(() => {
+    let total = 0;
+    for (const it of items) {
+      const m = computePositionMetrics(estimates[it.code], positions[it.code]);
+      if (m.marketValue != null) total += m.marketValue;
+    }
+    return total;
+  }, [items, estimates, positions]);
 
   // 默认按加入时间倒序（最新在前）；列头排序可覆盖该默认顺序
   const orderedItems = useMemo(
@@ -91,6 +100,9 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
     },
     todayProfit: (it) => metrics(it).todayProfit ?? -Infinity,
     marketValue: (it) => metrics(it).marketValue ?? -Infinity,
+    marketShare: (it) => metrics(it).marketValue ?? -Infinity,
+    holdingProfit: (it) => metrics(it).totalProfit ?? -Infinity,
+    holdingCost: (it) => metrics(it).costValue ?? -Infinity,
   });
 
   // 分页：每页条数按表格可视高度自适应（窗口越大每页越多），越界时自动钳制
@@ -144,12 +156,17 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
             {header("estimate", cols.estimate)}
             {header("todayProfit", cols.todayProfit)}
             {header("marketValue", cols.marketValue)}
+            {header("marketShare", cols.marketShare)}
+            {header("holdingProfit", cols.holdingProfit)}
+            {header("holdingCost", cols.holdingCost)}
             <th className="data-grid-header border-b text-center">{cols.actions}</th>
           </tr>
         </thead>
         <tbody>
           {pageItems.map((item) => {
-            const { est, todayProfit, marketValue } = metrics(item);
+            const { est, pos, todayProfit, marketValue, totalProfit, totalPercent, costValue } = metrics(item);
+            const marketShare =
+              marketValue != null && groupMarketValue > 0 ? (marketValue / groupMarketValue) * 100 : null;
             const flash = flashes[item.code];
 
             return (
@@ -203,6 +220,40 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
                 </td>
                 <td className="data-grid-cell text-right">
                   {marketValue != null ? formatMoney(marketValue, hidden) : zhCN.watchlist.noEstimate}
+                </td>
+                <td className="data-grid-cell text-right">
+                  {marketShare != null ? (
+                    <span className="quote-num text-[var(--fg-secondary)]">{marketShare.toFixed(2)}%</span>
+                  ) : (
+                    zhCN.watchlist.noEstimate
+                  )}
+                </td>
+                <td className="data-grid-cell text-right">
+                  {totalProfit != null ? (
+                    <div className="flex flex-col items-end py-0.5">
+                      <QuoteText value={totalProfit} text={formatMoney(totalProfit, hidden)} neutral={stealth} />
+                      {totalPercent != null && (
+                        <QuoteText
+                          value={totalPercent}
+                          text={formatPercent(totalPercent)}
+                          neutral={stealth}
+                          className="text-2xs"
+                        />
+                      )}
+                    </div>
+                  ) : (
+                    zhCN.watchlist.noEstimate
+                  )}
+                </td>
+                <td className="data-grid-cell text-right">
+                  {pos && costValue != null ? (
+                    <div className="flex flex-col items-end py-0.5">
+                      <span>{formatMoney(costValue, hidden)}</span>
+                      <span className="quote-num text-2xs text-[var(--fg-muted)]">{formatNav(pos.costPrice)}</span>
+                    </div>
+                  ) : (
+                    zhCN.watchlist.noEstimate
+                  )}
                 </td>
                 <td className="data-grid-cell">
                   <div className="flex items-center justify-center gap-1">
@@ -281,9 +332,10 @@ function MoveMenu({ code }: { code: string }) {
   const btnRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  const others = groups.filter((g) => g.id !== activeGroupId);
-  // 只有一个分组时无处可移，禁用
-  const disabled = others.length === 0;
+  // 「汇总」非真实分组，不能作为移动目标
+  const others = groups.filter((g) => g.id !== activeGroupId && !isSummaryGroup(g.id));
+  // 只有一个分组时无处可移；「汇总」视图下来源分组不明确，禁用移动
+  const disabled = others.length === 0 || isSummaryGroup(activeGroupId);
 
   const MENU_W = 128;
   // 打开时按按钮位置计算固定坐标：右对齐按钮、优先在下方展开，下方空间不足则向上展开

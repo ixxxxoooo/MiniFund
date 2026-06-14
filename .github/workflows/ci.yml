@@ -27,6 +27,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # main.go 通过 //go:embed all:frontend/dist 嵌入前端产物。
+      # 本 Go 检查任务不构建前端，需确保该目录非空，否则 embed 会报
+      # "pattern all:frontend/dist: no matching files found"。
+      - name: 准备 go:embed 占位文件
+        run: mkdir -p frontend/dist && touch frontend/dist/.gitkeep
+
       - name: 校验 gofmt 格式
         run: |
           unformatted=$(gofmt -l $(find . -name '*.go' -not -path './frontend/*'))

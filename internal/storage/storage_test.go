@@ -143,6 +143,79 @@ func TestMoveItem(t *testing.T) {
 	}
 }
 
+func TestListAllItemsAndRemoveFromAll(t *testing.T) {
+	s := newTestStore(t)
+	groups, _ := s.ListGroups()
+	g1 := groups[0].ID
+	g2, _ := s.CreateGroup("成长")
+	// 同一基金加入两个分组，去重后应只剩一条
+	_ = s.AddItem("000001", g1)
+	_ = s.AddItem("000001", g2.ID)
+	_ = s.AddItem("110011", g2.ID)
+
+	all, err := s.ListAllItems()
+	if err != nil || len(all) != 2 {
+		t.Fatalf("汇总去重条目数量错误: %v len=%d", err, len(all))
+	}
+
+	// 彻底移除应从所有分组删除
+	if err := s.RemoveItemFromAll("000001"); err != nil {
+		t.Fatalf("彻底移除失败: %v", err)
+	}
+	all, _ = s.ListAllItems()
+	if len(all) != 1 || all[0].Code != "110011" {
+		t.Fatalf("彻底移除后汇总错误: %+v", all)
+	}
+}
+
+func TestReplaceWatchlistData(t *testing.T) {
+	s := newTestStore(t)
+	// 先写入一些旧数据，导入应整体覆盖
+	g0, _ := s.ListGroups()
+	_ = s.AddItem("999999", g0[0].ID)
+	_ = s.UpsertPosition("999999", 1, 1)
+
+	groups := []model.WatchGroup{{ID: 1, Name: "自选", Sort: 0}, {ID: 2, Name: "美股", Sort: 1}}
+	items := []model.WatchItem{
+		{Code: "000001", GroupID: 1, Sort: 0, Pinned: true, CreatedAt: 100},
+		{Code: "110011", GroupID: 2, Sort: 0, CreatedAt: 200},
+	}
+	positions := []model.Position{{Code: "000001", Shares: 1000, CostPrice: 1.5, UpdatedAt: 1}}
+	profits := []model.DailyProfit{{Code: "000001", Date: "2026-06-12", Nav: 1.6, Growth: 0.5, Profit: 80}}
+
+	if err := s.ReplaceWatchlistData(groups, items, positions, profits); err != nil {
+		t.Fatalf("整体替换失败: %v", err)
+	}
+
+	gs, _ := s.ListGroups()
+	if len(gs) != 2 || gs[1].Name != "美股" {
+		t.Fatalf("分组未按 id 恢复: %+v", gs)
+	}
+	// 旧的 999999 应被清除，新数据存在且分组映射正确
+	g1Items, _ := s.ListItems(1)
+	if len(g1Items) != 1 || g1Items[0].Code != "000001" || !g1Items[0].Pinned {
+		t.Fatalf("分组1条目恢复错误: %+v", g1Items)
+	}
+	g2Items, _ := s.ListItems(2)
+	if len(g2Items) != 1 || g2Items[0].Code != "110011" {
+		t.Fatalf("分组2条目恢复错误: %+v", g2Items)
+	}
+	if p, _ := s.GetPosition("999999"); p != nil {
+		t.Fatalf("旧持仓应被清除")
+	}
+	if p, _ := s.GetPosition("000001"); p == nil || p.Shares != 1000 {
+		t.Fatalf("持仓恢复错误: %+v", p)
+	}
+	raw, _ := s.ListAllRawItems()
+	if len(raw) != 2 {
+		t.Fatalf("原始条目导出数量错误: %d", len(raw))
+	}
+	dp, _ := s.ListAllDailyProfits()
+	if len(dp) != 1 || dp[0].Profit != 80 {
+		t.Fatalf("收益历史恢复错误: %+v", dp)
+	}
+}
+
 func TestThemeCache(t *testing.T) {
 	s := newTestStore(t)
 	if err := s.SaveThemeCache("003834", `[{"code":"BK000226","name":"新能源"}]`); err != nil {

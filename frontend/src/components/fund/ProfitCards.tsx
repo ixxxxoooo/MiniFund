@@ -1,9 +1,12 @@
+import { useMemo } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { QuoteText } from "@/components/market/QuoteText";
 import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { formatMoney, formatPercent } from "@/lib/format";
+import { computeGroupSummary } from "@/lib/portfolio";
 import { cn } from "@/lib/utils";
+import { useMarketStore } from "@/stores/market";
 import { useSettingsStore } from "@/stores/settings";
 import { useUIStore } from "@/stores/ui";
 import { useWatchlistStore } from "@/stores/watchlist";
@@ -21,19 +24,31 @@ function Card({ label, children, extra }: { label: string; children: React.React
   );
 }
 
+/** 金额涨跌配色类（摸鱼模式中性色） */
+function moneyColor(value: number, stealth: boolean): string {
+  if (stealth) return "text-[var(--quote-flat)]";
+  if (value > 0) return "text-[var(--quote-up)]";
+  if (value < 0) return "text-[var(--quote-down)]";
+  return "text-[var(--quote-flat)]";
+}
+
 /**
- * 持仓盈亏汇总卡片组：当日预估收益 / 持仓市值 / 累计收益 / 持仓数。
- * 摸鱼模式或隐藏金额开关下做脱敏展示。
+ * 持仓盈亏汇总卡片组：按「当前分组」统计当日预估收益 / 持仓市值 / 累计收益 / 持仓数。
+ * 各分组互相隔离、各算各的；摸鱼模式或隐藏金额开关下做脱敏展示。
  */
 export function ProfitCards() {
-  const summary = useWatchlistStore((s) => s.summary);
+  const items = useWatchlistStore((s) => s.items);
+  const positions = useWatchlistStore((s) => s.positions);
+  const estimates = useMarketStore((s) => s.estimates);
   const hideAmounts = useUIStore((s) => s.hideAmounts);
   const toggleHide = useUIStore((s) => s.toggleHideAmounts);
   const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
 
   const hidden = hideAmounts || stealth;
-  const todayProfit = summary?.todayProfit ?? 0;
-  const todayPercent = summary?.todayPercent ?? 0;
+  const summary = useMemo(
+    () => computeGroupSummary(items, positions, estimates),
+    [items, positions, estimates]
+  );
 
   return (
     <div className="flex gap-[var(--size-gap)]">
@@ -51,42 +66,33 @@ export function ProfitCards() {
           </Tooltip>
         }
       >
-        <span
-          className={cn(
-            stealth
-              ? "text-[var(--quote-flat)]"
-              : todayProfit > 0
-                ? "text-[var(--quote-up)]"
-                : todayProfit < 0
-                  ? "text-[var(--quote-down)]"
-                  : "text-[var(--quote-flat)]"
-          )}
-        >
-          {formatMoney(todayProfit, hidden)}
+        <span className={cn(moneyColor(summary.todayProfit, stealth))}>
+          {formatMoney(summary.todayProfit, hidden)}
         </span>
-        <QuoteText value={todayPercent} text={formatPercent(todayPercent)} neutral={stealth} className="ml-2 text-[length:var(--size-font-xs)]" />
+        <QuoteText
+          value={summary.todayPercent}
+          text={formatPercent(summary.todayPercent)}
+          neutral={stealth}
+          className="ml-2 text-[length:var(--size-font-xs)]"
+        />
       </Card>
       <Card label={zhCN.summary.marketValue}>
-        <span className="text-[var(--fg)]">{formatMoney(summary?.marketValue ?? 0, hidden)}</span>
+        <span className="text-[var(--fg)]">{formatMoney(summary.marketValue, hidden)}</span>
       </Card>
       <Card label={zhCN.summary.totalProfit}>
-        <span
-          className={cn(
-            stealth
-              ? "text-[var(--quote-flat)]"
-              : (summary?.totalProfit ?? 0) > 0
-                ? "text-[var(--quote-up)]"
-                : (summary?.totalProfit ?? 0) < 0
-                  ? "text-[var(--quote-down)]"
-                  : "text-[var(--quote-flat)]"
-          )}
-        >
-          {formatMoney(summary?.totalProfit ?? 0, hidden)}
+        <span className={cn(moneyColor(summary.totalProfit, stealth))}>
+          {formatMoney(summary.totalProfit, hidden)}
         </span>
+        <QuoteText
+          value={summary.totalPercent}
+          text={formatPercent(summary.totalPercent)}
+          neutral={stealth}
+          className="ml-2 text-[length:var(--size-font-xs)]"
+        />
       </Card>
       <Card label={zhCN.summary.positionCount}>
         <span className="text-[var(--fg)]">
-          {summary?.positionCount ?? 0}
+          {summary.positionCount}
           <span className="ml-1 text-[length:var(--size-font-xs)] font-normal text-[var(--fg-secondary)]">
             {zhCN.summary.countUnit}
           </span>

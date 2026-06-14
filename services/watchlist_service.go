@@ -89,6 +89,24 @@ func (s *WatchlistService) ListItems(groupID int64) ([]model.WatchItem, error) {
 	return s.store.ListItems(groupID)
 }
 
+// ListAllItems 返回所有分组去重后的自选条目（前端「汇总」视图用）。
+func (s *WatchlistService) ListAllItems() ([]model.WatchItem, error) {
+	return s.store.ListAllItems()
+}
+
+// RemoveItemFromAll 从所有分组彻底移除某基金（「汇总」视图下移除）。
+func (s *WatchlistService) RemoveItemFromAll(code string) error {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return fmt.Errorf("基金代码不能为空")
+	}
+	if err := s.store.RemoveItemFromAll(code); err != nil {
+		return err
+	}
+	s.refresh()
+	return nil
+}
+
 // AddItem 添加自选并立即刷新估值。
 func (s *WatchlistService) AddItem(code string, groupID int64) error {
 	code = strings.TrimSpace(code)

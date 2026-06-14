@@ -241,8 +241,17 @@ RefreshFundIndex() error                                  // 手动更新代码�
 // WatchlistService
 ListGroups() / CreateGroup(name) / RenameGroup(id, name) / DeleteGroup(id)
 ListItems(groupID) / AddItem(code, groupID) / RemoveItem(code, groupID)
+ListAllItems()                                           // 所有分组去重后的全部自选（前端「汇总」虚拟分组用，id=0 不入库）
+RemoveItemFromAll(code)                                  // 从所有分组彻底移除（汇总视图下移除）
 MoveItem(code, fromGroup, toGroup)                        // 跨分组移动自选（保留 created_at，合并到目标分组末尾）
 SetPinned(code, groupID, pinned) / Reorder(groupID, codes)
+
+// BackupService（数据备份/恢复，外部仅原生文件对话框与本地文件读写）
+ExportData() (path string, err error)                    // 弹保存框导出 JSON 备份（自选/分组/持仓/收益历史/设置），用户取消返回空串
+ImportData() (*ImportResult, error)                      // 弹打开框，校验后整体替换自选数据并合并设置，用户取消返回 nil
+// 备份 JSON 结构：{app:"MiniFund", version:1, exportedAt, groups[], items[], positions[], dailyProfit[], settings{}}
+// 导入策略：storage.ReplaceWatchlistData 事务内清空并按原 id 重建分组→条目→持仓→收益历史；设置走 SettingsService.Update；
+// 完成后经注入的 onChange 触发调度器刷新 + 广播 watchlist:changed，各窗口重载。
 
 // PortfolioService
 GetPosition(code) / UpsertPosition(code, shares, costPrice) / DeletePosition(code)

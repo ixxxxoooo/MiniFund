@@ -63,6 +63,19 @@ tasks:
         vars:
           ARCH: "{{.ARCH | default ARCH}}"
 
+  release:all:
+    summary: 一键构建 macOS DMG + Windows .exe（产物在 bin/）；macOS 交叉编译 Windows 需先安装 mingw-w64（brew install mingw-w64）
+    cmds:
+      # 先强制以 -ts 重新生成 bindings（绕过 Task 指纹缓存），避免残留的 .js bindings 导致前端 tsc 构建失败
+      - wails3 generate bindings -f '-tags production' -clean=true -ts
+      - task: dmg:darwin
+        vars:
+          ARCH: "{{.MAC_ARCH | default ARCH}}"
+      - task: package:windows
+        vars:
+          ARCH: '{{.WIN_ARCH | default "amd64"}}'
+      - echo "✅ 全部产物已生成于 bin/：DMG（macOS）+ .exe（Windows）"
+
   build:windows:
     summary: 构建 Windows 二进制（.exe）
     cmds:

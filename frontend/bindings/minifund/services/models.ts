@@ -140,5 +140,48 @@ export class AppSettings {
     }
 }
 
+/**
+ * ImportResult 数据导入结果（暴露给前端展示）。
+ */
+export class ImportResult {
+    /**
+     * 导入分组数
+     */
+    "groups": number;
+
+    /**
+     * 导入自选条目数
+     */
+    "items": number;
+
+    /**
+     * 导入持仓数
+     */
+    "positions": number;
+
+    /** Creates a new ImportResult instance. */
+    constructor($$source: Partial<ImportResult> = {}) {
+        if (!("groups" in $$source)) {
+            this["groups"] = 0;
+        }
+        if (!("items" in $$source)) {
+            this["items"] = 0;
+        }
+        if (!("positions" in $$source)) {
+            this["positions"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ImportResult instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ImportResult {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ImportResult($$parsedSource as Partial<ImportResult>);
+    }
+}
+
 // Private type creation functions
 const $$createType0 = $Create.Array($Create.Any);

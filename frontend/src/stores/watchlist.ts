@@ -6,7 +6,24 @@ import type {
   WatchItem,
 } from "@bindings/minifund/internal/model";
 import { PortfolioService, WatchlistService } from "@bindings/minifund/services";
+import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
+
+/** 「汇总」虚拟分组 id：真实分组 id 由数据库自增恒 ≥ 1，0 不会冲突。不入库。 */
+export const SUMMARY_GROUP_ID = 0;
+
+/** 是否为「汇总」虚拟分组 */
+export function isSummaryGroup(id: number | null): boolean {
+  return id === SUMMARY_GROUP_ID;
+}
+
+/** 「汇总」虚拟分组对象（固定排在分组栏第一位、统计全部自选） */
+const summaryGroup: WatchGroup = { id: SUMMARY_GROUP_ID, name: zhCN.watchlist.summaryGroup, sort: -1 } as WatchGroup;
+
+/** 在真实分组前插入「汇总」虚拟分组 */
+function withSummary(realGroups: WatchGroup[]): WatchGroup[] {
+  return [summaryGroup, ...realGroups];
+}
 
 interface WatchlistStore {
   groups: WatchGroup[];
@@ -51,9 +68,11 @@ export const useWatchlistStore = create<WatchlistStore>()((set, get) => ({
   loaded: false,
 
   load: async () => {
-    const groups = await call("加载分组", () => WatchlistService.ListGroups());
-    if (!groups || groups.length === 0) return;
-    const activeGroupId = get().activeGroupId ?? groups[0].id;
+    const realGroups = await call("加载分组", () => WatchlistService.ListGroups());
+    if (!realGroups || realGroups.length === 0) return;
+    const groups = withSummary(realGroups);
+    // 默认进入「汇总」分组（统计全部自选与持仓）
+    const activeGroupId = get().activeGroupId ?? SUMMARY_GROUP_ID;
     set({ groups, activeGroupId, loaded: true });
     await Promise.all([
       get().reloadItems(),
@@ -72,7 +91,10 @@ export const useWatchlistStore = create<WatchlistStore>()((set, get) => ({
   reloadItems: async () => {
     const groupId = get().activeGroupId;
     if (groupId == null) return;
-    const items = await call("加载自选", () => WatchlistService.ListItems(groupId));
+    // 「汇总」分组：加载所有分组去重后的全部自选
+    const items = isSummaryGroup(groupId)
+      ? await call("加载全部自选", () => WatchlistService.ListAllItems())
+      : await call("加载自选", () => WatchlistService.ListItems(groupId));
     if (items) set({ items });
   },
 
@@ -82,8 +104,14 @@ export const useWatchlistStore = create<WatchlistStore>()((set, get) => ({
   },
 
   addFund: async (code) => {
-    const groupId = get().activeGroupId;
+    let groupId = get().activeGroupId;
     if (groupId == null) return;
+    // 「汇总」非真实分组：加自选落到第一个真实分组
+    if (isSummaryGroup(groupId)) {
+      const real = get().groups.find((g) => !isSummaryGroup(g.id));
+      if (!real) return;
+      groupId = real.id;
+    }
     const ok = await call("添加自选", () => WatchlistService.AddItem(code, groupId));
     if (ok !== null) await get().reloadItems();
   },
@@ -91,7 +119,10 @@ export const useWatchlistStore = create<WatchlistStore>()((set, get) => ({
   removeFund: async (code) => {
     const groupId = get().activeGroupId;
     if (groupId == null) return;
-    const ok = await call("移除自选", () => WatchlistService.RemoveItem(code, groupId));
+    // 「汇总」视图：从所有分组彻底移除
+    const ok = isSummaryGroup(groupId)
+      ? await call("彻底移除自选", () => WatchlistService.RemoveItemFromAll(code))
+      : await call("移除自选", () => WatchlistService.RemoveItem(code, groupId));
     if (ok !== null) await get().reloadItems();
   },
 
@@ -105,8 +136,8 @@ export const useWatchlistStore = create<WatchlistStore>()((set, get) => ({
   createGroup: async (name) => {
     const group = await call("新建分组", () => WatchlistService.CreateGroup(name));
     if (group) {
-      const groups = await call("加载分组", () => WatchlistService.ListGroups());
-      if (groups) set({ groups, activeGroupId: group.id });
+      const realGroups = await call("加载分组", () => WatchlistService.ListGroups());
+      if (realGroups) set({ groups: withSummary(realGroups), activeGroupId: group.id });
       await get().reloadItems();
     }
   },

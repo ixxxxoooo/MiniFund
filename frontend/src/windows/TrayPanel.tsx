@@ -119,15 +119,15 @@ export function TrayPanel() {
         )}
       </div>
 
-      {/* 分组切换 */}
+      {/* 分组切换：容器加纵向内边距，避免 overflow-x-auto 把选中胶囊的上下圆角裁切 */}
       {groups.length > 1 && (
-        <div className="scroll-none flex shrink-0 items-center gap-1 overflow-x-auto">
+        <div className="scroll-none flex shrink-0 items-center gap-1 overflow-x-auto py-0.5">
           {groups.map((g) => (
             <button
               key={g.id}
               onClick={() => void setActiveGroup(g.id)}
               className={cn(
-                "shrink-0 whitespace-nowrap rounded-[var(--radius-btn)] px-2 py-0.5 text-2xs",
+                "shrink-0 whitespace-nowrap rounded-[var(--radius-btn)] px-2 py-0.5 text-2xs outline-none focus:outline-none focus-visible:outline-none",
                 g.id === activeGroupId
                   ? "bg-[var(--row-selected)] font-medium text-[var(--accent)]"
                   : "text-[var(--fg-secondary)] hover:bg-[var(--row-hover)]"
@@ -167,9 +167,17 @@ export function TrayPanel() {
                     </span>
                   )}
                 </div>
+                {/* 涨跌幅优先级（与主窗口自选表一致）：
+                    盘中实时估算 → 已公布日涨幅（盘后/周末取最近一个交易日） → 无数据「—」 */}
                 {est?.hasEstimate ? (
                   <QuoteText
                     value={est.estimateGrowth}
+                    neutral={stealth}
+                    className="shrink-0 whitespace-nowrap text-2xs"
+                  />
+                ) : est?.hasDayGrowth ? (
+                  <QuoteText
+                    value={est.dayGrowth}
                     neutral={stealth}
                     className="shrink-0 whitespace-nowrap text-2xs"
                   />

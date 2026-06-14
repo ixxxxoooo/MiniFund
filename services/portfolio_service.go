@@ -199,15 +199,30 @@ func (s *PortfolioService) GetSummary() (*model.PortfolioSummary, error) {
 		if !ok || est.PrevNav <= 0 {
 			continue // 无行情数据的持仓跳过（刚添加且未拉到估值）
 		}
-		// 盘中用估算净值；无盘中估值（QDII）退化为昨日净值
+		// 盘中用估算净值；盘后/已确认时 PrevNav 经调度器校正即为最新净值
 		latest := est.PrevNav
 		if est.HasEstimate {
 			latest = est.Estimate
 		}
 		summary.MarketValue += p.Shares * latest
-		summary.TodayProfit += p.Shares * (latest - est.PrevNav)
 		summary.TotalProfit += p.Shares * (latest - p.CostPrice)
-		prevValue += p.Shares * est.PrevNav
+
+		// 当日收益口径（与前端 lib/portfolio 一致）：
+		//   - 盘中：PrevNav 为上一交易日净值，收益 = 份额 ×（估算净值 − 上一日净值）；
+		//   - 已确认：PrevNav 为今日净值，DayGrowth 为今日涨幅，
+		//     昨日净值 = PrevNav ÷ (1 + DayGrowth/100)，收益 = 份额 ×（今日净值 − 昨日净值）；
+		//   - 二者皆无：当日收益记 0，分母退化为当前市值。
+		switch {
+		case est.HasEstimate:
+			summary.TodayProfit += p.Shares * (est.Estimate - est.PrevNav)
+			prevValue += p.Shares * est.PrevNav
+		case est.HasDayGrowth:
+			prevDayNav := est.PrevNav / (1 + est.DayGrowth/100)
+			summary.TodayProfit += p.Shares * (latest - prevDayNav)
+			prevValue += p.Shares * prevDayNav
+		default:
+			prevValue += p.Shares * latest
+		}
 	}
 	if prevValue > 0 {
 		summary.TodayPercent = summary.TodayProfit / prevValue * 100

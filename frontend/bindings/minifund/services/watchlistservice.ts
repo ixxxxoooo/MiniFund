@@ -41,11 +41,20 @@ export function DeleteGroup(id: number): $CancellablePromise<void> {
 }
 
 /**
+ * ListAllItems 返回所有分组去重后的自选条目（前端「汇总」视图用）。
+ */
+export function ListAllItems(): $CancellablePromise<model$0.WatchItem[]> {
+    return $Call.ByID(1760126261).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
  * ListGroups 返回全部分组。
  */
 export function ListGroups(): $CancellablePromise<model$0.WatchGroup[]> {
     return $Call.ByID(2825944000).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType4($result);
     });
 }
 
@@ -54,7 +63,7 @@ export function ListGroups(): $CancellablePromise<model$0.WatchGroup[]> {
  */
 export function ListItems(groupID: number): $CancellablePromise<model$0.WatchItem[]> {
     return $Call.ByID(3162395076, groupID).then(($result: any) => {
-        return $$createType4($result);
+        return $$createType3($result);
     });
 }
 
@@ -70,6 +79,13 @@ export function MoveItem(code: string, fromGroupID: number, toGroupID: number): 
  */
 export function RemoveItem(code: string, groupID: number): $CancellablePromise<void> {
     return $Call.ByID(3287145023, code, groupID);
+}
+
+/**
+ * RemoveItemFromAll 从所有分组彻底移除某基金（「汇总」视图下移除）。
+ */
+export function RemoveItemFromAll(code: string): $CancellablePromise<void> {
+    return $Call.ByID(1065725478, code);
 }
 
 /**
@@ -96,6 +112,6 @@ export function SetScheduler(sched: scheduler$0.Scheduler | null): $CancellableP
 // Private type creation functions
 const $$createType0 = model$0.WatchGroup.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
-const $$createType2 = $Create.Array($$createType0);
-const $$createType3 = model$0.WatchItem.createFrom;
-const $$createType4 = $Create.Array($$createType3);
+const $$createType2 = model$0.WatchItem.createFrom;
+const $$createType3 = $Create.Array($$createType2);
+const $$createType4 = $Create.Array($$createType0);

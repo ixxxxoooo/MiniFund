@@ -39,6 +39,9 @@ func Run(resources EmbeddedResources) error {
 	// 注入 Wails 实例：装配调度器并启动后台任务
 	coreApp.startup(wailsApp)
 
+	// 备份服务需要 Wails 实例弹原生文件对话框
+	coreApp.BackupSvc.SetWailsApplication(wailsApp)
+
 	// 创建窗口
 	coreApp.WindowSvc.SetWailsApplication(wailsApp)
 	coreApp.WindowSvc.CreateMainWindow()

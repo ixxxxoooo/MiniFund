@@ -10,7 +10,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/stores/ui";
-import { useWatchlistStore } from "@/stores/watchlist";
+import { isSummaryGroup, useWatchlistStore } from "@/stores/watchlist";
 
 /**
  * 自选监控页：盈亏汇总卡片 + 分组标签 + 估值表格。
@@ -63,7 +63,10 @@ export function WatchlistPage() {
             >
               {g.name}
             </button>
-            {groups.length > 1 && g.id === activeGroupId && (
+            {/* 「汇总」为默认分组不可删除；真实分组多于 1 个且选中时才可删除 */}
+            {!isSummaryGroup(g.id) &&
+              g.id === activeGroupId &&
+              groups.filter((x) => !isSummaryGroup(x.id)).length > 1 && (
               <Tooltip content={zhCN.watchlist.deleteGroup}>
                 <button
                   aria-label={zhCN.watchlist.deleteGroup}

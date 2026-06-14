@@ -335,6 +335,15 @@ type Position struct {
 	UpdatedAt int64   `json:"updatedAt"`
 }
 
+// DailyProfit 每日收益落库记录（净值确认后写入，供收益日历与数据备份）。
+type DailyProfit struct {
+	Code   string  `json:"code"`   // 基金代码
+	Date   string  `json:"date"`   // 日期 yyyy-MM-dd
+	Nav    float64 `json:"nav"`    // 当日单位净值
+	Growth float64 `json:"growth"` // 当日日涨幅（%）
+	Profit float64 `json:"profit"` // 当日收益（元）
+}
+
 // PortfolioSummary 持仓盈亏汇总。
 type PortfolioSummary struct {
 	MarketValue   float64 `json:"marketValue"`   // 总市值（盘中按估算净值计算）

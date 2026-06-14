@@ -17,8 +17,9 @@
 ```bash
 go test ./...
 cd frontend && pnpm test && pnpm build
-wails3 generate bindings
-wails3 build
+# 必须带 -ts（生成 TypeScript bindings）；裸 wails3 generate bindings 会输出 .js 并删除 .ts，导致前端 tsc 找不到类型声明而构建失败
+wails3 generate bindings -clean=true -ts   # 或：wails3 task generate:bindings
+wails3 build                                # 或：wails3 task build（会先以正确参数生成 bindings）
 ```
 
 涉及打包、应用 Bundle 或发布产物的变更，还需：

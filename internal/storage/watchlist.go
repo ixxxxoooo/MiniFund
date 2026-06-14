@@ -99,6 +99,42 @@ func (s *Store) ListItems(groupID int64) ([]model.WatchItem, error) {
 	return items, rows.Err()
 }
 
+// ListAllItems 返回所有分组去重后的自选条目（「汇总」视图用）。
+// 同一基金可能存在于多个分组，按 code 聚合：取最早 created_at、任一分组的置顶状态（有置顶即置顶）。
+func (s *Store) ListAllItems() ([]model.WatchItem, error) {
+	rows, err := s.db.Query(`
+		SELECT w.code, MIN(w.group_id), 0,
+		       MAX(w.pinned), MIN(w.created_at),
+		       COALESCE(f.name, ''), COALESCE(f.type, '')
+		FROM watch_item w LEFT JOIN fund_index f ON f.code = w.code
+		GROUP BY w.code
+		ORDER BY MAX(w.pinned) DESC, MIN(w.created_at)`)
+	if err != nil {
+		return nil, fmt.Errorf("查询全部自选条目失败: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	items := make([]model.WatchItem, 0, 32)
+	for rows.Next() {
+		var it model.WatchItem
+		var pinned int
+		if err := rows.Scan(&it.Code, &it.GroupID, &it.Sort, &pinned, &it.CreatedAt, &it.Name, &it.Type); err != nil {
+			return nil, fmt.Errorf("读取全部自选条目失败: %w", err)
+		}
+		it.Pinned = pinned != 0
+		items = append(items, it)
+	}
+	return items, rows.Err()
+}
+
+// RemoveItemFromAll 从所有分组彻底移除某基金（「汇总」视图下移除）。
+func (s *Store) RemoveItemFromAll(code string) error {
+	_, err := s.db.Exec("DELETE FROM watch_item WHERE code = ?", code)
+	if err != nil {
+		return fmt.Errorf("彻底移除自选失败: %w", err)
+	}
+	return nil
+}
+
 // AllWatchedCodes 返回所有分组去重后的自选基金代码（调度器轮询用）。
 func (s *Store) AllWatchedCodes() ([]string, error) {
 	rows, err := s.db.Query("SELECT DISTINCT code FROM watch_item")

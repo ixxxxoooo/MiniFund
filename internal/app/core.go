@@ -32,6 +32,7 @@ type core struct {
 	WindowSvc    *services.WindowService
 	NewsSvc      *services.NewsService
 	AISvc        *services.AIService
+	BackupSvc    *services.BackupService
 	NotifySvc    *notifications.NotificationService
 
 	// newsPayloads 缓存快讯通知 id → 新闻窗口 base64 载荷，供点击通知时复用打开弹窗
@@ -59,6 +60,7 @@ func newCore() (*core, error) {
 		WindowSvc:    services.NewWindowService(settingsSvc),
 		NewsSvc:      services.NewNewsService(),
 		AISvc:        services.NewAIService(settingsSvc),
+		BackupSvc:    services.NewBackupService(store, settingsSvc),
 		NotifySvc:    notifications.New(),
 		newsPayloads: make(map[string]string),
 	}
@@ -143,6 +145,11 @@ func (c *core) startup(wailsApp *application.App) {
 	}
 	c.WatchlistSvc.SetOnChange(emitWatchlistChanged)
 	c.PortfolioSvc.SetOnChange(emitWatchlistChanged)
+	// 数据导入后广播变更并触发一轮估值刷新，各窗口随即重载
+	c.BackupSvc.SetOnChange(func() {
+		c.Scheduler.RefreshNow()
+		emitWatchlistChanged()
+	})
 
 	// 托盘面板显隐：联动调度器提速 + 广播事件（面板打开时前端重新加载数据）
 	c.WindowSvc.SetTrayPanelVisibilityListener(func(visible bool) {
@@ -173,6 +180,7 @@ func (c *core) services() []application.Service {
 		application.NewService(c.WindowSvc),
 		application.NewService(c.NewsSvc),
 		application.NewService(c.AISvc),
+		application.NewService(c.BackupSvc),
 		application.NewService(c.NotifySvc),
 	}
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AIService, FundService } from "@bindings/minifund/services";
+import { AIService, BackupService, FundService } from "@bindings/minifund/services";
 import { Button } from "@/components/ui/button";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
@@ -138,9 +138,13 @@ function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: 
 export function SettingsPage() {
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
+  const loadSettings = useSettingsStore((s) => s.load);
   const items = useWatchlistStore((s) => s.items);
+  const reloadWatchlist = useWatchlistStore((s) => s.load);
   const [indexState, setIndexState] = useState<"idle" | "loading" | "done" | "failed">("idle");
   const [aiTest, setAiTest] = useState<{ state: "idle" | "loading" | "ok" | "failed"; msg?: string }>({ state: "idle" });
+  const [exportState, setExportState] = useState<"idle" | "loading" | "done">("idle");
+  const [importState, setImportState] = useState<{ state: "idle" | "loading" | "done" | "failed"; msg?: string }>({ state: "idle" });
 
   if (!settings) {
     return (
@@ -161,6 +165,35 @@ export function SettingsPage() {
     setIndexState("loading");
     const ok = await call("更新基金代码表", () => FundService.RefreshFundIndex());
     setIndexState(ok !== null ? "done" : "failed");
+  };
+
+  // 导出备份：弹原生保存框，写入 JSON 文件（用户取消返回空路径）
+  const handleExport = async () => {
+    setExportState("loading");
+    const path = await call("导出数据", () => BackupService.ExportData());
+    setExportState(path ? "done" : "idle");
+  };
+
+  // 导入恢复：弹原生打开框，恢复后重载设置与自选（用户取消返回 null）
+  const handleImport = async () => {
+    setImportState({ state: "loading" });
+    try {
+      const result = await BackupService.ImportData();
+      if (!result) {
+        setImportState({ state: "idle" }); // 用户取消
+        return;
+      }
+      await Promise.all([loadSettings(), reloadWatchlist()]);
+      setImportState({
+        state: "done",
+        msg: zhCN.settings.importDone
+          .replace("{groups}", String(result.groups))
+          .replace("{items}", String(result.items))
+          .replace("{positions}", String(result.positions)),
+      });
+    } catch (err) {
+      setImportState({ state: "failed", msg: err instanceof Error ? err.message : String(err) });
+    }
   };
 
   // AI 连接测试：直接调用以捕获后端返回的具体错误信息
@@ -332,6 +365,31 @@ export function SettingsPage() {
               {indexState === "failed" && <span className="text-2xs text-[var(--danger)]">{zhCN.settings.refreshFailed}</span>}
               <Button size="sm" variant="outline" disabled={indexState === "loading"} onClick={() => void handleRefreshIndex()}>
                 {indexState === "loading" ? zhCN.settings.refreshing : zhCN.settings.refreshFundIndex}
+              </Button>
+            </div>
+          </Row>
+          <Row label={zhCN.settings.backup} desc={zhCN.settings.backupDesc}>
+            <div className="flex items-center gap-2">
+              {exportState === "done" && <span className="text-2xs text-[var(--success)]">{zhCN.settings.backupExportDone}</span>}
+              <Button size="sm" variant="outline" disabled={exportState === "loading"} onClick={() => void handleExport()}>
+                {exportState === "loading" ? zhCN.settings.backupExporting : zhCN.settings.backupExport}
+              </Button>
+            </div>
+          </Row>
+          <Row label={zhCN.settings.importTitle} desc={zhCN.settings.importDesc}>
+            <div className="flex items-center gap-2">
+              {importState.state === "done" && (
+                <span className="max-w-[240px] truncate text-2xs text-[var(--success)]" title={importState.msg}>
+                  {importState.msg}
+                </span>
+              )}
+              {importState.state === "failed" && (
+                <span className="max-w-[240px] truncate text-2xs text-[var(--danger)]" title={importState.msg}>
+                  {zhCN.settings.importFailed}：{importState.msg}
+                </span>
+              )}
+              <Button size="sm" variant="outline" disabled={importState.state === "loading"} onClick={() => void handleImport()}>
+                {importState.state === "loading" ? zhCN.settings.importing : zhCN.settings.backupImport}
               </Button>
             </div>
           </Row>
