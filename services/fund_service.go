@@ -23,15 +23,26 @@ const detailCacheMaxAge = 24 * time.Hour
 // rankingCacheTTL 排行结果内存缓存时效（页面可见才轮询，60s 足够新鲜且大幅提速翻页）。
 const rankingCacheTTL = 60 * time.Second
 
+// perfCacheTTL 搜索结果收益补全缓存时效（今日为估算、周期为日级，3 分钟足够新鲜且大幅提速翻页）。
+const perfCacheTTL = 3 * time.Minute
+
+// perfFetchConcurrency 周期收益并发拉取上限（限频规则：≤ 8）。
+const perfFetchConcurrency = 6
+
 // FundService 基金数据服务：搜索、详情、历史净值、排行。
 type FundService struct {
 	store     *storage.Store
 	rankCache *ttlCache
+	perfCache *ttlCache
 }
 
 // NewFundService 创建基金数据服务。
 func NewFundService(store *storage.Store) *FundService {
-	return &FundService{store: store, rankCache: newTTLCache(rankingCacheTTL)}
+	return &FundService{
+		store:     store,
+		rankCache: newTTLCache(rankingCacheTTL),
+		perfCache: newTTLCache(perfCacheTTL),
+	}
 }
 
 // EnsureFundIndex 确保基金代码表存在且未过期（应用启动时后台调用，不暴露给前端）。
@@ -152,6 +163,105 @@ func (s *FundService) GetFundThemes(codes []string) (map[string][]model.FundThem
 			}(c)
 		}
 		wg.Wait()
+	}
+	return result, nil
+}
+
+// GetFundPerformance 批量补全一组基金的阶段收益（code → 收益），供搜索结果行内展示。
+// 今日取 fundgz 估算涨跌（gszzl，单批并发），其余周期取移动端 FundMNPeriodIncrease（受限并发）；
+// 命中 3 分钟缓存直接返回，单只失败跳过不影响整体。
+func (s *FundService) GetFundPerformance(codes []string) (map[string]model.FundPerf, error) {
+	result := make(map[string]model.FundPerf)
+	if len(codes) == 0 {
+		return result, nil
+	}
+
+	// 去重
+	seen := make(map[string]bool, len(codes))
+	uniq := make([]string, 0, len(codes))
+	for _, c := range codes {
+		c = strings.TrimSpace(c)
+		if c == "" || seen[c] {
+			continue
+		}
+		seen[c] = true
+		uniq = append(uniq, c)
+	}
+
+	// 命中缓存的直接返回，未命中的进入补全集合
+	var missing []string
+	for _, c := range uniq {
+		if v, ok := s.perfCache.get("perf:" + c); ok {
+			result[c] = v.(model.FundPerf)
+		} else {
+			missing = append(missing, c)
+		}
+	}
+	if len(missing) == 0 {
+		return result, nil
+	}
+
+	perfs := make(map[string]*model.FundPerf, len(missing))
+	var mu sync.Mutex
+	for _, c := range missing {
+		perfs[c] = &model.FundPerf{Code: c}
+	}
+
+	// 周期收益：受限并发逐只拉取（近1周/近1月/近3月/近1年/今年来）
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, perfFetchConcurrency)
+	for _, c := range missing {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(code string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+			defer cancel()
+			returns, err := eastmoney.FetchFundPeriodReturns(ctx, code)
+			if err != nil {
+				logger.Warn("拉取阶段收益失败: code=%s err=%v", code, err)
+				return
+			}
+			mu.Lock()
+			p := perfs[code]
+			for _, r := range returns {
+				switch r.Period {
+				case "Z":
+					p.WeekGrowth = r.Value
+				case "Y":
+					p.MonthGrowth = r.Value
+				case "3Y":
+					p.Month3 = r.Value
+				case "1N":
+					p.Year1 = r.Value
+				case "JN":
+					p.Ytd = r.Value
+				}
+			}
+			p.HasPeriod = true
+			mu.Unlock()
+		}(c)
+	}
+	wg.Wait()
+
+	// 今日：单批并发拉取 fundgz 估算涨跌
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	if ests, err := eastmoney.FetchEstimates(ctx, missing); err == nil {
+		for _, e := range ests {
+			if p, ok := perfs[e.Code]; ok && e.HasEstimate {
+				p.DayGrowth = e.EstimateGrowth
+				p.HasDay = true
+			}
+		}
+	} else {
+		logger.Warn("批量拉取今日估算失败: %v", err)
+	}
+
+	for c, p := range perfs {
+		s.perfCache.set("perf:"+c, *p)
+		result[c] = *p
 	}
 	return result, nil
 }

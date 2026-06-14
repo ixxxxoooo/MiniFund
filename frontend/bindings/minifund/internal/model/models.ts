@@ -416,6 +416,98 @@ export class FundIndexPage {
 }
 
 /**
+ * FundPerf 基金阶段收益（用于搜索结果行内异步补全展示）。
+ * 今日来自 fundgz 估算涨跌（gszzl），其余周期来自移动端 FundMNPeriodIncrease。
+ */
+export class FundPerf {
+    /**
+     * 基金代码
+     */
+    "code": string;
+
+    /**
+     * 今日（估算涨跌，%）
+     */
+    "dayGrowth": number;
+
+    /**
+     * 近1周（%）
+     */
+    "weekGrowth": number;
+
+    /**
+     * 近1月（%）
+     */
+    "monthGrowth": number;
+
+    /**
+     * 近3月（%）
+     */
+    "month3": number;
+
+    /**
+     * 近1年（%）
+     */
+    "year1": number;
+
+    /**
+     * 今年来（%）
+     */
+    "ytd": number;
+
+    /**
+     * 是否取到今日估算
+     */
+    "hasDay": boolean;
+
+    /**
+     * 是否取到周期收益
+     */
+    "hasPeriod": boolean;
+
+    /** Creates a new FundPerf instance. */
+    constructor($$source: Partial<FundPerf> = {}) {
+        if (!("code" in $$source)) {
+            this["code"] = "";
+        }
+        if (!("dayGrowth" in $$source)) {
+            this["dayGrowth"] = 0;
+        }
+        if (!("weekGrowth" in $$source)) {
+            this["weekGrowth"] = 0;
+        }
+        if (!("monthGrowth" in $$source)) {
+            this["monthGrowth"] = 0;
+        }
+        if (!("month3" in $$source)) {
+            this["month3"] = 0;
+        }
+        if (!("year1" in $$source)) {
+            this["year1"] = 0;
+        }
+        if (!("ytd" in $$source)) {
+            this["ytd"] = 0;
+        }
+        if (!("hasDay" in $$source)) {
+            this["hasDay"] = false;
+        }
+        if (!("hasPeriod" in $$source)) {
+            this["hasPeriod"] = false;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new FundPerf instance from a string or object.
+     */
+    static createFrom($$source: any = {}): FundPerf {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new FundPerf($$parsedSource as Partial<FundPerf>);
+    }
+}
+
+/**
  * FundTheme 基金所属主题/概念（东财 ztjj 体系，TTYPE 形如 BKxxxxxx）。
  */
 export class FundTheme {
@@ -1650,6 +1742,170 @@ export class SectorItem {
     static createFrom($$source: any = {}): SectorItem {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new SectorItem($$parsedSource as Partial<SectorItem>);
+    }
+}
+
+/**
+ * ThemeDetail 主题（板块）自身各周期涨幅与同类排名（来自东财 ztjj GetBKDetailInfoNew）。
+ * 用于主题相关基金页顶部展示该主题近期表现。日涨幅无排名；其余周期含「排名/同类总数」。
+ */
+export class ThemeDetail {
+    /**
+     * 主题代码（BK000xxx）
+     */
+    "code": string;
+
+    /**
+     * 主题名称
+     */
+    "name": string;
+
+    /**
+     * 日涨幅（%）
+     */
+    "day": number;
+
+    /**
+     * 近1周涨幅（%）
+     */
+    "week": number;
+
+    /**
+     * 近1月涨幅（%）
+     */
+    "month": number;
+
+    /**
+     * 近3月涨幅（%）
+     */
+    "month3": number;
+
+    /**
+     * 近1年涨幅（%）
+     */
+    "year1": number;
+
+    /**
+     * 今年来涨幅（%）
+     */
+    "ytd": number;
+
+    /**
+     * 近1周同类排名
+     */
+    "weekRank": number;
+
+    /**
+     * 近1月同类排名
+     */
+    "monthRank": number;
+
+    /**
+     * 近3月同类排名
+     */
+    "month3Rank": number;
+
+    /**
+     * 近1年同类排名
+     */
+    "year1Rank": number;
+
+    /**
+     * 今年来同类排名
+     */
+    "ytdRank": number;
+
+    /**
+     * 近1周同类总数
+     */
+    "weekCount": number;
+
+    /**
+     * 近1月同类总数
+     */
+    "monthCount": number;
+
+    /**
+     * 近3月同类总数
+     */
+    "month3Count": number;
+
+    /**
+     * 近1年同类总数
+     */
+    "year1Count": number;
+
+    /**
+     * 今年来同类总数
+     */
+    "ytdCount": number;
+
+    /** Creates a new ThemeDetail instance. */
+    constructor($$source: Partial<ThemeDetail> = {}) {
+        if (!("code" in $$source)) {
+            this["code"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("day" in $$source)) {
+            this["day"] = 0;
+        }
+        if (!("week" in $$source)) {
+            this["week"] = 0;
+        }
+        if (!("month" in $$source)) {
+            this["month"] = 0;
+        }
+        if (!("month3" in $$source)) {
+            this["month3"] = 0;
+        }
+        if (!("year1" in $$source)) {
+            this["year1"] = 0;
+        }
+        if (!("ytd" in $$source)) {
+            this["ytd"] = 0;
+        }
+        if (!("weekRank" in $$source)) {
+            this["weekRank"] = 0;
+        }
+        if (!("monthRank" in $$source)) {
+            this["monthRank"] = 0;
+        }
+        if (!("month3Rank" in $$source)) {
+            this["month3Rank"] = 0;
+        }
+        if (!("year1Rank" in $$source)) {
+            this["year1Rank"] = 0;
+        }
+        if (!("ytdRank" in $$source)) {
+            this["ytdRank"] = 0;
+        }
+        if (!("weekCount" in $$source)) {
+            this["weekCount"] = 0;
+        }
+        if (!("monthCount" in $$source)) {
+            this["monthCount"] = 0;
+        }
+        if (!("month3Count" in $$source)) {
+            this["month3Count"] = 0;
+        }
+        if (!("year1Count" in $$source)) {
+            this["year1Count"] = 0;
+        }
+        if (!("ytdCount" in $$source)) {
+            this["ytdCount"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ThemeDetail instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ThemeDetail {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new ThemeDetail($$parsedSource as Partial<ThemeDetail>);
     }
 }
 

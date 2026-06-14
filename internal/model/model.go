@@ -235,6 +235,20 @@ type RankPage struct {
 	Total int        `json:"total"`
 }
 
+// FundPerf 基金阶段收益（用于搜索结果行内异步补全展示）。
+// 今日来自 fundgz 估算涨跌（gszzl），其余周期来自移动端 FundMNPeriodIncrease。
+type FundPerf struct {
+	Code        string  `json:"code"`        // 基金代码
+	DayGrowth   float64 `json:"dayGrowth"`   // 今日（估算涨跌，%）
+	WeekGrowth  float64 `json:"weekGrowth"`  // 近1周（%）
+	MonthGrowth float64 `json:"monthGrowth"` // 近1月（%）
+	Month3      float64 `json:"month3"`      // 近3月（%）
+	Year1       float64 `json:"year1"`       // 近1年（%）
+	Ytd         float64 `json:"ytd"`         // 今年来（%）
+	HasDay      bool    `json:"hasDay"`      // 是否取到今日估算
+	HasPeriod   bool    `json:"hasPeriod"`   // 是否取到周期收益
+}
+
 // SectorItem 行业/概念板块行情。
 type SectorItem struct {
 	Code          string  `json:"code"`          // 板块代码
@@ -249,6 +263,29 @@ type SectorItem struct {
 	LeadStock     string  `json:"leadStock"`     // 领涨股名称
 	Inflow        float64 `json:"inflow"`        // 主力资金净流入（元，f62）
 	Kind          string  `json:"kind"`          // 板块类别：industry / concept
+}
+
+// ThemeDetail 主题（板块）自身各周期涨幅与同类排名（来自东财 ztjj GetBKDetailInfoNew）。
+// 用于主题相关基金页顶部展示该主题近期表现。日涨幅无排名；其余周期含「排名/同类总数」。
+type ThemeDetail struct {
+	Code        string  `json:"code"`        // 主题代码（BK000xxx）
+	Name        string  `json:"name"`        // 主题名称
+	Day         float64 `json:"day"`         // 日涨幅（%）
+	Week        float64 `json:"week"`        // 近1周涨幅（%）
+	Month       float64 `json:"month"`       // 近1月涨幅（%）
+	Month3      float64 `json:"month3"`      // 近3月涨幅（%）
+	Year1       float64 `json:"year1"`       // 近1年涨幅（%）
+	Ytd         float64 `json:"ytd"`         // 今年来涨幅（%）
+	WeekRank    int     `json:"weekRank"`    // 近1周同类排名
+	MonthRank   int     `json:"monthRank"`   // 近1月同类排名
+	Month3Rank  int     `json:"month3Rank"`  // 近3月同类排名
+	Year1Rank   int     `json:"year1Rank"`   // 近1年同类排名
+	YtdRank     int     `json:"ytdRank"`     // 今年来同类排名
+	WeekCount   int     `json:"weekCount"`   // 近1周同类总数
+	MonthCount  int     `json:"monthCount"`  // 近1月同类总数
+	Month3Count int     `json:"month3Count"` // 近3月同类总数
+	Year1Count  int     `json:"year1Count"`  // 近1年同类总数
+	YtdCount    int     `json:"ytdCount"`    // 今年来同类总数
 }
 
 // WatchGroup 自选分组。

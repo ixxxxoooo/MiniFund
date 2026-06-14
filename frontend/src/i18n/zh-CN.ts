@@ -146,6 +146,7 @@ export const zhCN = {
     placeholder: "输入基金代码 / 名称 / 拼音首字母 / 基金公司（支持模糊搜索）",
     prompt: "输入关键字搜索基金或基金公司",
     result: "搜索结果",
+    perf: { day: "今日", week: "近1周", month: "近1月", month3: "近3月", year1: "近1年" },
   },
   position: {
     title: "编辑持仓",

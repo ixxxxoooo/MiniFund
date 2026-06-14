@@ -31,11 +31,22 @@ export function GetFundDetail(code: string): $CancellablePromise<model$0.FundDet
 }
 
 /**
+ * GetFundPerformance 批量补全一组基金的阶段收益（code → 收益），供搜索结果行内展示。
+ * 今日取 fundgz 估算涨跌（gszzl，单批并发），其余周期取移动端 FundMNPeriodIncrease（受限并发）；
+ * 命中 3 分钟缓存直接返回，单只失败跳过不影响整体。
+ */
+export function GetFundPerformance(codes: string[]): $CancellablePromise<{ [_ in string]?: model$0.FundPerf }> {
+    return $Call.ByID(1262016755, codes).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
  * GetFundRanking 获取基金排行（60s 内存缓存，配合前端翻页预取实现秒开）。sortType：desc/asc。
  */
 export function GetFundRanking(fundType: string, sortKey: string, sortType: string, pageIndex: number): $CancellablePromise<model$0.RankPage | null> {
     return $Call.ByID(1525782339, fundType, sortKey, sortType, pageIndex).then(($result: any) => {
-        return $$createType3($result);
+        return $$createType5($result);
     });
 }
 
@@ -46,7 +57,7 @@ export function GetFundRanking(fundType: string, sortKey: string, sortType: stri
  */
 export function GetFundThemes(codes: string[]): $CancellablePromise<{ [_ in string]?: model$0.FundTheme[] }> {
     return $Call.ByID(436451321, codes).then(($result: any) => {
-        return $$createType6($result);
+        return $$createType8($result);
     });
 }
 
@@ -55,7 +66,7 @@ export function GetFundThemes(codes: string[]): $CancellablePromise<{ [_ in stri
  */
 export function GetNavHistory(code: string, pageIndex: number, pageSize: number): $CancellablePromise<model$0.NavPage | null> {
     return $Call.ByID(4059753423, code, pageIndex, pageSize).then(($result: any) => {
-        return $$createType8($result);
+        return $$createType10($result);
     });
 }
 
@@ -78,7 +89,7 @@ export function RefreshFundIndex(): $CancellablePromise<void> {
  */
 export function SearchFunds(keyword: string, limit: number, offset: number): $CancellablePromise<model$0.FundIndexItem[]> {
     return $Call.ByID(925186620, keyword, limit, offset).then(($result: any) => {
-        return $$createType10($result);
+        return $$createType12($result);
     });
 }
 
@@ -88,21 +99,23 @@ export function SearchFunds(keyword: string, limit: number, offset: number): $Ca
  */
 export function SearchFundsPage(keyword: string, pageIndex: number): $CancellablePromise<model$0.FundIndexPage | null> {
     return $Call.ByID(215218647, keyword, pageIndex).then(($result: any) => {
-        return $$createType12($result);
+        return $$createType14($result);
     });
 }
 
 // Private type creation functions
 const $$createType0 = model$0.FundDetail.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
-const $$createType2 = model$0.RankPage.createFrom;
-const $$createType3 = $Create.Nullable($$createType2);
-const $$createType4 = model$0.FundTheme.createFrom;
-const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = $Create.Map($Create.Any, $$createType5);
-const $$createType7 = model$0.NavPage.createFrom;
-const $$createType8 = $Create.Nullable($$createType7);
-const $$createType9 = model$0.FundIndexItem.createFrom;
-const $$createType10 = $Create.Array($$createType9);
-const $$createType11 = model$0.FundIndexPage.createFrom;
-const $$createType12 = $Create.Nullable($$createType11);
+const $$createType2 = model$0.FundPerf.createFrom;
+const $$createType3 = $Create.Map($Create.Any, $$createType2);
+const $$createType4 = model$0.RankPage.createFrom;
+const $$createType5 = $Create.Nullable($$createType4);
+const $$createType6 = model$0.FundTheme.createFrom;
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = $Create.Map($Create.Any, $$createType7);
+const $$createType9 = model$0.NavPage.createFrom;
+const $$createType10 = $Create.Nullable($$createType9);
+const $$createType11 = model$0.FundIndexItem.createFrom;
+const $$createType12 = $Create.Array($$createType11);
+const $$createType13 = model$0.FundIndexPage.createFrom;
+const $$createType14 = $Create.Nullable($$createType13);

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
-import type { FundTheme } from "@bindings/minifund/internal/model";
+import type { FundPerf, FundTheme } from "@bindings/minifund/internal/model";
 import { FundService } from "@bindings/minifund/services";
 import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
@@ -24,6 +24,28 @@ export function useFundThemes(codes: string[]): Record<string, FundTheme[] | und
     if (codes.length === 0) return;
     let cancelled = false;
     void call("加载基金主题", () => FundService.GetFundThemes(codes)).then((res) => {
+      if (cancelled || !res) return;
+      setMap((prev) => ({ ...prev, ...res }));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return map;
+}
+
+/**
+ * 批量补全一组基金的阶段收益（code → 收益：今日/近1周/近1月/近3月/近1年/今年来）。
+ * codes 变化时增量合并；后端命中 3 分钟缓存，翻页几乎零等待。
+ */
+export function useFundPerformance(codes: string[]): Record<string, FundPerf | undefined> {
+  const [map, setMap] = useState<Record<string, FundPerf | undefined>>({});
+  const key = codes.join(",");
+  useEffect(() => {
+    if (codes.length === 0) return;
+    let cancelled = false;
+    void call("加载基金收益", () => FundService.GetFundPerformance(codes)).then((res) => {
       if (cancelled || !res) return;
       setMap((prev) => ({ ...prev, ...res }));
     });
