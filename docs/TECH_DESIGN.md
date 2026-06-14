@@ -120,9 +120,9 @@ stateDiagram-v2
 
 - 状态机基于本地时钟 + 内置 A 股交易日历（`calendar.go`，年度节假日表，周末排除）。
 - 每个状态决定两个轮询任务的开关与周期：
-  - `estimateTask`：自选基金估值（Trading 30s 默认，托盘面板打开时 15s；QDII 排除）
+  - `estimateTask`：自选基金估值（Trading 30s 默认，托盘面板打开时 15s；QDII 排除）。每轮估值后调用 `reconcileEstimates`，用权威历史净值（`latestNavCache`，TTL 5 分钟 + 自选集合变化才重拉，批量 `eastmoney.FetchLatestNavs` 并发 ≤ 8）校正 `fundgz` 滞后：「最新净值」改取历史净值最新一条；估算对应交易日（`gztime` 日期）≤ 最新已确认净值日期时清除过期估算（`HasEstimate=false`）。
   - `indexTask`：指数行情（Trading 10s，Lunch/盘后按订阅市场降频）
-- `NavConfirm` 任务：每 10 分钟查历史净值接口首条记录，日期为今日则确认净值、发事件、停止该基金查询。
+- `NavConfirm` 任务：每 10 分钟查历史净值接口首条记录，日期为今日则确认净值、发事件、停止该基金查询；同时把该基金估值缓存的最新净值更新为确认值并清除已被取代的盘中估算。
 - 暴露 `Pause()/Resume()`（托盘菜单"暂停监控"）与 `SetInterval()`（设置页）。
 
 ### 4.2 事件协议（Go → 前端）
@@ -202,7 +202,7 @@ CREATE TABLE alert_log (id INTEGER PRIMARY KEY, rule_id INTEGER, fired_at INTEGE
 | `main` | `/#/main` | 1360×900（min 1080×680） | frameless、透明背景、记忆位置 |
 | `tray-panel` | `/#/tray` | 320×420 固定 | frameless、AlwaysOnTop、隐藏任务栏、失焦隐藏 |
 | `detail:{code}` | `/#/detail/{code}` | 1120×840（最小 900×640） | 按基金代码复用已开窗口；主区域无整页滚动，持仓/历史净值内部滚动，历史净值无限滚动加载 |
-| `news:{id}` | `/#/news/{payload}` | 880×680（最小 560×420） | 新闻详情独立窗口；`payload` 为前端 `base64(encodeURIComponent(JSON))` 序列化的新闻数据；按新闻 id 复用；正文区滚动，AI 解读结果在正文上方展示，含「打开原文」 |
+| `news:{id}` | `/#/news/{payload}` | 1280×900（最小 900×600） | 新闻详情独立窗口；`payload` 为前端 `base64(encodeURIComponent(JSON))` 序列化的新闻数据；按新闻 id 复用；正文区滚动，AI 解读结果在正文上方展示，含「查看原文」 |
 
 - 前端单一构建产物，`main.tsx` 读取 `location.hash` 决定渲染 `windows/` 下哪个根组件；窗口间不共享 React 状态，各自订阅 Go 事件保证一致。
 - `window_service.go` 提供 `OpenDetailWindow(code)`、`OpenNewsWindow(id, payload)`、`ShowMainWindow()`、`ToggleTrayPanel()`，统一管理窗口实例 map（带互斥锁），关闭即从 map 删除。

@@ -77,16 +77,17 @@ func (s *MarketService) GetSectors(kind string) ([]model.SectorItem, error) {
 	return list, nil
 }
 
-// GetSectorMoneyFlow 拉取标准行业/概念板块的主力资金净流入排行（60s 内存缓存）。
-// kind：all / industry / concept。代码体系为东财标准板块码（BK0xxx，与 ztjj 主题码不同）。
-func (s *MarketService) GetSectorMoneyFlow(kind string) ([]model.SectorItem, error) {
-	key := "sectorflow|" + kind
+// GetSectorMoneyFlow 拉取热门主题「按资金流入」排行（按所选周期主力净流入，60s 内存缓存）。
+// kind：all / industry / concept；stage：now 实时 / week 近1周 / month 近1月 / m3 近3月。
+// 与「按涨幅」同为 ztjj 主题体系（BK000xxx），点击可进入主题相关基金。
+func (s *MarketService) GetSectorMoneyFlow(kind, stage string) ([]model.SectorItem, error) {
+	key := "sectorflow|" + kind + "|" + stage
 	if v, ok := s.cache.get(key); ok {
 		return v.([]model.SectorItem), nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	list, err := eastmoney.FetchSectorMoneyFlow(ctx, kind)
+	list, err := eastmoney.FetchSectorMoneyFlow(ctx, kind, stage)
 	if err != nil {
 		return nil, err
 	}
@@ -243,6 +244,23 @@ func (s *MarketService) GetThemeFunds(bkCode, sortKey, sortType string, pageInde
 	}
 	s.cache.set(key, page)
 	return page, nil
+}
+
+// GetThemeDetail 拉取某主题（板块）自身各周期涨幅与同类排名（60s 内存缓存）。
+// bkCode 形如 BK000651（光模块）；用于主题相关基金页顶部展示该主题近期表现。
+func (s *MarketService) GetThemeDetail(bkCode string) (*model.ThemeDetail, error) {
+	key := "themedetail|" + bkCode
+	if v, ok := s.cache.get(key); ok {
+		return v.(*model.ThemeDetail), nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	detail, err := eastmoney.FetchThemeDetail(ctx, bkCode)
+	if err != nil {
+		return nil, err
+	}
+	s.cache.set(key, detail)
+	return detail, nil
 }
 
 // PreloadMarket 后台预热热门主题（默认概念板块，应用启动时调用，进入页面秒开）。

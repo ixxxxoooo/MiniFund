@@ -65,6 +65,7 @@
 规范：
 
 - 涨跌数值**必须**用 `--quote-up`/`--quote-down`/`--quote-flat`，禁止直接用 `--danger`/`--success`（语义不同：danger 表错误，quote-up 表上涨）。
+- 主题/概念标签用分类色票 `--chip-{0..5}-bg`/`--chip-{0..5}-fg`（亮/暗各一套），由标签名哈希稳定取色；**刻意规避红/绿**，避免与涨跌色混淆。
 - 涨跌数字统一等宽字体 `var(--font-mono)` + `font-variant-numeric: tabular-nums`，避免刷新时抖动。
 - 涨显示 `+1.24%`、跌显示 `-0.86%`、平显示 `0.00%`；金额千分位分隔。
 - 摸鱼模式：全部使用 `--quote-flat`，去掉正负号与箭头。

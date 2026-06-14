@@ -5,10 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"minifund/internal/datasource"
+	"minifund/internal/logger"
 	"minifund/internal/model"
 )
+
+// latestNavConcurrency 批量拉取最新净值的并发上限（限频规则：≤ 8）。
+const latestNavConcurrency = 8
 
 const f10Referer = "https://fundf10.eastmoney.com/"
 
@@ -72,4 +77,34 @@ func FetchLatestNav(ctx context.Context, code string) (*model.NavRecord, error) 
 		return nil, fmt.Errorf("基金 %s 无净值记录", code)
 	}
 	return &page.Items[0], nil
+}
+
+// FetchLatestNavs 批量拉取多只基金的最新一条净值（并发 ≤ 8，单只失败跳过不影响整体）。
+// 用途：以历史净值（权威，与详情页同源）校正 fundgz 估值接口滞后的「最新净值」。
+func FetchLatestNavs(ctx context.Context, codes []string) map[string]model.NavRecord {
+	out := make(map[string]model.NavRecord, len(codes))
+	if len(codes) == 0 {
+		return out
+	}
+	var mu sync.Mutex
+	sem := make(chan struct{}, latestNavConcurrency)
+	var wg sync.WaitGroup
+	for _, code := range codes {
+		wg.Add(1)
+		go func(c string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			rec, err := FetchLatestNav(ctx, c)
+			if err != nil {
+				logger.Warn("拉取最新净值失败: code=%s err=%v", c, err)
+				return
+			}
+			mu.Lock()
+			out[c] = *rec
+			mu.Unlock()
+		}(code)
+	}
+	wg.Wait()
+	return out
 }

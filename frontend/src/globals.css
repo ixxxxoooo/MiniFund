@@ -24,6 +24,8 @@
   --size-input: 32px;
   --size-input-sm: 28px;
   --size-tab: 28px;
+  --size-font-xl: 28px;
+  --size-font-lg: 20px;
   --size-font-base: 15px;
   --size-font-sm: 14px;
   --size-font-xs: 13px;
@@ -94,6 +96,20 @@
   --quote-flat: var(--fg-secondary);
   --quote-up-bg: rgba(245, 34, 45, 0.1);
   --quote-down-bg: rgba(0, 168, 80, 0.1);
+
+  /* 主题/概念标签分类配色（柔和色票，规避红/绿以免与涨跌混淆；索引由标签名哈希决定） */
+  --chip-0-bg: #e8f0fe;
+  --chip-0-fg: #1a56db;
+  --chip-1-bg: #e3f5f2;
+  --chip-1-fg: #0e7490;
+  --chip-2-bg: #f3e9ff;
+  --chip-2-fg: #7c3aed;
+  --chip-3-bg: #fff3e0;
+  --chip-3-fg: #b45309;
+  --chip-4-bg: #eceeff;
+  --chip-4-fg: #4338ca;
+  --chip-5-bg: #e6f4fb;
+  --chip-5-fg: #0369a1;
 }
 
 /* 紧凑模式：仅缩放尺寸，不改变布局结构 */
@@ -106,6 +122,8 @@
   --size-input: 28px;
   --size-input-sm: 24px;
   --size-tab: 26px;
+  --size-font-xl: 24px;
+  --size-font-lg: 18px;
   --size-font-base: 14px;
   --size-font-sm: 13px;
   --size-font-xs: 12px;
@@ -167,6 +185,20 @@
   --quote-down: #2fd47a;
   --quote-up-bg: rgba(255, 107, 107, 0.14);
   --quote-down-bg: rgba(47, 212, 122, 0.14);
+
+  /* 主题/概念标签分类配色（暗色：半透明底 + 提亮文字） */
+  --chip-0-bg: rgba(96, 165, 250, 0.20);
+  --chip-0-fg: #93c5fd;
+  --chip-1-bg: rgba(45, 212, 191, 0.18);
+  --chip-1-fg: #5eead4;
+  --chip-2-bg: rgba(167, 139, 250, 0.20);
+  --chip-2-fg: #c4b5fd;
+  --chip-3-bg: rgba(251, 191, 36, 0.18);
+  --chip-3-fg: #fcd34d;
+  --chip-4-bg: rgba(129, 140, 248, 0.20);
+  --chip-4-fg: #a5b4fc;
+  --chip-5-bg: rgba(56, 189, 248, 0.18);
+  --chip-5-fg: #7dd3fc;
 }
 
 /* 国际配色：绿涨红跌（设置页切换时在根节点附加该类） */
@@ -301,6 +333,17 @@ button:not(:disabled),
 
 *:hover > ::-webkit-scrollbar-thumb:hover {
   background: var(--fg-secondary);
+}
+
+/* 强制隐藏滚动条 */
+.scroll-none {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.scroll-none::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 
 /* 数据区域始终显示滚动条 */

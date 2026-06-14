@@ -152,24 +152,24 @@ func TestParseTopics(t *testing.T) {
 	}
 }
 
-// TestParseBoardFlow 覆盖板块资金流解析：diff 对象形态、f3 ÷100、按净流入降序。
-func TestParseBoardFlow(t *testing.T) {
-	body := `{"rc":0,"data":{"total":2,"diff":{"0":{"f3":146,"f12":"BK0821","f14":"MSCI中国","f62":24273833984.0},"1":{"f3":-55,"f12":"BK0574","f14":"锂电池概念","f62":-1444722944.0}}}}`
-	items, err := parseBoardFlow(body, "concept")
+// TestParseThemeDetail 覆盖主题详情（GetBKDetailInfoNew）解析：各周期涨幅 + 同类排名/总数。
+func TestParseThemeDetail(t *testing.T) {
+	body := `{"Data":{"M":6.1000,"MSC":182.0,"Q":79.6400,"QSC":181.0,"RANKM":12.0,"RANKQ":2.0,"RANKSY":1.0,"RANKW":129.0,"RANKY":1.0,"SEC_CODE":"BK000651","SEC_NAME":"光模块","SYSC":181.0,"W":-3.3300,"WSC":182.0,"Y":627.5000,"YSC":181.0,"D":-0.7114810000000004,"SY":122.8500},"ErrCode":0}`
+	d, err := parseThemeDetail(body)
 	if err != nil {
-		t.Fatalf("解析板块资金流失败: %v", err)
+		t.Fatalf("解析主题详情失败: %v", err)
 	}
-	if len(items) != 2 {
-		t.Fatalf("期望 2 条，实际 %d", len(items))
+	if d.Code != "BK000651" || d.Name != "光模块" {
+		t.Fatalf("主题详情基础字段错误: %+v", d)
 	}
-	if items[0].Code != "BK0821" || items[0].Inflow <= items[1].Inflow {
-		t.Errorf("应按净流入降序: %+v", items)
+	if d.Month != 6.1 || d.Month3 != 79.64 || d.Year1 != 627.5 || d.Ytd != 122.85 || d.Week != -3.33 {
+		t.Errorf("周期涨幅解析错误: %+v", d)
 	}
-	if items[0].ChangePercent != 1.46 {
-		t.Errorf("f3 应 ÷100 为 1.46，实际 %v", items[0].ChangePercent)
+	if d.MonthRank != 12 || d.Month3Rank != 2 || d.Year1Rank != 1 || d.WeekRank != 129 {
+		t.Errorf("排名解析错误: %+v", d)
 	}
-	if items[0].Kind != "concept" {
-		t.Errorf("类别透传错误: %q", items[0].Kind)
+	if d.WeekCount != 182 || d.Year1Count != 181 {
+		t.Errorf("同类总数解析错误: %+v", d)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -24,15 +25,45 @@ var ztjjCategory = map[string]string{
 }
 
 // ztjjItem GetZTJJListNew 单条记录。
-// 值字段名随 st（周期）变化：D 今日 / W 近1周 / M 近1月 / Q 近3月 / SY 今年来；用 RawMessage 容错（数字或 "--"/null）。
+// 值字段名随 dt/st（数据类型/周期）变化：
+//   - dt=syl（涨幅）：D 今日 / W 近1周 / M 近1月 / Q 近3月 / SY 今年来；
+//   - dt=zjlr（资金流入）：FLOW 今日 / FLOW_W 近1周 / FLOW_M 近1月 / FLOW_Q 近3月（单位：元）。
+// 用 RawMessage 容错（数字或 "--"/null）。
 type ztjjItem struct {
-	Code string          `json:"INDEXCODE"`
-	Name string          `json:"INDEXNAME"`
-	D    json.RawMessage `json:"D"`
-	W    json.RawMessage `json:"W"`
-	M    json.RawMessage `json:"M"`
-	Q    json.RawMessage `json:"Q"`
-	SY   json.RawMessage `json:"SY"`
+	Code  string          `json:"INDEXCODE"`
+	Name  string          `json:"INDEXNAME"`
+	D     json.RawMessage `json:"D"`
+	W     json.RawMessage `json:"W"`
+	M     json.RawMessage `json:"M"`
+	Q     json.RawMessage `json:"Q"`
+	SY    json.RawMessage `json:"SY"`
+	Flow  json.RawMessage `json:"FLOW"`   // 今日（实时）主力资金净流入（元）
+	FlowW json.RawMessage `json:"FLOW_W"` // 近1周主力资金净流入（元）
+	FlowM json.RawMessage `json:"FLOW_M"` // 近1月主力资金净流入（元）
+	FlowQ json.RawMessage `json:"FLOW_Q"` // 近3月主力资金净流入（元）
+}
+
+// ztjjFlowStage 资金流入阶段键（前端 Stage）→ GetZTJJListNew 的 st 周期：
+// 实时 FLOW / 近1周 FLOW_W / 近1月 FLOW_M / 近3月 FLOW_Q。
+var ztjjFlowStage = map[string]string{
+	"now":   "FLOW",
+	"week":  "FLOW_W",
+	"month": "FLOW_M",
+	"m3":    "FLOW_Q",
+}
+
+// flowField 取某资金流入周期(st)对应的原始值字段。
+func flowField(it ztjjItem, st string) json.RawMessage {
+	switch st {
+	case "FLOW_W":
+		return it.FlowW
+	case "FLOW_M":
+		return it.FlowM
+	case "FLOW_Q":
+		return it.FlowQ
+	default:
+		return it.Flow
+	}
 }
 
 // ztjjResponse GetZTJJListNew 返回结构。
@@ -72,16 +103,22 @@ func parseZTJJ(body string) ([]ztjjItem, error) {
 	return resp.Data, nil
 }
 
-// fetchZTJJStage 拉取某类别(tt)、某周期(st) 的热门主题列表（按该周期涨幅降序）。
-func fetchZTJJStage(ctx context.Context, tt, st string) ([]ztjjItem, error) {
+// fetchZTJJ 拉取某类别(tt)、某数据类型(dt)、某周期(st) 的热门主题列表（接口已按该指标降序）。
+// dt=syl 涨幅，st 取 D/W/M/Q/SY；dt=zjlr 资金流入，st 取 FLOW/FLOW_W/FLOW_M/FLOW_Q。
+func fetchZTJJ(ctx context.Context, tt, dt, st string) ([]ztjjItem, error) {
 	url := fmt.Sprintf(
-		"https://api.fund.eastmoney.com/ztjj/GetZTJJListNew?tt=%s&dt=syl&st=%s&pi=1&pn=500&_=%d",
-		tt, st, time.Now().UnixMilli())
+		"https://api.fund.eastmoney.com/ztjj/GetZTJJListNew?tt=%s&dt=%s&st=%s&pi=1&pn=500&_=%d",
+		tt, dt, st, time.Now().UnixMilli())
 	body, err := datasource.FetchText(ctx, url, ztjjReferer)
 	if err != nil {
 		return nil, err
 	}
 	return parseZTJJ(body)
+}
+
+// fetchZTJJStage 拉取某类别(tt)、某周期(st) 的热门主题涨幅列表（按该周期涨幅降序）。
+func fetchZTJJStage(ctx context.Context, tt, st string) ([]ztjjItem, error) {
+	return fetchZTJJ(ctx, tt, "syl", st)
 }
 
 // stageField 取某周期对应的原始值字段。
@@ -156,6 +193,121 @@ func FetchSectors(ctx context.Context, kind string) ([]model.SectorItem, error) 
 		out = append(out, *byCode[code])
 	}
 	return out, nil
+}
+
+// FetchSectorMoneyFlow 拉取热门主题「按资金流入」排行（按所选周期主力净流入降序）。
+// kind：all（全部）/ industry（行业）/ concept（概念）；
+// stage：now 实时 / week 近1周 / month 近1月 / m3 近3月（对应 st=FLOW/FLOW_W/FLOW_M/FLOW_Q）。
+// 数据源与「按涨幅」同为天天基金 ztjj GetZTJJListNew，仅 dt=zjlr，
+// 因此返回的主题代码与涨幅视图一致（BK000xxx），点击可直接进入主题相关基金列表。
+func FetchSectorMoneyFlow(ctx context.Context, kind, stage string) ([]model.SectorItem, error) {
+	tt, ok := ztjjCategory[kind]
+	if !ok {
+		kind = "all"
+		tt = ztjjCategory["all"]
+	}
+	st, ok := ztjjFlowStage[stage]
+	if !ok {
+		st = "FLOW"
+	}
+	items, err := fetchZTJJ(ctx, tt, "zjlr", st)
+	if err != nil {
+		return nil, fmt.Errorf("拉取热门主题资金流入失败: %w", err)
+	}
+	out := make([]model.SectorItem, 0, len(items))
+	for _, it := range items {
+		if it.Code == "" {
+			continue
+		}
+		out = append(out, model.SectorItem{
+			Code:   it.Code,
+			Name:   it.Name,
+			Inflow: rawNumber(flowField(it, st)),
+			Kind:   kind,
+		})
+	}
+	// 非实时周期（FLOW_M/FLOW_Q）接口返回顺序不稳定，统一按净流入降序。
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Inflow > out[j].Inflow })
+	return out, nil
+}
+
+// rawThemeDetail GetBKDetailInfoNew 返回的主题各周期涨幅与同类排名（字段名固定为数字/字符串，用 RawMessage 容错）。
+type rawThemeDetail struct {
+	SecCode string          `json:"SEC_CODE"`
+	SecName string          `json:"SEC_NAME"`
+	D       json.RawMessage `json:"D"`   // 今日涨幅（%，无排名）
+	W       json.RawMessage `json:"W"`   // 近1周
+	M       json.RawMessage `json:"M"`   // 近1月
+	Q       json.RawMessage `json:"Q"`   // 近3月
+	Y       json.RawMessage `json:"Y"`   // 近1年
+	SY      json.RawMessage `json:"SY"`  // 今年来
+	RankW   json.RawMessage `json:"RANKW"`
+	RankM   json.RawMessage `json:"RANKM"`
+	RankQ   json.RawMessage `json:"RANKQ"`
+	RankY   json.RawMessage `json:"RANKY"`
+	RankSY  json.RawMessage `json:"RANKSY"`
+	WSC     json.RawMessage `json:"WSC"`  // 近1周同类总数
+	MSC     json.RawMessage `json:"MSC"`  // 近1月同类总数
+	QSC     json.RawMessage `json:"QSC"`  // 近3月同类总数
+	YSC     json.RawMessage `json:"YSC"`  // 近1年同类总数
+	SYSC    json.RawMessage `json:"SYSC"` // 今年来同类总数
+}
+
+// rawThemeDetailResponse GetBKDetailInfoNew 返回结构。
+type rawThemeDetailResponse struct {
+	Data    *rawThemeDetail `json:"Data"`
+	ErrCode int             `json:"ErrCode"`
+}
+
+// parseThemeDetail 解析主题详情（各周期涨幅 + 同类排名）。
+func parseThemeDetail(body string) (*model.ThemeDetail, error) {
+	body = strings.TrimSpace(body)
+	if !strings.HasPrefix(body, "{") {
+		if j, err := datasource.StripJSONP(body); err == nil {
+			body = j
+		}
+	}
+	var raw rawThemeDetailResponse
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
+		return nil, fmt.Errorf("解析主题详情 JSON 失败: %w", err)
+	}
+	if raw.Data == nil {
+		return nil, fmt.Errorf("主题详情响应为空")
+	}
+	d := raw.Data
+	return &model.ThemeDetail{
+		Code:        d.SecCode,
+		Name:        d.SecName,
+		Day:         rawNumber(d.D),
+		Week:        rawNumber(d.W),
+		Month:       rawNumber(d.M),
+		Month3:      rawNumber(d.Q),
+		Year1:       rawNumber(d.Y),
+		Ytd:         rawNumber(d.SY),
+		WeekRank:    int(rawNumber(d.RankW)),
+		MonthRank:   int(rawNumber(d.RankM)),
+		Month3Rank:  int(rawNumber(d.RankQ)),
+		Year1Rank:   int(rawNumber(d.RankY)),
+		YtdRank:     int(rawNumber(d.RankSY)),
+		WeekCount:   int(rawNumber(d.WSC)),
+		MonthCount:  int(rawNumber(d.MSC)),
+		Month3Count: int(rawNumber(d.QSC)),
+		Year1Count:  int(rawNumber(d.YSC)),
+		YtdCount:    int(rawNumber(d.SYSC)),
+	}, nil
+}
+
+// FetchThemeDetail 拉取主题（板块）自身各周期涨幅与同类排名（天天基金 ztjj GetBKDetailInfoNew）。
+// bkCode 形如 BK000651（光模块）；用于主题相关基金页顶部展示该主题近期表现。
+func FetchThemeDetail(ctx context.Context, bkCode string) (*model.ThemeDetail, error) {
+	url := fmt.Sprintf(
+		"https://api.fund.eastmoney.com/ZTJJ/GetBKDetailInfoNew?tp=%s&_=%d",
+		bkCode, time.Now().UnixMilli())
+	body, err := datasource.FetchText(ctx, url, ztjjReferer)
+	if err != nil {
+		return nil, fmt.Errorf("拉取主题详情失败: %w", err)
+	}
+	return parseThemeDetail(body)
 }
 
 // themeFundSortKeys GetBKRelTopicFundNew 合法排序键白名单。

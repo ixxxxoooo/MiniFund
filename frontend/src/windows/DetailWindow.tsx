@@ -239,7 +239,7 @@ export function DetailWindow({ code }: DetailWindowProps) {
         <main className="flex min-h-0 flex-1 flex-col gap-[var(--size-gap)] overflow-hidden p-[var(--size-padding)]">
           {/* 头部信息 */}
           <div className="flex shrink-0 items-start justify-between gap-4">
-            <div className="flex flex-col gap-1">
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
               <div className="flex items-center gap-2">
                 <span className="text-[length:var(--size-font-base)] font-semibold text-[var(--fg)]">
                   {detail.name}
@@ -303,29 +303,44 @@ export function DetailWindow({ code }: DetailWindowProps) {
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-3 text-2xs text-[var(--fg-secondary)]">
-                {latest && (
-                  <span>
-                    {zhCN.detail.latestNav} <span className="quote-num text-[var(--fg)]">{formatNav(latest.value)}</span>
-                    <span className="ml-1">({latest.date})</span>
-                  </span>
-                )}
-                {latest && <QuoteText value={latest.growth} neutral={stealth} />}
-              </div>
             </div>
-            {est?.hasEstimate && (
-              <div className="flex shrink-0 flex-col items-end gap-0.5 rounded-[var(--radius-panel)] bg-[var(--surface-secondary)] px-3 py-1.5">
-                <span className="text-2xs text-[var(--fg-muted)]">
-                  {zhCN.detail.estimate} {est.estimateTime?.slice(-5)}
-                </span>
-                <div className="flex items-baseline gap-2">
-                  <span className="quote-num text-[length:var(--size-font-sm)] font-semibold text-[var(--fg)]">
-                    {formatNav(est.estimate)}
+            {/* 右侧：最新净值与盘中估算并排展示 */}
+            <div className="flex shrink-0 items-stretch gap-3">
+              {latest && (
+                <div className="flex flex-col items-end justify-center gap-0.5 rounded-[var(--radius-panel)] bg-[var(--surface-secondary)] px-3 py-1">
+                  <span className="text-2xs text-[var(--fg-muted)]">
+                    {zhCN.detail.latestNav}（{latest.date}）
                   </span>
-                  <QuoteText value={est.estimateGrowth} neutral={stealth} />
+                  <div className="flex items-baseline gap-2">
+                    <span className="quote-num text-[length:var(--size-font-sm)] font-bold leading-none text-[var(--fg)]">
+                      {formatNav(latest.value)}
+                    </span>
+                    <QuoteText
+                      value={latest.growth}
+                      neutral={stealth}
+                      className="text-[length:var(--size-font-base)] font-bold leading-none"
+                    />
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+              {est?.hasEstimate && (
+                <div className="flex flex-col items-end justify-center gap-0.5 rounded-[var(--radius-panel)] border border-dashed border-[var(--border-color)] bg-[var(--surface-secondary)] px-3 py-1">
+                  <span className="text-2xs text-[var(--fg-muted)]">
+                    {zhCN.detail.estimate} {est.estimateTime?.slice(-5)}
+                  </span>
+                  <div className="flex items-baseline gap-2">
+                    <span className="quote-num text-[length:var(--size-font-sm)] font-bold leading-none text-[var(--fg)]">
+                      {formatNav(est.estimate)}
+                    </span>
+                    <QuoteText
+                      value={est.estimateGrowth}
+                      neutral={stealth}
+                      className="text-[length:var(--size-font-base)] font-bold leading-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 阶段涨幅：近1月/近3月/近6月/近1年/近3年/成立来（含同类平均，红绿配色） */}
@@ -360,47 +375,50 @@ export function DetailWindow({ code }: DetailWindowProps) {
           <div className="grid min-h-0 flex-1 grid-cols-2 gap-[var(--size-gap)]">
             {/* 前十重仓股 */}
             <section className="flex min-h-0 flex-col rounded-[var(--radius-panel)] border border-[var(--border-subtle)] p-[var(--size-padding-sm)]">
-              <div className="mb-2 flex shrink-0 items-center justify-between text-[length:var(--size-font-xs)] font-medium text-[var(--fg)]">
+              <div className="mb-1 flex shrink-0 items-center justify-between text-[length:var(--size-font-sm)] font-medium text-[var(--fg)]">
                 <span>{zhCN.detail.holdingsTitle}</span>
-                <span className="flex items-center gap-2 text-2xs font-normal text-[var(--fg-muted)]">
-                  <span className="w-12 text-right">{zhCN.detail.holdingPercent}</span>
-                  <span className="w-14 text-right">{zhCN.detail.holdingChange}</span>
+                <span className="flex items-center gap-3 text-2xs font-normal text-[var(--fg-muted)]">
+                  <span className="w-16 text-right">{zhCN.detail.holdingPercent}</span>
+                  <span className="w-20 text-right">{zhCN.detail.holdingChange}</span>
                 </span>
               </div>
               {detail.holdings && detail.holdings.length > 0 ? (
-                <div className="scroll-always flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
+                <div className="flex min-h-0 flex-1 flex-col">
                   {detail.holdings.map((h) => {
                     const url = eastmoneyStockURL(h.stockCode);
                     return (
-                      <div key={h.stockCode} className="flex items-center gap-2 text-2xs">
-                        <span className="quote-num w-[52px] shrink-0 text-[var(--fg-muted)]">{h.stockCode}</span>
+                      <div
+                        key={h.stockCode}
+                        className="flex min-h-0 flex-1 items-center gap-3 border-b border-[var(--border-subtle)] text-[length:var(--size-font-sm)] last:border-b-0"
+                      >
+                        <span className="quote-num w-16 shrink-0 text-[var(--fg-muted)]">{h.stockCode}</span>
                         {url ? (
                           <button
                             onClick={() => void OpenExternalURL(url)}
-                            className="w-20 shrink-0 truncate text-left text-[var(--accent)] hover:underline"
+                            className="w-24 shrink-0 truncate text-left font-medium text-[var(--accent)] hover:underline"
                             title={h.stockName}
                           >
                             {h.stockName}
                           </button>
                         ) : (
-                          <span className="w-20 shrink-0 truncate text-[var(--fg)]" title={h.stockName}>
+                          <span className="w-24 shrink-0 truncate font-medium text-[var(--fg)]" title={h.stockName}>
                             {h.stockName}
                           </span>
                         )}
                         {/* 占比条 */}
-                        <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--surface-secondary)]">
+                        <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--surface-secondary)]">
                           <div
                             className="h-full rounded-full bg-[var(--accent)]"
                             style={{ width: `${Math.min(100, h.percent * 5)}%` }}
                           />
                         </div>
-                        <span className="quote-num w-12 shrink-0 text-right text-[var(--fg-secondary)]">
+                        <span className="quote-num w-16 shrink-0 text-right font-medium text-[var(--fg-secondary)]">
                           {h.percent.toFixed(2)}%
                         </span>
                         <QuoteText
                           value={h.changePercent}
                           neutral={stealth}
-                          className="w-14 shrink-0 text-right"
+                          className="w-20 shrink-0 text-right font-semibold"
                         />
                       </div>
                     );

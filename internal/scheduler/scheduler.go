@@ -5,6 +5,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,10 @@ const (
 
 // newsLastIDKey settings 表中记录最近一条已推送快讯 id 的键（重启后避免重复通知历史快讯）。
 const newsLastIDKey = "news_last_id"
+
+// navReconcileTTL 权威最新净值缓存有效期：最新净值每日仅变化一次，
+// 节流后既能在收盘公布后数分钟内修正，又避免盘中每轮估值都重复请求历史净值。
+const navReconcileTTL = 5 * time.Minute
 
 // SettingsProvider 调度器需要的设置读取接口（由 SettingsService 实现，避免包循环依赖）。
 type SettingsProvider interface {
@@ -63,6 +68,11 @@ type Scheduler struct {
 	lastIndexes   []model.IndexQuote
 	confirmed     map[string]bool // 当日已确认净值的基金
 	confirmedDate string          // confirmed 对应的日期
+
+	// 权威最新净值缓存（用于校正 fundgz 滞后的估值，按 TTL + 自选集合变化节流刷新）
+	latestNavs  map[string]model.NavRecord
+	latestNavAt time.Time
+	latestNavKey string
 
 	lastFlash   []model.NewsFlash // 最近一轮快讯缓存
 	lastFlashID string            // 最近一条快讯 id（用于增量判断与持久化）
@@ -333,11 +343,76 @@ func (s *Scheduler) runEstimateRound() {
 	if len(estimates) == 0 {
 		return
 	}
+	// 用权威历史净值校正场外基金估值（fundgz 在净值公布后会滞后）。
+	if len(otc) > 0 {
+		s.reconcileEstimates(ctx, estimates, otc)
+	}
 	s.mu.Lock()
 	s.lastEstimates = estimates
 	s.mu.Unlock()
 	s.app.Event.Emit(EventEstimates, estimates)
 	s.updateTrayTitle()
+}
+
+// reconcileEstimates 以权威历史净值（与详情页同源）校正 fundgz 估值：
+//   - 「最新净值」始终取历史净值最新一条（fundgz 的 dwjz 在净值公布后会滞后一个交易日）；
+//   - 当盘中估算对应的交易日（估值时间 gztime 的日期）已被确认时，该估算已过期，清除之，
+//     避免自选列表显示与详情页对不上的陈旧估值/估算涨跌。
+// 盘中（估算交易日尚未确认）则保留 fundgz 的实时估算。
+func (s *Scheduler) reconcileEstimates(ctx context.Context, estimates []model.FundEstimate, otc []string) {
+	navs := s.latestNavCache(ctx, otc)
+	if len(navs) == 0 {
+		return
+	}
+	for i := range estimates {
+		e := &estimates[i]
+		rec, ok := navs[e.Code]
+		if !ok || rec.Date == "" {
+			continue
+		}
+		// 以历史净值最新一条作为权威「最新净值」
+		e.PrevNav = rec.Nav
+		e.NavDate = rec.Date
+		// 估算目标交易日 = 估值时间 gztime 的日期（形如 "2026-06-12 15:00"）。
+		// 该日 ≤ 最新已确认净值日期时，估算已被实际净值取代，应清除。
+		target := ""
+		if len(e.EstimateTime) >= 10 {
+			target = e.EstimateTime[:10]
+		}
+		if e.HasEstimate && target != "" && rec.Date >= target {
+			e.HasEstimate = false
+			e.Estimate = 0
+			e.EstimateGrowth = 0
+		}
+	}
+}
+
+// latestNavCache 返回自选场外基金的权威最新净值（按 TTL + 自选集合变化节流刷新）。
+func (s *Scheduler) latestNavCache(ctx context.Context, codes []string) map[string]model.NavRecord {
+	sorted := append([]string(nil), codes...)
+	sort.Strings(sorted)
+	key := strings.Join(sorted, ",")
+
+	s.mu.Lock()
+	if s.latestNavs != nil && s.latestNavKey == key && time.Since(s.latestNavAt) < navReconcileTTL {
+		out := make(map[string]model.NavRecord, len(s.latestNavs))
+		for k, v := range s.latestNavs {
+			out[k] = v
+		}
+		s.mu.Unlock()
+		return out
+	}
+	s.mu.Unlock()
+
+	navs := eastmoney.FetchLatestNavs(ctx, codes)
+	if len(navs) > 0 {
+		s.mu.Lock()
+		s.latestNavs = navs
+		s.latestNavAt = time.Now()
+		s.latestNavKey = key
+		s.mu.Unlock()
+	}
+	return navs
 }
 
 // runIndexRound 拉取一轮指数行情并广播。
@@ -412,10 +487,32 @@ func (s *Scheduler) runNavConfirmRound() {
 		}
 		s.mu.Lock()
 		s.confirmed[code] = true
+		// 更新估值缓存中的 prevNav 和 navDate，使前端表格显示最新净值；
+		// 当日净值既已确认，盘中估算已被实际净值取代，清除之避免显示陈旧估算。
+		for i := range s.lastEstimates {
+			if s.lastEstimates[i].Code == code {
+				s.lastEstimates[i].PrevNav = latest.Nav
+				s.lastEstimates[i].NavDate = latest.Date
+				s.lastEstimates[i].HasEstimate = false
+				s.lastEstimates[i].Estimate = 0
+				s.lastEstimates[i].EstimateGrowth = 0
+				break
+			}
+		}
+		// 同步刷新权威最新净值缓存，使下一轮估值校正立即反映已确认净值。
+		if s.latestNavs != nil {
+			s.latestNavs[code] = model.NavRecord{Date: latest.Date, Nav: latest.Nav, AccNav: latest.AccNav, Growth: latest.Growth}
+		}
 		s.mu.Unlock()
 		s.app.Event.Emit(EventNavConfirmed, model.NavConfirmed{
 			Code: code, Date: latest.Date, Nav: latest.Nav, Growth: latest.Growth, Profit: profit,
 		})
+		// 同步广播更新后的估值列表，让前端表格净值列立即刷新
+		s.mu.Lock()
+		out := make([]model.FundEstimate, len(s.lastEstimates))
+		copy(out, s.lastEstimates)
+		s.mu.Unlock()
+		s.app.Event.Emit(EventEstimates, out)
 		logger.Info("当日净值已确认: code=%s nav=%.4f growth=%.2f%%", code, latest.Nav, latest.Growth)
 	}
 }

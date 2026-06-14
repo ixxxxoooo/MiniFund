@@ -74,6 +74,17 @@ export function GetMonitorState(): $CancellablePromise<model$0.MonitorState> {
 }
 
 /**
+ * GetSectorMoneyFlow 拉取热门主题「按资金流入」排行（按所选周期主力净流入，60s 内存缓存）。
+ * kind：all / industry / concept；stage：now 实时 / week 近1周 / month 近1月 / m3 近3月。
+ * 与「按涨幅」同为 ztjj 主题体系（BK000xxx），点击可进入主题相关基金。
+ */
+export function GetSectorMoneyFlow(kind: string, stage: string): $CancellablePromise<model$0.SectorItem[]> {
+    return $Call.ByID(2215174489, kind, stage).then(($result: any) => {
+        return $$createType12($result);
+    });
+}
+
+/**
  * GetSectors 拉取板块行情（60s 内存缓存）。kind：industry（行业）/ concept（概念）。
  */
 export function GetSectors(kind: string): $CancellablePromise<model$0.SectorItem[]> {
@@ -83,12 +94,12 @@ export function GetSectors(kind: string): $CancellablePromise<model$0.SectorItem
 }
 
 /**
- * GetSectorMoneyFlow 拉取标准行业/概念板块的主力资金净流入排行（60s 内存缓存）。
- * kind：all / industry / concept。代码体系为东财标准板块码（BK0xxx，与 ztjj 主题码不同）。
+ * GetThemeDetail 拉取某主题（板块）自身各周期涨幅与同类排名（60s 内存缓存）。
+ * bkCode 形如 BK000651（光模块）；用于主题相关基金页顶部展示该主题近期表现。
  */
-export function GetSectorMoneyFlow(kind: string): $CancellablePromise<model$0.SectorItem[]> {
-    return $Call.ByID(2215174489, kind).then(($result: any) => {
-        return $$createType12($result);
+export function GetThemeDetail(bkCode: string): $CancellablePromise<model$0.ThemeDetail | null> {
+    return $Call.ByID(1199438127, bkCode).then(($result: any) => {
+        return $$createType14($result);
     });
 }
 
@@ -98,7 +109,7 @@ export function GetSectorMoneyFlow(kind: string): $CancellablePromise<model$0.Se
  */
 export function GetThemeFunds(bkCode: string, sortKey: string, sortType: string, pageIndex: number): $CancellablePromise<model$0.RankPage | null> {
     return $Call.ByID(3321145818, bkCode, sortKey, sortType, pageIndex).then(($result: any) => {
-        return $$createType14($result);
+        return $$createType16($result);
     });
 }
 
@@ -108,7 +119,7 @@ export function GetThemeFunds(bkCode: string, sortKey: string, sortType: string,
  */
 export function GetTopicFunds(topicID: string, sortKey: string, sortType: string, pageIndex: number): $CancellablePromise<model$0.RankPage | null> {
     return $Call.ByID(2767582740, topicID, sortKey, sortType, pageIndex).then(($result: any) => {
-        return $$createType14($result);
+        return $$createType16($result);
     });
 }
 
@@ -117,7 +128,7 @@ export function GetTopicFunds(topicID: string, sortKey: string, sortType: string
  */
 export function GetTopics(): $CancellablePromise<model$0.TopicItem[]> {
     return $Call.ByID(2510723945).then(($result: any) => {
-        return $$createType16($result);
+        return $$createType18($result);
     });
 }
 
@@ -163,7 +174,9 @@ const $$createType9 = $Create.Array($$createType8);
 const $$createType10 = model$0.MonitorState.createFrom;
 const $$createType11 = model$0.SectorItem.createFrom;
 const $$createType12 = $Create.Array($$createType11);
-const $$createType13 = model$0.RankPage.createFrom;
+const $$createType13 = model$0.ThemeDetail.createFrom;
 const $$createType14 = $Create.Nullable($$createType13);
-const $$createType15 = model$0.TopicItem.createFrom;
-const $$createType16 = $Create.Array($$createType15);
+const $$createType15 = model$0.RankPage.createFrom;
+const $$createType16 = $Create.Nullable($$createType15);
+const $$createType17 = model$0.TopicItem.createFrom;
+const $$createType18 = $Create.Array($$createType17);
