@@ -240,6 +240,8 @@ type SectorItem struct {
 	Code          string  `json:"code"`          // 板块代码
 	Name          string  `json:"name"`          // 板块名称
 	ChangePercent float64 `json:"changePercent"` // 今日涨跌幅（%，f3）
+	Week          float64 `json:"week"`          // 近1周涨跌幅（%，ztjj st=W）
+	Month         float64 `json:"month"`         // 近1月涨跌幅（%，ztjj st=M）
 	Month3        float64 `json:"month3"`        // 近3月涨跌幅（%，f24=60日）
 	Ytd           float64 `json:"ytd"`           // 今年来涨跌幅（%，f25=年初至今）
 	UpCount       int     `json:"upCount"`       // 上涨家数

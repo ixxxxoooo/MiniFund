@@ -152,6 +152,27 @@ func TestParseTopics(t *testing.T) {
 	}
 }
 
+// TestParseBoardFlow 覆盖板块资金流解析：diff 对象形态、f3 ÷100、按净流入降序。
+func TestParseBoardFlow(t *testing.T) {
+	body := `{"rc":0,"data":{"total":2,"diff":{"0":{"f3":146,"f12":"BK0821","f14":"MSCI中国","f62":24273833984.0},"1":{"f3":-55,"f12":"BK0574","f14":"锂电池概念","f62":-1444722944.0}}}}`
+	items, err := parseBoardFlow(body, "concept")
+	if err != nil {
+		t.Fatalf("解析板块资金流失败: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("期望 2 条，实际 %d", len(items))
+	}
+	if items[0].Code != "BK0821" || items[0].Inflow <= items[1].Inflow {
+		t.Errorf("应按净流入降序: %+v", items)
+	}
+	if items[0].ChangePercent != 1.46 {
+		t.Errorf("f3 应 ÷100 为 1.46，实际 %v", items[0].ChangePercent)
+	}
+	if items[0].Kind != "concept" {
+		t.Errorf("类别透传错误: %q", items[0].Kind)
+	}
+}
+
 func TestParseTopicFunds(t *testing.T) {
 	body := `var result={"Datas":[{"TTYPE":"3e98b3ffb8d67e2f","TTYPENAME":"大数据","FCODE":"001118","SHORTNAME":"华宝事件驱动混合A","SYL_Z":"-0.5","SYL_Y":"-17.31","SYL_3Y":"-3.66","SYL_6Y":"22.8","SYL_1N":"59.49","SYL_JN":"17.79","PDATE":"2026-06-11","NAV":"1.185","NAVCHGRT":"1.46","FTYPE":"混合型-偏股"}],"PageSize":0,"PageIndex":0,"TotalCount":13,"ErrCode":0,"Pages":7}`
 	page, err := parseTopicFunds(body)

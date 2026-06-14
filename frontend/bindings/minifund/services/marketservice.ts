@@ -28,6 +28,7 @@ export function GetEstimates(): $CancellablePromise<model$0.FundEstimate[]> {
 
 /**
  * GetIndexKline 按指数 secid 与周期（day/week/month）拉取 K 线（60s 内存缓存）。
+ * 主源腾讯（A股/港股可取完整历史）；美股/北证 50 腾讯仅返回最新一根，自动回退东财 push2his。
  */
 export function GetIndexKline(secid: string, period: string): $CancellablePromise<model$0.Kline[]> {
     return $Call.ByID(470939390, secid, period).then(($result: any) => {
@@ -55,6 +56,7 @@ export function GetMarketBreadth(): $CancellablePromise<model$0.MarketBreadth | 
 
 /**
  * GetMarketCenterQuotes 拉取行情中心指数清单实时报价（5s 内存缓存，合并多窗口/多次事件触发的重复请求）。
+ * 主源腾讯（稳定，A股/港股/美股全覆盖），失败回退东财 ulist.np。
  */
 export function GetMarketCenterQuotes(): $CancellablePromise<model$0.MarketIndexQuote[]> {
     return $Call.ByID(1417542945).then(($result: any) => {
@@ -76,6 +78,16 @@ export function GetMonitorState(): $CancellablePromise<model$0.MonitorState> {
  */
 export function GetSectors(kind: string): $CancellablePromise<model$0.SectorItem[]> {
     return $Call.ByID(1239119416, kind).then(($result: any) => {
+        return $$createType12($result);
+    });
+}
+
+/**
+ * GetSectorMoneyFlow 拉取标准行业/概念板块的主力资金净流入排行（60s 内存缓存）。
+ * kind：all / industry / concept。代码体系为东财标准板块码（BK0xxx，与 ztjj 主题码不同）。
+ */
+export function GetSectorMoneyFlow(kind: string): $CancellablePromise<model$0.SectorItem[]> {
+    return $Call.ByID(2215174489, kind).then(($result: any) => {
         return $$createType12($result);
     });
 }

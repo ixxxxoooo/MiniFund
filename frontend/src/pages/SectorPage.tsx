@@ -10,6 +10,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
+import { OpenExternalURL } from "@/lib/wails/runtime";
 import { formatNav, formatPercent } from "@/lib/format";
 import { usePrefetchPager } from "@/lib/pager";
 import { cn } from "@/lib/utils";
@@ -21,8 +22,10 @@ import { useWatchlistStore } from "@/stores/watchlist";
 interface HeatNode {
   key: string;
   name: string;
-  /** 用于着色与排序的收益率（%） */
+  /** 用于着色与排序的数值（涨幅 % 或资金净流入 元） */
   value: number;
+  /** 格子展示文案（涨幅百分比或「亿」金额） */
+  display: string;
   onClick: () => void;
 }
 
@@ -56,7 +59,7 @@ function HeatCell({
       title={node.name}
     >
       <span className="w-full truncate text-[length:var(--size-font-xs)] font-medium">{node.name}</span>
-      <span className="quote-num text-[length:var(--size-font-xs)] font-semibold">{formatPercent(node.value)}</span>
+      <span className="quote-num text-[length:var(--size-font-xs)] font-semibold">{node.display}</span>
     </button>
   );
 }
@@ -67,14 +70,26 @@ const TOPIC_TABLE_ID = "topicFunds";
 /** 板块类别：全部（行业+概念）/ 行业 / 概念 */
 type SectorKind = "all" | "industry" | "concept";
 
-/** 阶段：今日(D) / 近3月(Q) / 今年来(SY)，对应 ztjj GetZTJJListNew 的 st 周期 */
-type Stage = "now" | "m3" | "ytd";
+/** 阶段：今日(D) / 近1周(W) / 近1月(M) / 近3月(Q) / 今年来(SY)，对应 ztjj GetZTJJListNew 的 st 周期 */
+type Stage = "now" | "week" | "month" | "m3" | "ytd";
+
+/** 排序指标：按涨幅（ztjj 主题）/ 按资金流入（东财标准板块） */
+type Metric = "change" | "inflow";
 
 /** 取板块某阶段的涨跌幅（%） */
 function stageValue(s: SectorItem, stage: Stage): number {
+  if (stage === "week") return s.week;
+  if (stage === "month") return s.month;
   if (stage === "m3") return s.month3;
   if (stage === "ytd") return s.ytd;
   return s.changePercent;
+}
+
+/** 主力净流入（元）格式化为带符号的「亿」字符串 */
+function formatInflow(yuan: number): string {
+  const yi = yuan / 1e8;
+  const sign = yi > 0 ? "+" : "";
+  return `${sign}${yi.toFixed(1)}亿`;
 }
 
 /** 主题基金表格的可排序列：列头 → 服务端排序键（对齐 ztjj GetBKRelTopicFundNew 的 sort 字段） */
@@ -107,16 +122,19 @@ export function SectorPage() {
   const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
   const [kind, setKind] = useState<SectorKind>("concept");
   const [stage, setStage] = useState<Stage>("now");
+  const [metric, setMetric] = useState<Metric>("change");
   const [sectors, setSectors] = useState<SectorItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   /** 当前查看相关基金的主题（null 表示热力图视图） */
   const [activeSector, setActiveSector] = useState<SectorItem | null>(null);
 
-  const loadSectors = useCallback(async (k: SectorKind) => {
+  const loadSectors = useCallback(async (k: SectorKind, m: Metric) => {
     setLoading(true);
     setFailed(false);
-    const list = await call("加载板块行情", () => MarketService.GetSectors(k));
+    const list = await call("加载板块行情", () =>
+      m === "inflow" ? MarketService.GetSectorMoneyFlow(k) : MarketService.GetSectors(k)
+    );
     setLoading(false);
     if (list) {
       setSectors(list);
@@ -126,21 +144,32 @@ export function SectorPage() {
   }, []);
 
   useEffect(() => {
-    void loadSectors(kind);
-  }, [kind, loadSectors]);
+    void loadSectors(kind, metric);
+  }, [kind, metric, loadSectors]);
 
   // 主题相关基金列表视图（点击热力格子进入，按 ztjj 主题代码 BKxxxxxx 拉取相关基金）
   if (activeSector) {
     return <ThemeFundsView sector={activeSector} stealth={stealth} onBack={() => setActiveSector(null)} />;
   }
 
-  // 组装热力网格节点：value 取当前阶段涨跌幅，着色与排序均基于它
-  const nodes: HeatNode[] = sectors.map((s) => ({
-    key: s.code,
-    name: s.name,
-    value: stageValue(s, stage),
-    onClick: () => setActiveSector(s),
-  }));
+  // 组装热力网格节点：涨幅模式取当前阶段涨跌幅并进入主题基金；资金流入模式取主力净流入并在浏览器打开东财板块页
+  const nodes: HeatNode[] = sectors.map((s) =>
+    metric === "inflow"
+      ? {
+          key: s.code,
+          name: s.name,
+          value: s.inflow,
+          display: formatInflow(s.inflow),
+          onClick: () => void OpenExternalURL(`https://quote.eastmoney.com/bk/90.${s.code}.html`),
+        }
+      : {
+          key: s.code,
+          name: s.name,
+          value: stageValue(s, stage),
+          display: formatPercent(stageValue(s, stage)),
+          onClick: () => setActiveSector(s),
+        }
+  );
 
   // 按当前阶段涨跌幅降序
   const sortedNodes = [...nodes].sort((a, b) => b.value - a.value);
@@ -178,32 +207,60 @@ export function SectorPage() {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-2xs text-[var(--fg-muted)]">{zhCN.sectors.stage}</span>
+          <span className="text-2xs text-[var(--fg-muted)]">{zhCN.sectors.sortBy}</span>
           <div className="flex items-center gap-1">
-            {(["now", "m3", "ytd"] as const).map((st) => (
+            {(
+              [
+                { id: "change", label: zhCN.sectors.sortChange },
+                { id: "inflow", label: zhCN.sectors.sortInflow },
+              ] as const
+            ).map((opt) => (
               <button
-                key={st}
-                onClick={() => setStage(st)}
+                key={opt.id}
+                onClick={() => setMetric(opt.id)}
                 className={cn(
                   "h-[var(--size-tab)] rounded-[var(--radius-btn)] px-3 text-[length:var(--size-font-xs)]",
-                  st === stage
+                  opt.id === metric
                     ? "bg-[var(--row-selected)] font-medium text-[var(--accent)]"
                     : "text-[var(--fg-secondary)] hover:bg-[var(--row-hover)]"
                 )}
-                title={st === "now" ? zhCN.sectors.stageHint : undefined}
+                title={opt.id === "inflow" ? zhCN.sectors.inflowHint : undefined}
               >
-                {zhCN.sectors.stages[st]}
+                {opt.label}
               </button>
             ))}
           </div>
         </div>
+
+        {metric === "change" && (
+          <div className="flex items-center gap-2">
+            <span className="text-2xs text-[var(--fg-muted)]">{zhCN.sectors.stage}</span>
+            <div className="flex items-center gap-1">
+              {(["now", "week", "month", "m3", "ytd"] as const).map((st) => (
+                <button
+                  key={st}
+                  onClick={() => setStage(st)}
+                  className={cn(
+                    "h-[var(--size-tab)] rounded-[var(--radius-btn)] px-3 text-[length:var(--size-font-xs)]",
+                    st === stage
+                      ? "bg-[var(--row-selected)] font-medium text-[var(--accent)]"
+                      : "text-[var(--fg-secondary)] hover:bg-[var(--row-hover)]"
+                  )}
+                  title={st === "now" ? zhCN.sectors.stageHint : undefined}
+                >
+                  {zhCN.sectors.stages[st]}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="ml-auto flex items-center gap-1">
           <FundSearchBox className="w-52" />
           <Tooltip content={zhCN.sectors.refresh}>
             <button
               aria-label={zhCN.sectors.refresh}
-              onClick={() => void loadSectors(kind)}
+              onClick={() => void loadSectors(kind, metric)}
               disabled={loading}
               className="rounded-[var(--radius-btn)] p-1.5 text-[var(--fg-muted)] hover:bg-[var(--row-hover)] hover:text-[var(--fg)] disabled:opacity-40"
             >

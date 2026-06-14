@@ -24,11 +24,13 @@ var ztjjCategory = map[string]string{
 }
 
 // ztjjItem GetZTJJListNew 单条记录。
-// 值字段名随 st（周期）变化：D 今日 / Q 近3月 / SY 今年来；用 RawMessage 容错（数字或 "--"/null）。
+// 值字段名随 st（周期）变化：D 今日 / W 近1周 / M 近1月 / Q 近3月 / SY 今年来；用 RawMessage 容错（数字或 "--"/null）。
 type ztjjItem struct {
 	Code string          `json:"INDEXCODE"`
 	Name string          `json:"INDEXNAME"`
 	D    json.RawMessage `json:"D"`
+	W    json.RawMessage `json:"W"`
+	M    json.RawMessage `json:"M"`
 	Q    json.RawMessage `json:"Q"`
 	SY   json.RawMessage `json:"SY"`
 }
@@ -85,6 +87,10 @@ func fetchZTJJStage(ctx context.Context, tt, st string) ([]ztjjItem, error) {
 // stageField 取某周期对应的原始值字段。
 func stageField(it ztjjItem, st string) json.RawMessage {
 	switch st {
+	case "W":
+		return it.W
+	case "M":
+		return it.M
 	case "Q":
 		return it.Q
 	case "SY":
@@ -97,7 +103,7 @@ func stageField(it ztjjItem, st string) json.RawMessage {
 // FetchSectors 拉取热门主题（对齐天天基金 ztjj 热门主题）。
 // kind：all（全部）/ industry（行业）/ concept（概念）。
 // 数据源 api.fund.eastmoney.com/ztjj/GetZTJJListNew（push2 行情接口对桌面端 Go 请求会被反爬静默断连，故改用此可达接口）。
-// 一次类别需三次请求拿到今日(D)/近3月(Q)/今年来(SY) 三档涨幅并按主题代码合并。
+// 一次类别需多次请求拿到今日(D)/近1周(W)/近1月(M)/近3月(Q)/今年来(SY) 五档涨幅并按主题代码合并。
 func FetchSectors(ctx context.Context, kind string) ([]model.SectorItem, error) {
 	tt, ok := ztjjCategory[kind]
 	if !ok {
@@ -105,8 +111,8 @@ func FetchSectors(ctx context.Context, kind string) ([]model.SectorItem, error) 
 		tt = ztjjCategory["all"]
 	}
 
-	// 三档周期：D 今日、Q 近3月、SY 今年来；首档（今日）失败则整体失败，其余档失败仅该档为 0。
-	stages := []string{"D", "Q", "SY"}
+	// 五档周期：D 今日、W 近1周、M 近1月、Q 近3月、SY 今年来；首档（今日）失败则整体失败，其余档失败仅该档为 0。
+	stages := []string{"D", "W", "M", "Q", "SY"}
 	byCode := make(map[string]*model.SectorItem)
 	order := make([]string, 0, 200)
 
@@ -131,6 +137,10 @@ func FetchSectors(ctx context.Context, kind string) ([]model.SectorItem, error) 
 			}
 			v := rawNumber(stageField(it, st))
 			switch st {
+			case "W":
+				si.Week = v
+			case "M":
+				si.Month = v
 			case "Q":
 				si.Month3 = v
 			case "SY":

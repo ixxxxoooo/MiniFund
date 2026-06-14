@@ -29,11 +29,15 @@ func TestMarketCenterIndexesRegistry(t *testing.T) {
 		t.Fatal("指数清单不应为空")
 	}
 	for _, m := range MarketCenterIndexes {
-		if m.Secid == "" || m.Tencent == "" || m.Name == "" || m.Group == "" {
+		if m.Secid == "" || m.Tencent == "" || m.Name == "" || m.Group == "" || m.KSource == "" {
 			t.Errorf("指数元信息字段缺失: %+v", m)
 		}
 		if n := len(m.Secid); n < 3 || m.Secid[1] != '.' && m.Secid[2] != '.' && m.Secid[3] != '.' {
 			t.Errorf("secid 格式应为 市场.代码: %q", m.Secid)
+		}
+		// 新浪源必须提供新浪符号
+		if (m.KSource == KSourceSinaCN || m.KSource == KSourceSinaUS) && m.Sina == "" {
+			t.Errorf("新浪源指数缺少 Sina 符号: %+v", m)
 		}
 	}
 }

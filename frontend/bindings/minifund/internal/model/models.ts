@@ -1558,6 +1558,16 @@ export class SectorItem {
     "changePercent": number;
 
     /**
+     * 近1周涨跌幅（%，ztjj st=W）
+     */
+    "week": number;
+
+    /**
+     * 近1月涨跌幅（%，ztjj st=M）
+     */
+    "month": number;
+
+    /**
      * 近3月涨跌幅（%，f24=60日）
      */
     "month3": number;
@@ -1602,6 +1612,12 @@ export class SectorItem {
         }
         if (!("changePercent" in $$source)) {
             this["changePercent"] = 0;
+        }
+        if (!("week" in $$source)) {
+            this["week"] = 0;
+        }
+        if (!("month" in $$source)) {
+            this["month"] = 0;
         }
         if (!("month3" in $$source)) {
             this["month3"] = 0;

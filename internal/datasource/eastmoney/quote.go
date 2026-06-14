@@ -11,31 +11,43 @@ import (
 	"minifund/internal/model"
 )
 
-// IndexMeta 行情中心指数元信息（名称、分组、东财 secid 与腾讯符号）。
+// K 线来源标识。
+const (
+	KSourceTencent = "tencent" // 腾讯（A股主要 + 港股，day/week/month 原生）
+	KSourceSinaCN  = "sinaCN"  // 新浪 A 股指数（北证 50；周/月服务端聚合）
+	KSourceSinaUS  = "sinaUS"  // 新浪美股指数（道指/纳指/标普；周/月服务端聚合）
+)
+
+// IndexMeta 行情中心指数元信息（名称、分组、东财 secid、腾讯符号、新浪符号与 K 线来源）。
 type IndexMeta struct {
-	Secid   string // 东财证券 id：市场.代码（1=上证 0=深证/北证 100=港美国际指数）；K 线兜底源
-	Tencent string // 腾讯符号（如 sh000001 / hkHSI / usDJI）；实时报价与 A股/港股 K 线主源
+	Secid   string // 东财证券 id：市场.代码；K 线最终兜底源（push2his 常被反爬，仅兜底）
+	Tencent string // 腾讯符号（如 sh000001 / hkHSI / usDJI）；实时报价（全部）+ K 线（A股主要/港股）
+	Sina    string // 新浪符号；K 线来源：北证 50 用 bj899050，美股用 .DJI/.IXIC/.INX
+	KSource string // K 线主源：tencent / sinaCN / sinaUS
 	Name    string
 	Group   string
 }
 
 // MarketCenterIndexes 行情中心展示的常见指数清单（A股 / 港股 / 美股）。
-// 实时报价统一走腾讯（稳定，覆盖全部）；K 线 A股/港股走腾讯，美股/北证 50 走东财 push2his 兜底。
+// 实时报价统一走腾讯（稳定，覆盖全部）；K 线按来源路由：
+// - A股主要指数 + 港股：腾讯（完整历史，周/月原生）；
+// - 北证 50：腾讯仅 1 根，改走新浪 A 股 K 线；
+// - 美股：腾讯仅 1 根，改走新浪美股 K 线。
 var MarketCenterIndexes = []IndexMeta{
-	{"1.000001", "sh000001", "上证指数", "A股"},
-	{"0.399001", "sz399001", "深证成指", "A股"},
-	{"0.399006", "sz399006", "创业板指", "A股"},
-	{"1.000688", "sh000688", "科创50", "A股"},
-	{"0.899050", "bj899050", "北证50", "A股"},
-	{"1.000300", "sh000300", "沪深300", "A股"},
-	{"1.000016", "sh000016", "上证50", "A股"},
-	{"1.000905", "sh000905", "中证500", "A股"},
-	{"1.000852", "sh000852", "中证1000", "A股"},
-	{"100.HSI", "hkHSI", "恒生指数", "港股"},
-	{"100.HSCEI", "hkHSCEI", "国企指数", "港股"},
-	{"100.DJIA", "usDJI", "道琼斯", "美股"},
-	{"100.NDX", "usIXIC", "纳斯达克", "美股"},
-	{"100.SPX", "usINX", "标普500", "美股"},
+	{"1.000001", "sh000001", "", KSourceTencent, "上证指数", "A股"},
+	{"0.399001", "sz399001", "", KSourceTencent, "深证成指", "A股"},
+	{"0.399006", "sz399006", "", KSourceTencent, "创业板指", "A股"},
+	{"1.000688", "sh000688", "", KSourceTencent, "科创50", "A股"},
+	{"0.899050", "bj899050", "bj899050", KSourceSinaCN, "北证50", "A股"},
+	{"1.000300", "sh000300", "", KSourceTencent, "沪深300", "A股"},
+	{"1.000016", "sh000016", "", KSourceTencent, "上证50", "A股"},
+	{"1.000905", "sh000905", "", KSourceTencent, "中证500", "A股"},
+	{"1.000852", "sh000852", "", KSourceTencent, "中证1000", "A股"},
+	{"100.HSI", "hkHSI", "", KSourceTencent, "恒生指数", "港股"},
+	{"100.HSCEI", "hkHSCEI", "", KSourceTencent, "国企指数", "港股"},
+	{"100.DJIA", "usDJI", ".DJI", KSourceSinaUS, "道琼斯", "美股"},
+	{"100.NDX", "usIXIC", ".IXIC", KSourceSinaUS, "纳斯达克", "美股"},
+	{"100.SPX", "usINX", ".INX", KSourceSinaUS, "标普500", "美股"},
 }
 
 // FindIndexBySecid 按 secid 查找行情中心指数元信息（服务层做主源/兜底切换用）。

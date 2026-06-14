@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"minifund/internal/datasource/eastmoney"
+	"minifund/internal/datasource/sina"
 	"minifund/internal/datasource/tencent"
 	"minifund/internal/model"
 	"minifund/internal/scheduler"
@@ -69,6 +70,23 @@ func (s *MarketService) GetSectors(kind string) ([]model.SectorItem, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	list, err := eastmoney.FetchSectors(ctx, kind)
+	if err != nil {
+		return nil, err
+	}
+	s.cache.set(key, list)
+	return list, nil
+}
+
+// GetSectorMoneyFlow 拉取标准行业/概念板块的主力资金净流入排行（60s 内存缓存）。
+// kind：all / industry / concept。代码体系为东财标准板块码（BK0xxx，与 ztjj 主题码不同）。
+func (s *MarketService) GetSectorMoneyFlow(kind string) ([]model.SectorItem, error) {
+	key := "sectorflow|" + kind
+	if v, ok := s.cache.get(key); ok {
+		return v.([]model.SectorItem), nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	list, err := eastmoney.FetchSectorMoneyFlow(ctx, kind)
 	if err != nil {
 		return nil, err
 	}
@@ -140,13 +158,25 @@ func (s *MarketService) GetIndexKline(secid, period string) ([]model.Kline, erro
 
 	meta, _ := eastmoney.FindIndexBySecid(secid)
 
+	// 按来源路由：腾讯（A股主要/港股）/ 新浪 A 股（北证 50）/ 新浪美股（道指等）。
 	var list []model.Kline
-	if meta.Tencent != "" {
-		if kl, err := tencent.Source{}.FetchIndexKline(ctx, meta.Tencent, period, limit); err == nil && len(kl) >= 2 {
+	switch meta.KSource {
+	case eastmoney.KSourceSinaCN:
+		if kl, err := (sina.Source{}).FetchCNIndexKline(ctx, meta.Sina, period, limit); err == nil && len(kl) >= 2 {
 			list = kl
 		}
+	case eastmoney.KSourceSinaUS:
+		if kl, err := (sina.Source{}).FetchUSIndexKline(ctx, meta.Sina, period, limit); err == nil && len(kl) >= 2 {
+			list = kl
+		}
+	default:
+		if meta.Tencent != "" {
+			if kl, err := (tencent.Source{}).FetchIndexKline(ctx, meta.Tencent, period, limit); err == nil && len(kl) >= 2 {
+				list = kl
+			}
+		}
 	}
-	// 腾讯不足两根（美股/北证 50 历史缺失或腾讯失败）时回退东财。
+	// 主源不足两根时回退东财 push2his（多数情况下被反爬，仅作最后兜底）。
 	if len(list) < 2 {
 		if kl, err := eastmoney.FetchIndexKline(ctx, secid, klt, limit); err == nil && len(kl) >= 2 {
 			list = kl

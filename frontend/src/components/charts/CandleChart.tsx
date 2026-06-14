@@ -212,24 +212,25 @@ export function CandleChart({ data, height = 380 }: CandleChartProps) {
               borderColor: "var(--border-color)",
             }}
           >
-            <div className="mb-0.5 text-[var(--fg-secondary)]">{hover.date}</div>
-            <div className="quote-num grid grid-cols-2 gap-x-3 gap-y-0.5 text-[var(--fg)]">
-              <span>开 {hover.open.toFixed(2)}</span>
-              <span>高 {hover.high.toFixed(2)}</span>
-              <span>收 {hover.close.toFixed(2)}</span>
-              <span>低 {hover.low.toFixed(2)}</span>
+            <div className="mb-1 text-[var(--fg-secondary)]">{hover.date}</div>
+            <div className="quote-num grid grid-cols-[auto_auto] gap-x-5 gap-y-1 text-[var(--fg)]">
+              <span className="whitespace-nowrap"><span className="text-[var(--fg-muted)]">开</span> {hover.open.toFixed(2)}</span>
+              <span className="whitespace-nowrap"><span className="text-[var(--fg-muted)]">高</span> {hover.high.toFixed(2)}</span>
+              <span className="whitespace-nowrap"><span className="text-[var(--fg-muted)]">收</span> {hover.close.toFixed(2)}</span>
+              <span className="whitespace-nowrap"><span className="text-[var(--fg-muted)]">低</span> {hover.low.toFixed(2)}</span>
               <span
                 className={
-                  quoteDirection(hover.changePercent) === "up"
+                  "whitespace-nowrap " +
+                  (quoteDirection(hover.changePercent) === "up"
                     ? "text-[var(--quote-up)]"
                     : quoteDirection(hover.changePercent) === "down"
                       ? "text-[var(--quote-down)]"
-                      : "text-[var(--quote-flat)]"
+                      : "text-[var(--quote-flat)]")
                 }
               >
-                涨幅 {hover.changePercent > 0 ? "+" : ""}{hover.changePercent.toFixed(2)}%
+                <span className="text-[var(--fg-muted)]">涨幅</span> {hover.changePercent > 0 ? "+" : ""}{hover.changePercent.toFixed(2)}%
               </span>
-              <span className="text-[var(--fg-secondary)]">量 {formatVolume(hover.volume)}</span>
+              <span className="whitespace-nowrap text-[var(--fg-secondary)]"><span className="text-[var(--fg-muted)]">量</span> {formatVolume(hover.volume)}</span>
             </div>
           </div>
         )}

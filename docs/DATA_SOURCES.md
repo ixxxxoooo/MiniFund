@@ -138,11 +138,23 @@ Referer: https://fund.eastmoney.com/ztjj/default.html
 ```
 
 - **数据源切换（重要修复）**：原先直连 `push2.eastmoney.com/api/qt/clist/get` 拉板块行情。实测桌面端 Go 客户端请求 push2 会在 **TLS 握手成功后被反爬静默断连（`EOF`）**，且无论补全 `Referer`/`ut` token/Cookie/浏览器请求头/HTTP1.1 均无法绕过（同一客户端访问 `fund.eastmoney.com`/`fundmobapi.eastmoney.com`/`api.fund.eastmoney.com` 均正常，浏览器访问 push2 也正常 —— 即 push2/quote 边缘对非浏览器客户端做了指纹拦截）。故改用**天天基金「主题基金」页（ztjj）同款、且主机可达**的 `api.fund.eastmoney.com/ztjj/GetZTJJListNew`。
-- 参数：`tt` 板块类别 —— `0` 全部 / `001002` 行业 / `001003` 概念；`dt=syl` 涨幅；`st` 周期同时也是返回值字段名 —— `D` 今日 / `Q` 近3月 / `SY` 今年来（另有 `W`/`M`/`Y` 等未用）；`pn=500` 一次取全。
-- 返回 `{"Data":[{"INDEXCODE":"BK000651","INDEXNAME":"光模块","SY":122.85}, ...]}`：`INDEXCODE` 主题代码、`INDEXNAME` 主题名、值字段名随 `st` 变化。值可能为数字、`"--"` 或 `null`，解析层（`parseZTJJ`/`rawNumber`）用 `RawMessage` 容错为 0；兼容纯 JSON 与 JSONP 包装。
-- **三档合并**：一个类别需 3 次请求（`st=D`/`Q`/`SY`）按 `INDEXCODE` 合并为 `ChangePercent`/`Month3`/`Ytd`。首档（今日）失败则整体失败，其余档失败仅该档为 0。顺序串行、按今日涨幅降序建序。
-- CPO/PCB/**光模块**/算力/液冷/存储芯片 等热门主题均在其中（如「光模块」今年来居首），覆盖了 push2 时代「缺热门主题」的诉求。
-- **阶段说明**：仅提供 今日(`D`)/近3月(`Q`)/今年来(`SY`) 三档；该接口仅返回涨幅值，不返回资金流入金额，故热力页移除「按资金流入」排序，统一按所选阶段涨幅降序着色（红涨绿跌跟随主题 token）。
+- 参数：`tt` 板块类别 —— `0` 全部 / `001002` 行业 / `001003` 概念；`dt=syl` 涨幅；`st` 周期同时也是返回值字段名 —— `D` 今日 / `W` 近1周 / `M` 近1月 / `Q` 近3月 / `SY` 今年来（`Y` 为近1年）；`pn=500` 一次取全。**注意：该接口忽略 `dt=zjlr`**（资金流入与涨幅返回完全相同的涨幅值），资金流入需另用 push2delay（见下）。
+- 返回 `{"Data":[{"INDEXCODE":"BK000651","INDEXNAME":"光模块","M":6.1}, ...]}`：`INDEXCODE` 主题代码、`INDEXNAME` 主题名、值字段名随 `st` 变化。值可能为数字、`"--"` 或 `null`，解析层（`parseZTJJ`/`rawNumber`）用 `RawMessage` 容错为 0；兼容纯 JSON 与 JSONP 包装。
+- **五档合并**：一个类别需 5 次请求（`st=D`/`W`/`M`/`Q`/`SY`）按 `INDEXCODE` 合并为 `ChangePercent`/`Week`/`Month`/`Month3`/`Ytd`。首档（今日）失败则整体失败，其余档失败仅该档为 0。顺序串行、按今日涨幅降序建序。
+- CPO/PCB/**光模块**/算力/液冷/存储芯片 等热门主题均在其中，覆盖了 push2 时代「缺热门主题」的诉求。
+- **阶段说明**：热力页「按涨幅」提供 今日/近1周/近1月/近3月/今年来 五档，按所选阶段涨幅降序着色（红涨绿跌跟随主题 token）。
+
+#### 2.6.1 板块资金流入（东财 `push2delay`，「按资金流入」排序）
+
+```
+GET https://push2delay.eastmoney.com/api/qt/clist/get?fid=f62&po=1&np=1&pz=200&pn=1&fs={过滤}&fields=f12,f14,f3,f62&_={毫秒时间戳}
+Referer: https://data.eastmoney.com/
+```
+
+- **可达性**：普通 `push2` 对桌面端 Go 请求会被反爬静默断连，但**延迟行情站点 `push2delay.eastmoney.com` 可达**，用于取标准行业/概念板块的主力资金净流入排行。
+- 参数：`fs` 过滤串 —— 行业 `m:90+t:2` / 概念 `m:90+t:3` / 全部 `m:90+t:2,m:90+t:3`；`fid=f62` 按主力净流入排序。
+- 返回 `data.diff`（对象 `{"0":{...}}` 或数组两种形态，解析层兼容）：`f12` 板块代码、`f14` 名称、`f3` 今日涨幅（**百分数 ×100，需 ÷100**）、`f62` 主力净流入（元）。实现见 `internal/datasource/eastmoney/moneyflow.go` 的 `FetchSectorMoneyFlow`，按净流入降序。
+- ⚠️ **代码体系差异**：push2delay 标准板块码为 `BK0xxx`，与 ztjj 主题码 `BK000xxx` **不互通**。故「按资金流入」视图为独立的标准板块列表，点击格子用系统浏览器打开东财板块页 `https://quote.eastmoney.com/bk/90.{BK代码}.html`（不进入主题基金列表）。
 - **点击主题 → 相关基金（重要）**：点击热力格子直接进入「主题相关基金」列表，按主题代码 `BKxxxxxx` 调用 `api.fund.eastmoney.com/ZTJJ/GetBKRelTopicFundNew?tp={BK代码}&isbuy=1&sort={排序键}&sorttype={DESC|ASC}&pageindex=N&pagesize=50`（即天天基金 `fund.eastmoney.com/ztjj/#!curr/{BK代码}/fst/DESC` 同款接口）。返回 `{"Data":[{FCODE,SHORTNAME,DWJZ,RZDF,SYL_Z/Y/3Y/6Y/1N/2N/3N/JN/LN,SYRQ,...}],"TotalCount":n}`，字段多为数字（可能为 `null`），复用 `RankItem/RankPage` 解析；排序键 `RZDF`(日)/`SYL_Z`(周)/`SYL_Y`(月)/`SYL_3Y`(近3月)/`SYL_6Y`(近6月)/`SYL_1N`(近1年)/`SYL_JN`(今年来)。配套 `GetBKDetailInfoNew?tp={BK代码}` 提供主题自身各周期涨幅与排名（暂作展示备用）。
 
 ### 2.7 主题基金（按板块找基金）
@@ -228,11 +240,16 @@ Header: Referer: https://finance.sina.com.cn/
 
 上证指数（sh000001）、深证成指（sz399001）、创业板指（sz399006）、沪深300（sh000300）、恒生指数（hkHSI）、纳斯达克（usIXIC）、标普500（usINX）。用户可在设置中增删。
 
-### 3.4 行情中心（腾讯主源 + 东财兜底）
+### 3.4 行情中心（腾讯主源 + 新浪美股/北证源 + 东财兜底）
 
-行情中心展示常见 A 股/港股/美股指数清单及选中指数的 K 线。指数清单（含东财 `secid` 与腾讯符号的映射）硬编码在 `internal/datasource/eastmoney/quote.go` 的 `MarketCenterIndexes`；服务层 `MarketService` 负责「腾讯主源 / 东财兜底」的切换。
+行情中心展示常见 A 股/港股/美股指数清单及选中指数的 K 线。指数清单（含东财 `secid`、腾讯符号、新浪符号与 K 线来源标识 `KSource`）硬编码在 `internal/datasource/eastmoney/quote.go` 的 `MarketCenterIndexes`；服务层 `MarketService.GetIndexKline` 按 `KSource` 路由。
 
-> ⚠️ **重要：东财 `push2`/`push2his` 域名对非浏览器客户端会被指纹拦截**（连接直接关闭、返回空响应；高频访问后整段时间不可用）。因此行情中心**实时报价与 A 股/港股 K 线一律走腾讯**（与全局指数行情同源，稳定），**仅美股、北证 50 的历史 K 线**（腾讯不提供完整历史）回退东财 `push2his`。
+> ⚠️ **重要：东财 `push2`/`push2his` 域名对非浏览器客户端会被指纹拦截**（连接直接关闭、返回空响应；高频访问后整段时间不可用）。因此行情中心**实时报价一律走腾讯**（覆盖全部，稳定）；**K 线按市场分源**：
+> - A 股主要指数 + 港股 → 腾讯 `fqkline`（完整历史，日/周/月原生）；
+> - **北证 50** → 腾讯仅返回最新一根，改走**新浪 A 股 K 线** `CN_MarketDataService.getKLineData`；
+> - **美股（道指/纳指/标普）** → 腾讯仅返回最新一根，改走**新浪美股 K 线** `US_MinKService.getDailyK`（自上市以来全部日线）。
+> - 新浪源仅提供日线，**周/月线由服务端聚合**（开取区间首日、收取末日、高低取极值、量累计，涨跌幅按相邻收盘推算），实现见 `internal/datasource/sina/kline.go`。
+> - 东财 `push2his` 保留为最后兜底（多数情况下被反爬，基本不生效）。
 
 **指数清单（secid ↔ 腾讯符号）**：上证 `1.000001`/`sh000001`、深证成指 `0.399001`/`sz399001`、创业板指 `0.399006`/`sz399006`、科创50 `1.000688`/`sh000688`、北证50 `0.899050`/`bj899050`、沪深300 `1.000300`/`sh000300`、上证50 `1.000016`/`sh000016`、中证500 `1.000905`/`sh000905`、中证1000 `1.000852`/`sh000852`、恒生 `100.HSI`/`hkHSI`、国企 `100.HSCEI`/`hkHSCEI`、道琼斯 `100.DJIA`/`usDJI`、纳斯达克 `100.NDX`/`usIXIC`、标普500 `100.SPX`/`usINX`。
 
@@ -254,14 +271,18 @@ GET https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=sh000001,day,,,240,
 
 - 实现见 `internal/datasource/tencent/kline.go` 的 `FetchIndexKline`。`param=代码,周期,起,止,条数,复权`，周期 `day`/`week`/`month`。
 - 响应 `data.{代码}.{周期}` 为二维数组，每行 `[日期, 开, 收, 高, 低, 量, ...]`；指数无复权概念，涨跌幅由相邻收盘价推算，成交额腾讯不提供置 0。
-- A 股/港股可取完整历史；**美股、北证 50 腾讯仅返回最新一根**（≤1 条），此时自动回退东财 `push2his`：
+- A 股主要指数/港股可取完整历史。**北证 50、美股腾讯仅返回最新一根**（≤1 条），改走新浪：
 
 ```
-GET https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=100.NDX&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56,f57,f58&klt=101&fqt=0&end=20500101&lmt=240
-Referer: https://quote.eastmoney.com/center/
+# 北证 50（及任意沪深指数）日线，scale=240=日，datalen 控制条数，升序
+GET https://quotes.sina.cn/cn/api/jsonp_v2.php/var%20_t=/CN_MarketDataService.getKLineData?symbol=bj899050&scale=240&ma=no&datalen=240
+# 美股指数（.DJI/.IXIC/.INX）日线，返回自上市以来全部，升序
+GET https://stock.finance.sina.com.cn/usstock/api/jsonp_v2.php/var%20_t=/US_MinKService.getDailyK?symbol=.DJI
+Referer: https://finance.sina.com.cn/
 ```
 
-- 切换逻辑（`MarketService.GetIndexKline`）：腾讯 → 不足 2 根则东财 → 仍不足 2 根返回「该指数历史 K 线暂不可用」。东财被拦截期间美股/北证 50 可能短暂不可用，A 股/港股不受影响。
+- 新浪响应为带注释/JSONP 包装，取首个 `[` 到末个 `]` 之间的 JSON 数组解析；A 股行字段 `{day,open,high,low,close,volume}`，美股行字段单字母 `{d,o,h,l,c,v,a}`。
+- 切换逻辑（`MarketService.GetIndexKline`）：按 `KSource` 选 腾讯 / 新浪CN / 新浪US → 不足 2 根则回退东财 `push2his` → 仍不足 2 根返回「该指数历史 K 线暂不可用」。
 - `klt`：101 日 / 102 周 / 103 月。后端 60s 内存缓存（按 `secid + 周期` 维度）；K 线按需请求（选中指数/切换周期时拉取），不进入调度器轮询。
 
 ## 4. 限频、缓存与降级策略
