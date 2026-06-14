@@ -64,7 +64,10 @@
 - Go 1.25+
 - Node.js 20+ 与 pnpm（`corepack enable`）
 - Wails3 CLI：`go install github.com/wailsapp/wails/v3/cmd/wails3@latest`
-- C 编译器（CGO 需要）：macOS 用 Xcode Command Line Tools；Windows 用 [MinGW-w64](https://www.mingw-w64.org/)（gcc）
+- C 编译器（CGO 需要，go-sqlite3 依赖）：
+  - macOS 原生构建：Xcode Command Line Tools
+  - Windows 原生构建：[MinGW-w64](https://www.mingw-w64.org/)（gcc）
+  - 在 macOS 上交叉编译 Windows EXE：`brew install mingw-w64`（构建任务会自动使用 `x86_64-w64-mingw32-gcc`）
 
 ### 常用命令
 

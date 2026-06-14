@@ -41,10 +41,16 @@ tasks:
       BUILD_FLAGS: '{{if eq .DEV "true"}}-buildvcs=false{{else}}-tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -X minifund/internal/version.Version={{.APP_VERSION}} -X minifund/internal/version.Commit={{.BUILD_COMMIT}} -X minifund/internal/version.BuildDate={{.BUILD_DATE}}"{{end}}'
       DEFAULT_OUTPUT: "{{.BIN_DIR}}/{{.APP_NAME}}.exe"
       OUTPUT: "{{.OUTPUT | default .DEFAULT_OUTPUT}}"
+      # go-sqlite3 需要 CGO，跨平台编译必须指定 Windows 的 C 编译器：
+      #   - 在 Windows 上原生构建（如 GitHub windows runner）：用自带的 gcc
+      #   - 在 macOS/Linux 上交叉编译：用 mingw-w64 的 x86_64-w64-mingw32-gcc
+      #     （macOS 安装：brew install mingw-w64；Debian/Ubuntu：apt-get install gcc-mingw-w64）
+      WIN_CC: '{{if eq OS "windows"}}gcc{{else}}x86_64-w64-mingw32-gcc{{end}}'
     env:
       GOOS: windows
       CGO_ENABLED: 1
       GOARCH: '{{.ARCH | default "amd64"}}'
+      CC: "{{.CC | default .WIN_CC}}"
 
   package:
     summary: 打包 Windows 生产版本（生成 .exe）
