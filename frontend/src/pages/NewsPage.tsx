@@ -8,12 +8,13 @@ import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
 import { cn } from "@/lib/utils";
 import { useNewsStore } from "@/stores/news";
+import { useReadNewsStore } from "@/stores/readNews";
 import { useSettingsStore } from "@/stores/settings";
 
 type Tab = "flash" | "roll";
 
 /** 列表每页条数 */
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 30;
 /** 快讯自动刷新倒计时兜底（秒）：设置未加载时使用 */
 const DEFAULT_REFRESH_SEC = 60;
 
@@ -46,6 +47,10 @@ export function NewsPage() {
   const loadRoll = useNewsStore((s) => s.loadRoll);
   // 快讯自动刷新间隔与「设置 - 快讯拉取间隔」保持一致
   const refreshSec = useSettingsStore((s) => s.settings?.newsPollSec ?? DEFAULT_REFRESH_SEC);
+  // 已读状态：未读条目右侧显示小绿点，点击后标记已读并持久化
+  const readIds = useReadNewsStore((s) => s.ids);
+  const markRead = useReadNewsStore((s) => s.markRead);
+  const readSet = useMemo(() => new Set(readIds), [readIds]);
 
   const [tab, setTab] = useState<Tab>("flash");
   const [refreshing, setRefreshing] = useState(false);
@@ -146,10 +151,13 @@ export function NewsPage() {
             <Empty text={zhCN.news.empty} />
           ) : (
             <ul className="divide-y divide-[var(--border-subtle)]">
-              {flashView.map((n) => (
+              {flashView.map((n) => {
+                const unread = !readSet.has(n.id);
+                return (
                 <li key={n.id}>
                   <button
-                    onClick={() =>
+                    onClick={() => {
+                      markRead(n.id);
                       openNewsWindow({
                         kind: "flash",
                         id: n.id,
@@ -157,8 +165,8 @@ export function NewsPage() {
                         time: n.time,
                         url: `https://finance.eastmoney.com/a/${n.id}.html`,
                         summary: n.summary,
-                      })
-                    }
+                      });
+                    }}
                     className="flex w-full flex-col gap-1 px-[var(--size-padding)] py-2.5 text-left hover:bg-[var(--row-hover)]"
                   >
                     <div className="flex items-center gap-2">
@@ -170,17 +178,25 @@ export function NewsPage() {
                       )}
                       <span
                         className={cn(
-                          "truncate text-[length:var(--size-font-xs)]",
+                          "min-w-0 flex-1 truncate text-[length:var(--size-font-xs)]",
                           n.important ? "font-medium text-[var(--quote-up)]" : "text-[var(--fg)]"
                         )}
                       >
                         {n.title}
                       </span>
+                      {/* 未读小绿点 */}
+                      {unread && (
+                        <span
+                          aria-label={zhCN.news.unread}
+                          className="ml-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--success)]"
+                        />
+                      )}
                     </div>
                     <p className="line-clamp-2 text-2xs leading-relaxed text-[var(--fg-secondary)]">{n.summary}</p>
                   </button>
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )
         ) : rollLoading && roll.length === 0 ? (
@@ -193,19 +209,30 @@ export function NewsPage() {
           <Empty text={zhCN.news.empty} />
         ) : (
           <ul className="divide-y divide-[var(--border-subtle)]">
-            {rollView.map((a) => (
+            {rollView.map((a) => {
+              const unread = !readSet.has(a.id);
+              return (
               <li key={a.id}>
                 <button
-                  onClick={() =>
-                    openNewsWindow({ kind: "roll", id: a.id, title: a.title, time: a.time, url: a.url, summary: "" })
-                  }
+                  onClick={() => {
+                    markRead(a.id);
+                    openNewsWindow({ kind: "roll", id: a.id, title: a.title, time: a.time, url: a.url, summary: "" });
+                  }}
                   className="flex w-full items-center gap-3 px-[var(--size-padding)] py-2.5 text-left hover:bg-[var(--row-hover)]"
                 >
                   <span className="quote-num shrink-0 text-2xs text-[var(--fg-muted)]">{a.time}</span>
-                  <span className="truncate text-[length:var(--size-font-xs)] text-[var(--fg)]">{a.title}</span>
+                  <span className="min-w-0 flex-1 truncate text-[length:var(--size-font-xs)] text-[var(--fg)]">{a.title}</span>
+                  {/* 未读小绿点 */}
+                  {unread && (
+                    <span
+                      aria-label={zhCN.news.unread}
+                      className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--success)]"
+                    />
+                  )}
                 </button>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </div>

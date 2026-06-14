@@ -287,7 +287,7 @@ export function DetailWindow({ code }: DetailWindowProps) {
                   </Badge>
                 )}
                 {detail.maxDrawdown < 0 && (
-                  <Badge variant="secondary">
+                  <Badge variant="danger">
                     {zhCN.detail.maxDrawdown} {detail.maxDrawdown.toFixed(2)}%
                   </Badge>
                 )}
@@ -312,20 +312,19 @@ export function DetailWindow({ code }: DetailWindowProps) {
             {/* 右侧：最新净值与盘中估算并排展示 */}
             <div className="flex shrink-0 items-stretch gap-3">
               {latest && (
-                <div className="flex flex-col items-end justify-center gap-0.5 rounded-[var(--radius-panel)] bg-[var(--surface-secondary)] px-3 py-1">
-                  <span className="text-2xs text-[var(--fg-muted)]">
-                    {zhCN.detail.latestNav}（{latest.date}）
-                  </span>
-                  <div className="flex items-baseline gap-2">
-                    <span className="quote-num text-[length:var(--size-font-sm)] font-bold leading-none text-[var(--fg)]">
+                // 最新净值：左侧上净值下日期，右侧放大百分比（去掉「最新净值」标签文字）
+                <div className="flex items-center gap-3 rounded-[var(--radius-panel)] bg-[var(--surface-secondary)] px-3 py-1.5">
+                  <div className="flex flex-col items-start leading-tight">
+                    <span className="quote-num text-[length:var(--size-font-base)] font-bold text-[var(--fg)]">
                       {formatNav(latest.value)}
                     </span>
-                    <QuoteText
-                      value={latest.growth}
-                      neutral={stealth}
-                      className="text-[length:var(--size-font-base)] font-bold leading-none"
-                    />
+                    <span className="quote-num text-2xs text-[var(--fg-muted)]">{latest.date}</span>
                   </div>
+                  <QuoteText
+                    value={latest.growth}
+                    neutral={stealth}
+                    className="text-[length:var(--size-font-lg)] font-bold leading-none"
+                  />
                 </div>
               )}
               {est?.hasEstimate && (
@@ -378,59 +377,98 @@ export function DetailWindow({ code }: DetailWindowProps) {
           </section>
 
           <div className="grid min-h-0 flex-1 grid-cols-2 gap-[var(--size-gap)]">
-            {/* 前十重仓股 */}
+            {/* 持仓：有股票持仓展示「前十重仓股」；纯债/债券型基金无股票持仓时展示「重仓债券」 */}
             <section className="flex min-h-0 flex-col rounded-[var(--radius-panel)] border border-[var(--border-subtle)] p-[var(--size-padding-sm)]">
-              <div className="mb-1 flex shrink-0 items-center justify-between text-[length:var(--size-font-sm)] font-medium text-[var(--fg)]">
-                <span>{zhCN.detail.holdingsTitle}</span>
-                <span className="flex items-center gap-3 text-2xs font-normal text-[var(--fg-muted)]">
-                  <span className="w-16 text-right">{zhCN.detail.holdingPercent}</span>
-                  <span className="w-20 text-right">{zhCN.detail.holdingChange}</span>
-                </span>
-              </div>
               {detail.holdings && detail.holdings.length > 0 ? (
-                <div className="flex min-h-0 flex-1 flex-col">
-                  {detail.holdings.map((h) => {
-                    const url = eastmoneyStockURL(h.stockCode);
-                    return (
+                <>
+                  <div className="mb-1 flex shrink-0 items-center justify-between text-[length:var(--size-font-sm)] font-medium text-[var(--fg)]">
+                    <span>{zhCN.detail.holdingsTitle}</span>
+                    <span className="flex items-center gap-3 text-2xs font-normal text-[var(--fg-muted)]">
+                      <span className="w-16 text-right">{zhCN.detail.holdingPercent}</span>
+                      <span className="w-20 text-right">{zhCN.detail.holdingChange}</span>
+                    </span>
+                  </div>
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    {detail.holdings.map((h) => {
+                      const url = eastmoneyStockURL(h.stockCode);
+                      return (
+                        <div
+                          key={h.stockCode}
+                          className="flex min-h-0 flex-1 items-center gap-3 border-b border-[var(--border-subtle)] text-[length:var(--size-font-sm)] last:border-b-0"
+                        >
+                          <span className="quote-num w-16 shrink-0 text-[var(--fg-muted)]">{h.stockCode}</span>
+                          {url ? (
+                            <button
+                              onClick={() => void OpenExternalURL(url)}
+                              className="w-24 shrink-0 truncate text-left font-medium text-[var(--accent)] hover:underline"
+                              title={h.stockName}
+                            >
+                              {h.stockName}
+                            </button>
+                          ) : (
+                            <span className="w-24 shrink-0 truncate font-medium text-[var(--fg)]" title={h.stockName}>
+                              {h.stockName}
+                            </span>
+                          )}
+                          {/* 占比条 */}
+                          <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--surface-secondary)]">
+                            <div
+                              className="h-full rounded-full bg-[var(--accent)]"
+                              style={{ width: `${Math.min(100, h.percent * 5)}%` }}
+                            />
+                          </div>
+                          <span className="quote-num w-16 shrink-0 text-right font-medium text-[var(--fg-secondary)]">
+                            {h.percent.toFixed(2)}%
+                          </span>
+                          <QuoteText
+                            value={h.changePercent}
+                            neutral={stealth}
+                            className="w-20 shrink-0 text-right font-semibold"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : detail.bondHoldings && detail.bondHoldings.length > 0 ? (
+                <>
+                  <div className="mb-1 flex shrink-0 items-center justify-between text-[length:var(--size-font-sm)] font-medium text-[var(--fg)]">
+                    <span>{zhCN.detail.bondHoldingsTitle}</span>
+                    <span className="w-16 text-right text-2xs font-normal text-[var(--fg-muted)]">
+                      {zhCN.detail.holdingPercent}
+                    </span>
+                  </div>
+                  <div className="flex min-h-0 flex-1 flex-col">
+                    {detail.bondHoldings.map((b) => (
                       <div
-                        key={h.stockCode}
+                        key={b.bondCode + b.bondName}
                         className="flex min-h-0 flex-1 items-center gap-3 border-b border-[var(--border-subtle)] text-[length:var(--size-font-sm)] last:border-b-0"
                       >
-                        <span className="quote-num w-16 shrink-0 text-[var(--fg-muted)]">{h.stockCode}</span>
-                        {url ? (
-                          <button
-                            onClick={() => void OpenExternalURL(url)}
-                            className="w-24 shrink-0 truncate text-left font-medium text-[var(--accent)] hover:underline"
-                            title={h.stockName}
-                          >
-                            {h.stockName}
-                          </button>
-                        ) : (
-                          <span className="w-24 shrink-0 truncate font-medium text-[var(--fg)]" title={h.stockName}>
-                            {h.stockName}
-                          </span>
-                        )}
+                        <span className="quote-num w-16 shrink-0 text-[var(--fg-muted)]">{b.bondCode}</span>
+                        <span className="w-28 shrink-0 truncate font-medium text-[var(--fg)]" title={b.bondName}>
+                          {b.bondName}
+                        </span>
                         {/* 占比条 */}
                         <div className="h-2.5 min-w-0 flex-1 overflow-hidden rounded-full bg-[var(--surface-secondary)]">
                           <div
                             className="h-full rounded-full bg-[var(--accent)]"
-                            style={{ width: `${Math.min(100, h.percent * 5)}%` }}
+                            style={{ width: `${Math.min(100, b.percent * 2)}%` }}
                           />
                         </div>
                         <span className="quote-num w-16 shrink-0 text-right font-medium text-[var(--fg-secondary)]">
-                          {h.percent.toFixed(2)}%
+                          {b.percent.toFixed(2)}%
                         </span>
-                        <QuoteText
-                          value={h.changePercent}
-                          neutral={stealth}
-                          className="w-20 shrink-0 text-right font-semibold"
-                        />
                       </div>
-                    );
-                  })}
-                </div>
+                    ))}
+                  </div>
+                </>
               ) : (
-                <div className="py-4 text-center text-2xs text-[var(--fg-muted)]">{zhCN.detail.holdingsEmpty}</div>
+                <>
+                  <div className="mb-1 flex shrink-0 items-center text-[length:var(--size-font-sm)] font-medium text-[var(--fg)]">
+                    <span>{zhCN.detail.holdingsTitle}</span>
+                  </div>
+                  <div className="py-4 text-center text-2xs text-[var(--fg-muted)]">{zhCN.detail.holdingsEmpty}</div>
+                </>
               )}
             </section>
 

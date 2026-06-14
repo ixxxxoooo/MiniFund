@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -181,6 +182,65 @@ func parseHoldings(body string) ([]model.Holding, error) {
 	return holdings, nil
 }
 
+// 债券持仓（f10 zqcc）HTML 解析正则：apidata.content 内含按报告期分块的表格，取最新一期（首个 tbody）。
+var (
+	bondContentRe = regexp.MustCompile(`(?s)content:"((?:\\.|[^"\\])*)"`)
+	bondTbodyRe   = regexp.MustCompile(`(?s)<tbody>(.*?)</tbody>`)
+	bondRowRe     = regexp.MustCompile(`(?s)<tr>(.*?)</tr>`)
+	bondCellRe    = regexp.MustCompile(`(?s)<td[^>]*>(.*?)</td>`)
+	htmlTagRe     = regexp.MustCompile(`<[^>]+>`)
+)
+
+// stripHTML 去除标签并修剪空白。
+func stripHTML(s string) string {
+	return strings.TrimSpace(htmlTagRe.ReplaceAllString(s, ""))
+}
+
+// unescapeJS 还原 apidata 字符串里的转义（\" \/ 与换行制表符）。
+func unescapeJS(s string) string {
+	r := strings.NewReplacer(`\"`, `"`, `\/`, `/`, `\r`, "", `\n`, "", `\t`, "")
+	return r.Replace(s)
+}
+
+// parseBondHoldings 从 f10 债券持仓 HTML 中解析最新一期重仓债券（序号/债券代码/债券名称/占净值比例/市值）。
+func parseBondHoldings(body string) []model.BondHolding {
+	cm := bondContentRe.FindStringSubmatch(body)
+	if len(cm) < 2 {
+		return nil
+	}
+	content := unescapeJS(cm[1])
+	tb := bondTbodyRe.FindStringSubmatch(content) // 首个 tbody 即最新报告期
+	if len(tb) < 2 {
+		return nil
+	}
+	out := make([]model.BondHolding, 0, 10)
+	for _, row := range bondRowRe.FindAllStringSubmatch(tb[1], -1) {
+		cells := bondCellRe.FindAllStringSubmatch(row[1], -1)
+		if len(cells) < 4 {
+			continue
+		}
+		code := stripHTML(cells[1][1])
+		name := stripHTML(cells[2][1])
+		pct, _ := strconv.ParseFloat(strings.TrimSuffix(strings.TrimSpace(stripHTML(cells[3][1])), "%"), 64)
+		if code == "" && name == "" {
+			continue
+		}
+		out = append(out, model.BondHolding{BondCode: code, BondName: name, Percent: pct})
+	}
+	return out
+}
+
+// FetchBondHoldings 拉取基金重仓债券（天天基金 f10 债券持仓 zqcc，最新一期，GBK 编码）。
+// 仅纯债/债券型基金有意义；失败返回错误，由调用方降级（不影响详情主体）。
+func FetchBondHoldings(ctx context.Context, code string) ([]model.BondHolding, error) {
+	url := fmt.Sprintf("https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=zqcc&code=%s&rt=%d", code, time.Now().UnixMilli())
+	body, err := datasource.FetchGBKText(ctx, url, f10Referer)
+	if err != nil {
+		return nil, fmt.Errorf("拉取债券持仓失败: %w", err)
+	}
+	return parseBondHoldings(body), nil
+}
+
 // rawInfoResponse 移动端基金详情信息接口返回结构（标签信息）。
 type rawInfoResponse struct {
 	Datas struct {
@@ -249,6 +309,15 @@ func FetchFundDetail(ctx context.Context, code string) (*model.FundDetail, error
 		}
 	} else {
 		logger.Warn("拉取重仓股失败: code=%s err=%v", code, err)
+	}
+
+	// 纯债/债券型基金通常无股票持仓，补拉重仓债券用于展示（仅在无股票持仓时请求，失败不影响主体）
+	if len(detail.Holdings) == 0 {
+		if bonds, err := FetchBondHoldings(ctx, code); err == nil {
+			detail.BondHoldings = bonds
+		} else {
+			logger.Warn("拉取债券持仓失败: code=%s err=%v", code, err)
+		}
 	}
 
 	// 标签信息（类型/公司/跟踪指数/风险等级/规模）拉取失败同样不影响主体

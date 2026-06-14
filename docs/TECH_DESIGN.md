@@ -120,7 +120,7 @@ stateDiagram-v2
 
 - 状态机基于本地时钟 + 内置 A 股交易日历（`calendar.go`，年度节假日表，周末排除）。
 - 每个状态决定两个轮询任务的开关与周期：
-  - `estimateTask`：自选基金估值（Trading 30s 默认，托盘面板打开时 15s；QDII 排除）。每轮估值后调用 `reconcileEstimates`，用权威历史净值（`latestNavCache`，TTL 5 分钟 + 自选集合变化才重拉，批量 `eastmoney.FetchLatestNavs` 并发 ≤ 8）校正 `fundgz` 滞后：「最新净值」改取历史净值最新一条；估算对应交易日（`gztime` 日期）≤ 最新已确认净值日期时清除过期估算（`HasEstimate=false`）。
+  - `estimateTask`：自选基金估值（Trading 30s 默认，托盘面板打开时 15s；QDII 排除）。每轮估值后调用 `reconcileEstimates`，用权威历史净值（`latestNavCache`，TTL 5 分钟 + 自选集合变化才重拉，批量 `eastmoney.FetchLatestNavs` 并发 ≤ 8）校正 `fundgz` 滞后：「最新净值」改取历史净值最新一条；估算对应交易日（`gztime` 日期）≤ 最新已确认净值日期时清除过期估算（`HasEstimate=false`）。同时把历史净值最新一条的日增长率写入 `FundEstimate.DayGrowth`（`HasDayGrowth=true`），作为自选列表「今日涨幅」在盘后/非交易日的兜底（前端优先实时估算、否则取已公布日涨幅）。
   - `indexTask`：指数行情（Trading 10s，Lunch/盘后按订阅市场降频）
 - `NavConfirm` 任务：每 10 分钟查历史净值接口首条记录，日期为今日则确认净值、发事件、停止该基金查询；同时把该基金估值缓存的最新净值更新为确认值并清除已被取代的盘中估算。
 - 暴露 `Pause()/Resume()`（托盘菜单"暂停监控"）与 `SetInterval()`（设置页）。
@@ -229,7 +229,7 @@ CREATE TABLE alert_log (id INTEGER PRIMARY KEY, rule_id INTEGER, fired_at INTEGE
 // FundService
 SearchFunds(keyword string, limit int) ([]FundIndexItem, error)
 SearchFundsPage(keyword string, pageIndex int) (*FundIndexPage, error) // 排行页就地搜索（本地索引分页，含总数；每页 30 条，匹配名称/代码/拼音/公司前缀）
-GetFundDetail(code string) (*FundDetail, error)          // 详情快照（缓存优先）
+GetFundDetail(code string) (*FundDetail, error)          // 详情快照（缓存优先；含重仓股，纯债基金无股票持仓时含重仓债券 BondHoldings）
 GetNavHistory(code string, page, size int) (*NavPage, error)
 GetFundRanking(fundType, sortKey string, page int) (*RankPage, error)
 GetFundThemes(codes []string) (map[string][]FundTheme, error) // 批量基金→所属主题/概念（30 天缓存，缺失项受限并发拉取）
@@ -289,8 +289,9 @@ OpenDetailWindow(code) / OpenNewsWindow(id, payload) / ShowMainWindow() / HideMa
 | `marketCenter` | 行情中心指数清单 + 选中指数 K 线（借 `market:indexes` 事件驱动列表刷新，K 线按需拉取） | 否（事件驱动 + 按需） |
 | `ui` | 面板开关、选中项、金额隐藏开关（含主窗口当前页，默认「行情中心」） | localStorage（部分） |
 | `columns` | 各表格（排行/主题基金/搜索）列显隐配置 | localStorage |
-| `searchHistory` | 搜索关键字历史（最近 10 条，去重置顶） | localStorage |
+| `searchHistory` | 搜索关键字历史（最近 10 条，去重置顶；支持单条删除/清空） | localStorage |
 | `compare` | 基金对比当前选择 + 历史对比批次（跨页/重开保持） | localStorage |
+| `readNews` | 已读快讯/资讯 id（未读列表项右侧小绿点，点击阅读后消失，最多近 1000 条） | localStorage |
 
 - 数据流约定：**写操作一律调用 bindings → Go 落库 → Go 发事件 → 各窗口 store 更新**，禁止前端先改本地再同步（避免多窗口状态漂移）。
 

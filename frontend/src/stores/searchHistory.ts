@@ -13,6 +13,8 @@ interface SearchHistoryStore {
   items: string[];
   /** 记录一次搜索：已存在则置顶，超出上限截断 */
   push: (keyword: string) => void;
+  /** 删除单条历史 */
+  remove: (keyword: string) => void;
   /** 清空全部历史 */
   clear: () => void;
 }
@@ -26,6 +28,7 @@ export const useSearchHistoryStore = create<SearchHistoryStore>()(
         if (!kw) return;
         set((s) => ({ items: [kw, ...s.items.filter((it) => it !== kw)].slice(0, MAX_HISTORY) }));
       },
+      remove: (keyword) => set((s) => ({ items: s.items.filter((it) => it !== keyword) })),
       clear: () => set({ items: [] }),
     }),
     { name: "minifund-search-history" }

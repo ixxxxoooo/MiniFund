@@ -59,6 +59,8 @@ type FundEstimate struct {
 	EstimateGrowth float64 `json:"estimateGrowth"` // 估算涨跌幅（%）
 	EstimateTime   string  `json:"estimateTime"`   // 估值时间
 	HasEstimate    bool    `json:"hasEstimate"`    // 是否有盘中估值（QDII 等为 false）
+	DayGrowth      float64 `json:"dayGrowth"`      // 已公布最新净值的日涨幅（%，与排行 rzdf 同源，盘后/非交易日的「今日涨幅」兜底）
+	HasDayGrowth   bool    `json:"hasDayGrowth"`   // 是否取到已公布日涨幅
 }
 
 // IndexQuote 指数实时行情。
@@ -114,6 +116,13 @@ type Holding struct {
 	ChangePercent float64 `json:"changePercent"` // 个股当日涨跌幅（%）
 }
 
+// BondHolding 重仓债券（纯债/债券型基金无股票持仓时展示，来自天天基金 f10 债券持仓 zqcc）。
+type BondHolding struct {
+	BondCode string  `json:"bondCode"` // 债券代码
+	BondName string  `json:"bondName"` // 债券名称
+	Percent  float64 `json:"percent"`  // 占净值比例（%）
+}
+
 // ManagerInfo 基金经理信息（含档案数据，来自 pingzhongdata）。
 type ManagerInfo struct {
 	ID       string `json:"id"`       // 经理 ID
@@ -151,6 +160,7 @@ type FundDetail struct {
 	MaxDrawdown    float64      `json:"maxDrawdown"`    // 历史最大回撤（%，由单位净值序列计算，负值如 -23.45）
 	PeriodReturns  []PeriodReturn `json:"periodReturns"` // 阶段涨幅（近1月/近3月/近6月/近1年/近3年/成立来等）
 	Holdings       []Holding    `json:"holdings"`       // 前十重仓股
+	BondHoldings   []BondHolding `json:"bondHoldings"`  // 重仓债券（纯债/债券型基金，股票持仓为空时展示）
 	Managers       []ManagerInfo `json:"managers"`      // 现任基金经理
 	FetchedAt      int64        `json:"fetchedAt"`      // 数据抓取时间（Unix 秒）
 	// 标签信息（来自移动端详情接口）

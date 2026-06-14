@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { ExternalLink, FolderInput, Trash2, Wallet } from "lucide-react";
 import type { WatchItem } from "@bindings/minifund/internal/model";
 import { WindowService } from "@bindings/minifund/services";
-import { CopyButton } from "@/components/fund/fund-list-helpers";
+import { CopyButton, ThemeChips, useFundThemes } from "@/components/fund/fund-list-helpers";
 import { QuoteText } from "@/components/market/QuoteText";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pager } from "@/components/ui/pager";
@@ -85,7 +85,9 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
     },
     todayGrowth: (it) => {
       const est = estimates[it.code];
-      return est?.hasEstimate ? est.estimateGrowth : -Infinity;
+      if (est?.hasEstimate) return est.estimateGrowth;
+      if (est?.hasDayGrowth) return est.dayGrowth;
+      return -Infinity;
     },
     todayProfit: (it) => metrics(it).todayProfit ?? -Infinity,
     marketValue: (it) => metrics(it).marketValue ?? -Infinity,
@@ -113,6 +115,10 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
   const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const pageClamped = Math.min(page, totalPages);
   const pageItems = sorted.slice((pageClamped - 1) * pageSize, pageClamped * pageSize);
+
+  // 当前页基金的所属主题标签（异步加载、带缓存，与排行/搜索同源同配色）
+  const pageCodes = useMemo(() => pageItems.map((it) => it.code), [pageItems]);
+  const themesMap = useFundThemes(pageCodes);
 
   const hidden = hideAmounts || stealth;
   const cols = zhCN.watchlist.columns;
@@ -157,10 +163,13 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
                 onDoubleClick={() => void call("打开详情窗口", () => WindowService.OpenDetailWindow(item.code))}
               >
                 <td className="data-grid-cell">
-                  <div className="flex flex-col py-0.5">
-                    <span className="truncate text-[length:var(--size-font-xs)] text-[var(--fg)]">
-                      {item.name || est?.name || item.code}
-                    </span>
+                  <div className="flex flex-col gap-0.5 py-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 truncate text-[length:var(--size-font-xs)] text-[var(--fg)]">
+                        {item.name || est?.name || item.code}
+                      </span>
+                      <ThemeChips themes={themesMap[item.code]} className="ml-auto" />
+                    </div>
                     <div className="flex items-center gap-1">
                       <span className="quote-num text-2xs text-[var(--fg-muted)]">{item.code}</span>
                       <CopyButton value={item.code} />
@@ -170,6 +179,8 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
                 <td className="data-grid-cell text-right">
                   {est?.hasEstimate ? (
                     <QuoteText value={est.estimateGrowth} neutral={stealth} />
+                  ) : est?.hasDayGrowth ? (
+                    <QuoteText value={est.dayGrowth} neutral={stealth} />
                   ) : (
                     zhCN.watchlist.noEstimate
                   )}

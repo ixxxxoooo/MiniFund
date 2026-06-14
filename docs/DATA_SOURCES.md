@@ -37,6 +37,7 @@ GET https://fundgz.1234567.com.cn/js/{fundCode}.js
 - 交易时段约每分钟更新一次；非交易日返回最近交易日数据。
 - QDII / 部分 FOF 无盘中估值（`gsz` 为空或长期不更新），需在业务层标记。
 - **滞后问题（重要修复）**：`fundgz` 在当日净值正式公布后会**滞后**——`dwjz`（最新净值）可能仍停留在上一交易日，`gsz/gszzl` 仍是已被实际净值取代的盘中估算（周末/节假日尤甚）。因此自选列表「最新净值」「估值净值」「估算涨跌」会与详情页（历史净值）对不上。**校正策略**：调度器每轮估值后用权威历史净值（`f10/lsjz`，与详情页同源）校正——「最新净值」始终取历史净值最新一条；当估算对应交易日（`gztime` 日期）≤ 最新已确认净值日期时，判定估算已过期并清除（自选估值/估算涨跌列显示「—」），仅在盘中（估算交易日尚未确认）保留实时估算。校正按 TTL 5 分钟 + 自选集合变化节流（`internal/scheduler` 的 `reconcileEstimates`/`latestNavCache`，批量历史净值 `eastmoney.FetchLatestNavs`，并发 ≤ 8）。
+- **「今日涨幅」兜底（自选监控修复）**：自选列表「今日涨幅」原仅在有盘中估值（`HasEstimate`）时展示估算涨跌，盘后/非交易日清除估算后该列为空。校正时顺带把权威历史净值最新一条的**日增长率**（`f10/lsjz` 的 `JZZZL`，与排行 `rzdf` 同源）写入 `FundEstimate.DayGrowth`（`HasDayGrowth=true`）。前端「今日涨幅」取值优先盘中估算、否则回退已公布日涨幅，保证每只基金都有今日涨幅。
 
 返回字段：
 
@@ -112,6 +113,19 @@ GET https://fundmobapi.eastmoney.com/FundMNewApi/FundMNInverstPosition?deviceid=
 GET https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=jjcc&code={code}&topline=10&year=&month=
 Header: Referer: https://fundf10.eastmoney.com/
 ```
+
+#### 重仓债券（纯债/债券型基金）
+
+移动端持仓接口仅返回股票持仓，纯债/债券型基金股票持仓为空。无股票持仓时改拉天天基金 f10 **债券持仓**（`zqcc`，GBK 编码的 JS 片段 `var apidata={content:"<table>…"}`）：
+
+```
+GET https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=zqcc&code={code}&rt={ms}
+Header: Referer: https://fundf10.eastmoney.com/
+```
+
+- 解析：取 `apidata.content` 首个 `<tbody>`（最新报告期），逐行取列「债券代码 / 债券名称 / 占净值比例」映射到 `BondHolding{bondCode,bondName,percent}`。
+- 限频/降级：仅在**股票持仓为空**时请求（避免对股票型基金多发一次请求）；失败不影响详情主体（持仓区降级为「暂无持仓数据」）。
+- 展示：详情页持仓区在无股票持仓时标题切换为「重仓债券」，行展示「债券代码 / 债券名称 / 占比条 + 占净值比例」（债券无个股涨跌幅，不展示涨跌列）。
 
 ### 2.4.1 基金交易状态（申购/赎回状态与单日限额）
 
@@ -278,6 +292,7 @@ GET https://qt.gtimg.cn/q=s_sh000001,s_hkHSI,s_usDJI,...
 - 后端 5s 内存缓存合并多窗口/多次事件触发的重复请求；按清单顺序输出并补名称占位。
 - 兜底：腾讯整体失败时回退东财 `ulist.np`（`https://push2.eastmoney.com/api/qt/ulist.np/get?secids=...&fields=f2,f3,f4,f12,f13,f14`），仍失败才报错。
 - **腾讯无符号的指数（韩国KOSPI）**：腾讯轮询跳过这些指数（`Tencent==""`），随后用东财 `ulist.np` 按 `secid` 批量补全实时报价（`eastmoney.FetchIndexQuotesBySecids`，每轮一次小请求）；补全失败仅占位不影响其他指数。
+  - **匹配修正（KOSPI 拉取失败修复）**：全球指数在 `ulist.np` 返回的 `f13`（市场号）/`f12`（代码大小写）可能与请求清单不完全一致，导致按「市场.代码」精确匹配失败、KOSPI 一直占位（拉取数据失败）。`FetchIndexQuotesBySecids` 与东财兜底 `FetchMarketCenterQuotes` 均增加「按代码（忽略大小写）回退匹配到请求清单 `secid`」的逻辑，确保 KOSPI 实时报价能正确回填。
 
 **K 线（主源：腾讯 `web.ifzq.gtimg.cn`）**：
 

@@ -373,6 +373,9 @@ func (s *Scheduler) reconcileEstimates(ctx context.Context, estimates []model.Fu
 		// 以历史净值最新一条作为权威「最新净值」
 		e.PrevNav = rec.Nav
 		e.NavDate = rec.Date
+		// 记录已公布日涨幅（与排行 rzdf 同源），作为盘后/非交易日「今日涨幅」兜底
+		e.DayGrowth = rec.Growth
+		e.HasDayGrowth = true
 		// 估算目标交易日 = 估值时间 gztime 的日期（形如 "2026-06-12 15:00"）。
 		// 该日 ≤ 最新已确认净值日期时，估算已被实际净值取代，应清除。
 		target := ""
@@ -496,6 +499,8 @@ func (s *Scheduler) runNavConfirmRound() {
 				s.lastEstimates[i].HasEstimate = false
 				s.lastEstimates[i].Estimate = 0
 				s.lastEstimates[i].EstimateGrowth = 0
+				s.lastEstimates[i].DayGrowth = latest.Growth
+				s.lastEstimates[i].HasDayGrowth = true
 				break
 			}
 		}

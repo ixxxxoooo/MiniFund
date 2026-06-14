@@ -6,6 +6,49 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
+ * BondHolding 重仓债券（纯债/债券型基金无股票持仓时展示，来自天天基金 f10 债券持仓 zqcc）。
+ */
+export class BondHolding {
+    /**
+     * 债券代码
+     */
+    "bondCode": string;
+
+    /**
+     * 债券名称
+     */
+    "bondName": string;
+
+    /**
+     * 占净值比例（%）
+     */
+    "percent": number;
+
+    /** Creates a new BondHolding instance. */
+    constructor($$source: Partial<BondHolding> = {}) {
+        if (!("bondCode" in $$source)) {
+            this["bondCode"] = "";
+        }
+        if (!("bondName" in $$source)) {
+            this["bondName"] = "";
+        }
+        if (!("percent" in $$source)) {
+            this["percent"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new BondHolding instance from a string or object.
+     */
+    static createFrom($$source: any = {}): BondHolding {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new BondHolding($$parsedSource as Partial<BondHolding>);
+    }
+}
+
+/**
  * BreadthBin 涨跌分布档位。Level 为涨跌幅档（-11 ~ 11，负数下跌；±11 为 >10% 即涨/跌停档）。
  */
 export class BreadthBin {
@@ -95,6 +138,11 @@ export class FundDetail {
     "holdings": Holding[];
 
     /**
+     * 重仓债券（纯债/债券型基金，股票持仓为空时展示）
+     */
+    "bondHoldings": BondHolding[];
+
+    /**
      * 现任基金经理
      */
     "managers": ManagerInfo[];
@@ -178,6 +226,9 @@ export class FundDetail {
         if (!("holdings" in $$source)) {
             this["holdings"] = [];
         }
+        if (!("bondHoldings" in $$source)) {
+            this["bondHoldings"] = [];
+        }
         if (!("managers" in $$source)) {
             this["managers"] = [];
         }
@@ -221,6 +272,7 @@ export class FundDetail {
         const $$createField8_0 = $$createType3;
         const $$createField9_0 = $$createType5;
         const $$createField10_0 = $$createType7;
+        const $$createField11_0 = $$createType9;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("netWorthTrend" in $$parsedSource) {
             $$parsedSource["netWorthTrend"] = $$createField5_0($$parsedSource["netWorthTrend"]);
@@ -234,8 +286,11 @@ export class FundDetail {
         if ("holdings" in $$parsedSource) {
             $$parsedSource["holdings"] = $$createField9_0($$parsedSource["holdings"]);
         }
+        if ("bondHoldings" in $$parsedSource) {
+            $$parsedSource["bondHoldings"] = $$createField10_0($$parsedSource["bondHoldings"]);
+        }
         if ("managers" in $$parsedSource) {
-            $$parsedSource["managers"] = $$createField10_0($$parsedSource["managers"]);
+            $$parsedSource["managers"] = $$createField11_0($$parsedSource["managers"]);
         }
         return new FundDetail($$parsedSource as Partial<FundDetail>);
     }
@@ -285,6 +340,16 @@ export class FundEstimate {
      */
     "hasEstimate": boolean;
 
+    /**
+     * 已公布最新净值的日涨幅（%，与排行 rzdf 同源，盘后/非交易日的「今日涨幅」兜底）
+     */
+    "dayGrowth": number;
+
+    /**
+     * 是否取到已公布日涨幅
+     */
+    "hasDayGrowth": boolean;
+
     /** Creates a new FundEstimate instance. */
     constructor($$source: Partial<FundEstimate> = {}) {
         if (!("code" in $$source)) {
@@ -310,6 +375,12 @@ export class FundEstimate {
         }
         if (!("hasEstimate" in $$source)) {
             this["hasEstimate"] = false;
+        }
+        if (!("dayGrowth" in $$source)) {
+            this["dayGrowth"] = 0;
+        }
+        if (!("hasDayGrowth" in $$source)) {
+            this["hasDayGrowth"] = false;
         }
 
         Object.assign(this, $$source);
@@ -406,7 +477,7 @@ export class FundIndexPage {
      * Creates a new FundIndexPage instance from a string or object.
      */
     static createFrom($$source: any = {}): FundIndexPage {
-        const $$createField0_0 = $$createType9;
+        const $$createField0_0 = $$createType11;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("items" in $$parsedSource) {
             $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
@@ -904,10 +975,10 @@ export class ManagerInfo {
      * Creates a new ManagerInfo instance from a string or object.
      */
     static createFrom($$source: any = {}): ManagerInfo {
-        const $$createField8_0 = $$createType10;
-        const $$createField9_0 = $$createType11;
-        const $$createField10_0 = $$createType10;
-        const $$createField11_0 = $$createType11;
+        const $$createField8_0 = $$createType12;
+        const $$createField9_0 = $$createType13;
+        const $$createField10_0 = $$createType12;
+        const $$createField11_0 = $$createType13;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("powerCategories" in $$parsedSource) {
             $$parsedSource["powerCategories"] = $$createField8_0($$parsedSource["powerCategories"]);
@@ -979,7 +1050,7 @@ export class MarketBreadth {
      * Creates a new MarketBreadth instance from a string or object.
      */
     static createFrom($$source: any = {}): MarketBreadth {
-        const $$createField4_0 = $$createType13;
+        const $$createField4_0 = $$createType15;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("bins" in $$parsedSource) {
             $$parsedSource["bins"] = $$createField4_0($$parsedSource["bins"]);
@@ -1121,7 +1192,7 @@ export class NavPage {
      * Creates a new NavPage instance from a string or object.
      */
     static createFrom($$source: any = {}): NavPage {
-        const $$createField0_0 = $$createType15;
+        const $$createField0_0 = $$createType17;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("items" in $$parsedSource) {
             $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
@@ -1294,7 +1365,7 @@ export class NewsFlash {
      * Creates a new NewsFlash instance from a string or object.
      */
     static createFrom($$source: any = {}): NewsFlash {
-        const $$createField5_0 = $$createType10;
+        const $$createField5_0 = $$createType12;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("stocks" in $$parsedSource) {
             $$parsedSource["stocks"] = $$createField5_0($$parsedSource["stocks"]);
@@ -1678,7 +1749,7 @@ export class RankPage {
      * Creates a new RankPage instance from a string or object.
      */
     static createFrom($$source: any = {}): RankPage {
-        const $$createField0_0 = $$createType17;
+        const $$createField0_0 = $$createType19;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("items" in $$parsedSource) {
             $$parsedSource["items"] = $$createField0_0($$parsedSource["items"]);
@@ -2225,7 +2296,7 @@ export class XrayStock {
      * Creates a new XrayStock instance from a string or object.
      */
     static createFrom($$source: any = {}): XrayStock {
-        const $$createField3_0 = $$createType19;
+        const $$createField3_0 = $$createType21;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("funds" in $$parsedSource) {
             $$parsedSource["funds"] = $$createField3_0($$parsedSource["funds"]);
@@ -2241,17 +2312,19 @@ const $$createType2 = PeriodReturn.createFrom;
 const $$createType3 = $Create.Array($$createType2);
 const $$createType4 = Holding.createFrom;
 const $$createType5 = $Create.Array($$createType4);
-const $$createType6 = ManagerInfo.createFrom;
+const $$createType6 = BondHolding.createFrom;
 const $$createType7 = $Create.Array($$createType6);
-const $$createType8 = FundIndexItem.createFrom;
+const $$createType8 = ManagerInfo.createFrom;
 const $$createType9 = $Create.Array($$createType8);
-const $$createType10 = $Create.Array($Create.Any);
-const $$createType11 = $Create.Array($Create.Any);
-const $$createType12 = BreadthBin.createFrom;
-const $$createType13 = $Create.Array($$createType12);
-const $$createType14 = NavRecord.createFrom;
+const $$createType10 = FundIndexItem.createFrom;
+const $$createType11 = $Create.Array($$createType10);
+const $$createType12 = $Create.Array($Create.Any);
+const $$createType13 = $Create.Array($Create.Any);
+const $$createType14 = BreadthBin.createFrom;
 const $$createType15 = $Create.Array($$createType14);
-const $$createType16 = RankItem.createFrom;
+const $$createType16 = NavRecord.createFrom;
 const $$createType17 = $Create.Array($$createType16);
-const $$createType18 = XrayFundRef.createFrom;
+const $$createType18 = RankItem.createFrom;
 const $$createType19 = $Create.Array($$createType18);
+const $$createType20 = XrayFundRef.createFrom;
+const $$createType21 = $Create.Array($$createType20);

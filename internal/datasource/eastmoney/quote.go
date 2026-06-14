@@ -90,9 +90,13 @@ type rawIndexRealtimeResponse struct {
 // FetchMarketCenterQuotes 拉取行情中心指数清单的实时报价（单请求批量，按清单顺序返回）。
 func FetchMarketCenterQuotes(ctx context.Context) ([]model.MarketIndexQuote, error) {
 	metaBySecid := make(map[string]IndexMeta, len(MarketCenterIndexes))
+	metaByCode := make(map[string]IndexMeta, len(MarketCenterIndexes)) // 代码（大写）→ 元信息，市场号不一致时回退
 	secids := make([]string, 0, len(MarketCenterIndexes))
 	for _, m := range MarketCenterIndexes {
 		metaBySecid[m.Secid] = m
+		if i := strings.LastIndex(m.Secid, "."); i >= 0 {
+			metaByCode[strings.ToUpper(m.Secid[i+1:])] = m
+		}
 		secids = append(secids, m.Secid)
 	}
 
@@ -111,6 +115,12 @@ func FetchMarketCenterQuotes(ctx context.Context) ([]model.MarketIndexQuote, err
 	for _, d := range raw.Data.Diff {
 		secid := fmt.Sprintf("%d.%s", d.Market, d.Code)
 		meta, ok := metaBySecid[secid]
+		if !ok {
+			// 市场号不一致（全球指数常见）时按代码回退匹配，并以清单 secid 为准。
+			if m, ok2 := metaByCode[strings.ToUpper(d.Code)]; ok2 {
+				meta, secid, ok = m, m.Secid, true
+			}
+		}
 		if !ok {
 			continue
 		}
@@ -141,10 +151,19 @@ func FetchMarketCenterQuotes(ctx context.Context) ([]model.MarketIndexQuote, err
 
 // FetchIndexQuotesBySecids 按 secid 列表批量拉取实时报价（ulist.np），返回 secid → 报价。
 // 仅填充价格/涨跌字段（名称、分组由调用方按清单补全），用于腾讯无符号指数（如韩国 KOSPI）的实时补缺。
+// 全球指数（如 KOSPI）在 ulist 返回的 f13 市场号 / f12 代码大小写可能与请求不完全一致，
+// 因此除按「市场.代码」精确匹配外，再按「代码（忽略大小写）」回退匹配到请求的 secid，避免漏填。
 func FetchIndexQuotesBySecids(ctx context.Context, secids []string) (map[string]model.MarketIndexQuote, error) {
 	out := make(map[string]model.MarketIndexQuote, len(secids))
 	if len(secids) == 0 {
 		return out, nil
+	}
+	// 请求代码（大写）→ 请求 secid，用于市场号不一致时按代码回退匹配。
+	codeToReq := make(map[string]string, len(secids))
+	for _, sid := range secids {
+		if i := strings.LastIndex(sid, "."); i >= 0 {
+			codeToReq[strings.ToUpper(sid[i+1:])] = sid
+		}
 	}
 	url := fmt.Sprintf(indexRealtimeAPI, strings.Join(secids, ","), time.Now().UnixMilli())
 	body, err := datasource.FetchText(ctx, url, quoteCenterReferer)
@@ -156,9 +175,13 @@ func FetchIndexQuotesBySecids(ctx context.Context, secids []string) (map[string]
 		return nil, fmt.Errorf("解析指数实时行情失败: %w", err)
 	}
 	for _, d := range raw.Data.Diff {
-		secid := fmt.Sprintf("%d.%s", d.Market, d.Code)
-		out[secid] = model.MarketIndexQuote{
-			Secid:         secid,
+		// 优先用请求清单里的原始 secid 作为键（按代码回退匹配），保证调用方按清单 secid 能取到。
+		key := fmt.Sprintf("%d.%s", d.Market, d.Code)
+		if req, ok := codeToReq[strings.ToUpper(d.Code)]; ok {
+			key = req
+		}
+		out[key] = model.MarketIndexQuote{
+			Secid:         key,
 			Price:         rawNumber(d.Price),
 			Change:        rawNumber(d.Chg),
 			ChangePercent: rawNumber(d.Pct),

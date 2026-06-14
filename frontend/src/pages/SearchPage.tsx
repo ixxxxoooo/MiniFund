@@ -6,6 +6,7 @@ import { AddButton, CopyButton, ThemeChips, useFundPerformance, useFundThemes } 
 import { Badge } from "@/components/ui/badge";
 import { ColumnToggle } from "@/components/ui/column-toggle";
 import { Pager } from "@/components/ui/pager";
+import { SortableHeader } from "@/components/ui/sortable-header";
 import { Spinner } from "@/components/ui/spinner";
 import { QuoteText } from "@/components/market/QuoteText";
 import { zhCN } from "@/i18n/zh-CN";
@@ -89,8 +90,42 @@ const SEARCH_COLUMNS: SearchCol[] = [
   },
 ];
 
-/** 默认隐藏的列（单位净值 / 近6月 / 近2年 / 近3年 / 成立来，避免列过多） */
-const DEFAULT_HIDDEN = ["nav", "month6", "year2", "year3", "since"];
+/** 默认隐藏的列（近6月 / 近2年 / 近3年 / 成立来，避免列过多；单位净值默认展示） */
+const DEFAULT_HIDDEN = ["month6", "year2", "year3", "since"];
+
+/** 列 key → 排序取值（页内排序）；返回 null 的行（数据未补全）恒排末尾 */
+function searchSortValue(item: FundIndexItem, perf: FundPerf | undefined, key: string): number | string | null {
+  switch (key) {
+    case "name":
+      return item.name;
+    case "type":
+      return item.type;
+    case "nav":
+      return perf?.hasNav ? perf.nav : null;
+    case "day":
+      return perf?.hasDay ? perf.dayGrowth : null;
+    case "week":
+      return perf?.hasPeriod ? perf.weekGrowth : null;
+    case "month":
+      return perf?.hasPeriod ? perf.monthGrowth : null;
+    case "month3":
+      return perf?.hasPeriod ? perf.month3 : null;
+    case "month6":
+      return perf?.hasPeriod ? perf.month6 : null;
+    case "year1":
+      return perf?.hasPeriod ? perf.year1 : null;
+    case "year2":
+      return perf?.hasPeriod ? perf.year2 : null;
+    case "year3":
+      return perf?.hasPeriod ? perf.year3 : null;
+    case "ytd":
+      return perf?.hasPeriod ? perf.ytd : null;
+    case "since":
+      return perf?.hasPeriod ? perf.sinceStart : null;
+    default:
+      return null;
+  }
+}
 
 const TABLE_ID = "search";
 
@@ -106,6 +141,7 @@ export function SearchPage({ visible }: { visible: boolean }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const history = useSearchHistoryStore((s) => s.items);
   const pushHistory = useSearchHistoryStore((s) => s.push);
+  const removeHistory = useSearchHistoryStore((s) => s.remove);
   const clearHistory = useSearchHistoryStore((s) => s.clear);
 
   // 输入防抖：停顿 250ms 自动提交搜索
@@ -130,11 +166,11 @@ export function SearchPage({ visible }: { visible: boolean }) {
       {/* 搜索输入框：默认居中放大，搜索时上移并铺满 */}
       <div
         className={cn(
-          "flex h-[var(--size-input)] shrink-0 items-center gap-2 rounded-[var(--radius-input)] border border-[var(--border-subtle)] bg-[var(--surface)] px-3 transition-all duration-300 focus-within:border-[var(--accent)]",
-          searching ? "w-full" : "w-full max-w-xl"
+          "flex shrink-0 items-center gap-2 rounded-[var(--radius-input)] border border-[var(--border-subtle)] bg-[var(--surface)] px-3 transition-all duration-300 focus-within:border-[var(--accent)]",
+          searching ? "h-[var(--size-input)] w-full" : "h-12 w-full max-w-2xl px-4"
         )}
       >
-        <Search size={searching ? 15 : 17} className="shrink-0 text-[var(--fg-muted)]" />
+        <Search size={searching ? 15 : 19} className="shrink-0 text-[var(--fg-muted)]" />
         <input
           ref={inputRef}
           value={input}
@@ -144,7 +180,10 @@ export function SearchPage({ visible }: { visible: boolean }) {
           }}
           onBlur={() => pushHistory(input)}
           placeholder={zhCN.searchPage.placeholder}
-          className="h-full w-full bg-transparent text-[length:var(--size-font-sm)] text-[var(--fg)] outline-none placeholder:text-[var(--fg-muted)]"
+          className={cn(
+            "h-full w-full bg-transparent text-[var(--fg)] outline-none placeholder:text-[var(--fg-muted)]",
+            searching ? "text-[length:var(--size-font-sm)]" : "text-[length:var(--size-font-base)]"
+          )}
         />
         {input && (
           <button
@@ -176,19 +215,31 @@ export function SearchPage({ visible }: { visible: boolean }) {
                   {zhCN.common.clear}
                 </button>
               </div>
-              {/* 搜索记录胶囊：点击回填并触发搜索 */}
+              {/* 搜索记录胶囊：点击回填并触发搜索；悬浮显示删除按钮，配色弱化不抢视觉 */}
               <div className="flex flex-wrap justify-center gap-1.5">
                 {history.map((h) => (
-                  <button
+                  <span
                     key={h}
-                    onClick={() => {
-                      setInput(h);
-                      inputRef.current?.focus();
-                    }}
-                    className="max-w-[180px] truncate rounded-full border border-[var(--border-subtle)] bg-[var(--surface-secondary)] px-2.5 py-1 text-2xs text-[var(--fg-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                    className="group/cap flex max-w-[200px] items-center gap-1 rounded-full bg-[var(--surface-secondary)]/60 py-1 pl-2.5 pr-1.5 text-2xs text-[var(--fg-muted)] transition-colors hover:bg-[var(--surface-secondary)] hover:text-[var(--fg-secondary)]"
                   >
-                    {h}
-                  </button>
+                    <button
+                      onClick={() => {
+                        setInput(h);
+                        inputRef.current?.focus();
+                      }}
+                      className="min-w-0 truncate"
+                    >
+                      {h}
+                    </button>
+                    {/* 删除单条历史：悬浮该胶囊时出现 */}
+                    <button
+                      aria-label={zhCN.common.clear}
+                      onClick={() => removeHistory(h)}
+                      className="shrink-0 rounded-full p-0.5 text-[var(--fg-muted)] opacity-0 transition-opacity hover:text-[var(--danger)] group-hover/cap:opacity-100"
+                    >
+                      <X size={10} />
+                    </button>
+                  </span>
                 ))}
               </div>
             </div>
@@ -217,6 +268,35 @@ function SearchResults({ keyword }: { keyword: string }) {
   const codes = useMemo(() => items.map((it) => it.code), [items]);
   const themesMap = useFundThemes(codes);
   const perfMap = useFundPerformance(codes);
+
+  // 页内排序：因阶段收益按页异步补全（不新增接口），排序作用于当前页已加载数据，
+  // 排序键变化或收益补全后自动重排；点击列头按 降序 → 升序 → 默认 循环。
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
+  const toggleSort = (key: string) => {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDir("desc");
+    } else if (sortDir === "desc") {
+      setSortDir("asc");
+    } else {
+      setSortKey(null);
+      setSortDir(null);
+    }
+  };
+  const sortedItems = useMemo(() => {
+    if (!sortKey || !sortDir) return items;
+    const factor = sortDir === "asc" ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const va = searchSortValue(a, perfMap[a.code], sortKey);
+      const vb = searchSortValue(b, perfMap[b.code], sortKey);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1; // 未补全数据恒排末尾
+      if (vb == null) return -1;
+      if (typeof va === "number" && typeof vb === "number") return (va - vb) * factor;
+      return String(va).localeCompare(String(vb), "zh-CN") * factor;
+    });
+  }, [items, sortKey, sortDir, perfMap]);
 
   const visibleCols = SEARCH_COLUMNS.filter((c) => !hidden.includes(c.key));
   const tableWidth = RANK_W + NAME_W + ACTION_W + visibleCols.reduce((sum, c) => sum + c.width, 0);
@@ -267,17 +347,28 @@ function SearchResults({ keyword }: { keyword: string }) {
             <thead className="sticky top-0 z-10">
               <tr>
                 <th className="data-grid-header border-b text-right">{cols.rank}</th>
-                <th className="data-grid-header border-b">{cols.name}</th>
+                <SortableHeader
+                  label={cols.name}
+                  align="left"
+                  active={sortKey === "name"}
+                  dir={sortKey === "name" ? sortDir : null}
+                  onClick={() => toggleSort("name")}
+                />
                 {visibleCols.map((c) => (
-                  <th key={c.key} className={cn("data-grid-header border-b", c.align === "left" ? "text-left" : "text-right")}>
-                    {c.label}
-                  </th>
+                  <SortableHeader
+                    key={c.key}
+                    label={c.label}
+                    align={c.align === "left" ? "left" : "right"}
+                    active={sortKey === c.key}
+                    dir={sortKey === c.key ? sortDir : null}
+                    onClick={() => toggleSort(c.key)}
+                  />
                 ))}
                 <th className="data-grid-header border-b text-center">{cols.actions}</th>
               </tr>
             </thead>
             <tbody className={cn(loading && "opacity-50")}>
-              {items.map((item, i) => (
+              {sortedItems.map((item, i) => (
                 <SearchRow
                   key={item.code}
                   item={item}
