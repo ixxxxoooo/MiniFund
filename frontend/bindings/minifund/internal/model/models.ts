@@ -417,13 +417,24 @@ export class FundIndexPage {
 
 /**
  * FundPerf 基金阶段收益（用于搜索结果行内异步补全展示）。
- * 今日来自 fundgz 估算涨跌（gszzl），其余周期来自移动端 FundMNPeriodIncrease。
+ * 今日来自 fundgz 估算涨跌（gszzl），单位净值/净值日期同样取自 fundgz；
+ * 其余周期均来自移动端 FundMNPeriodIncrease（同一接口，无需额外请求）。
  */
 export class FundPerf {
     /**
      * 基金代码
      */
     "code": string;
+
+    /**
+     * 单位净值（fundgz dwjz）
+     */
+    "nav": number;
+
+    /**
+     * 净值日期（fundgz jzrq）
+     */
+    "navDate": string;
 
     /**
      * 今日（估算涨跌，%）
@@ -446,14 +457,39 @@ export class FundPerf {
     "month3": number;
 
     /**
+     * 近6月（%）
+     */
+    "month6": number;
+
+    /**
      * 近1年（%）
      */
     "year1": number;
 
     /**
+     * 近2年（%）
+     */
+    "year2": number;
+
+    /**
+     * 近3年（%）
+     */
+    "year3": number;
+
+    /**
      * 今年来（%）
      */
     "ytd": number;
+
+    /**
+     * 成立来（%）
+     */
+    "sinceStart": number;
+
+    /**
+     * 是否取到单位净值
+     */
+    "hasNav": boolean;
 
     /**
      * 是否取到今日估算
@@ -470,6 +506,12 @@ export class FundPerf {
         if (!("code" in $$source)) {
             this["code"] = "";
         }
+        if (!("nav" in $$source)) {
+            this["nav"] = 0;
+        }
+        if (!("navDate" in $$source)) {
+            this["navDate"] = "";
+        }
         if (!("dayGrowth" in $$source)) {
             this["dayGrowth"] = 0;
         }
@@ -482,11 +524,26 @@ export class FundPerf {
         if (!("month3" in $$source)) {
             this["month3"] = 0;
         }
+        if (!("month6" in $$source)) {
+            this["month6"] = 0;
+        }
         if (!("year1" in $$source)) {
             this["year1"] = 0;
         }
+        if (!("year2" in $$source)) {
+            this["year2"] = 0;
+        }
+        if (!("year3" in $$source)) {
+            this["year3"] = 0;
+        }
         if (!("ytd" in $$source)) {
             this["ytd"] = 0;
+        }
+        if (!("sinceStart" in $$source)) {
+            this["sinceStart"] = 0;
+        }
+        if (!("hasNav" in $$source)) {
+            this["hasNav"] = false;
         }
         if (!("hasDay" in $$source)) {
             this["hasDay"] = false;

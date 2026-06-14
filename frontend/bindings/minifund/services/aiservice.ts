@@ -42,3 +42,12 @@ export function InterpretNewsStream(streamID: string, title: string, content: st
 export function SetApp(app: application$0.App | null): $CancellablePromise<void> {
     return $Call.ByID(1691817554, app);
 }
+
+/**
+ * TestConnection 使用当前 AI 配置发起一次最小化请求，校验服务地址/密钥/模型是否可用。
+ * 与启用开关无关：只要配置填写完整即可测试，便于用户在正式启用前确认连通性。
+ * 成功返回提示文案，失败返回具体错误。
+ */
+export function TestConnection(): $CancellablePromise<string> {
+    return $Call.ByID(760206565);
+}

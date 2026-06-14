@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { RankItem, RankPage } from "@bindings/minifund/internal/model";
 import { FundService, WindowService } from "@bindings/minifund/services";
 import { QuoteText } from "@/components/market/QuoteText";
-import { AddButton, ThemeChips, useFundThemes } from "@/components/fund/fund-list-helpers";
+import { AddButton, CopyButton, ThemeChips, useFundThemes } from "@/components/fund/fund-list-helpers";
 import { ColumnToggle } from "@/components/ui/column-toggle";
 import { Pager } from "@/components/ui/pager";
 import { SortableHeader } from "@/components/ui/sortable-header";
@@ -202,7 +202,7 @@ export function RankingPage() {
               {(page?.items ?? []).map((item, i) => (
                 <tr
                   key={item.code}
-                  className="hover:bg-[var(--row-hover)]"
+                  className="group hover:bg-[var(--row-hover)]"
                   onDoubleClick={() => void call("打开详情窗口", () => WindowService.OpenDetailWindow(item.code))}
                 >
                   <td className="data-grid-cell text-right text-[var(--fg-muted)]">
@@ -216,7 +216,10 @@ export function RankingPage() {
                         </span>
                         <ThemeChips themes={themesMap[item.code]} className="ml-auto" />
                       </div>
-                      <span className="quote-num text-2xs text-[var(--fg-muted)]">{item.code}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="quote-num text-2xs text-[var(--fg-muted)]">{item.code}</span>
+                        <CopyButton value={item.code} />
+                      </div>
                     </div>
                   </td>
                   {visibleCols.map((c) => (

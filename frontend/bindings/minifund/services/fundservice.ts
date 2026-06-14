@@ -32,7 +32,8 @@ export function GetFundDetail(code: string): $CancellablePromise<model$0.FundDet
 
 /**
  * GetFundPerformance 批量补全一组基金的阶段收益（code → 收益），供搜索结果行内展示。
- * 今日取 fundgz 估算涨跌（gszzl，单批并发），其余周期取移动端 FundMNPeriodIncrease（受限并发）；
+ * 今日涨跌与单位净值/净值日期取 fundgz（gszzl/dwjz/jzrq，单批并发），
+ * 近1周~成立来各周期取移动端 FundMNPeriodIncrease（受限并发，同一接口一次取齐）；
  * 命中 3 分钟缓存直接返回，单只失败跳过不影响整体。
  */
 export function GetFundPerformance(codes: string[]): $CancellablePromise<{ [_ in string]?: model$0.FundPerf }> {

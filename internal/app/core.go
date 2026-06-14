@@ -1,10 +1,17 @@
 package app
 
 import (
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
+
 	"minifund/internal/datasource"
 	"minifund/internal/datasource/sina"
 	"minifund/internal/datasource/tencent"
 	"minifund/internal/logger"
+	"minifund/internal/model"
 	"minifund/internal/scheduler"
 	"minifund/internal/storage"
 	"minifund/services"
@@ -26,6 +33,10 @@ type core struct {
 	NewsSvc      *services.NewsService
 	AISvc        *services.AIService
 	NotifySvc    *notifications.NotificationService
+
+	// newsPayloads 缓存快讯通知 id → 新闻窗口 base64 载荷，供点击通知时复用打开弹窗
+	newsMu       sync.Mutex
+	newsPayloads map[string]string
 }
 
 // newCore 创建应用核心并装配服务（依赖 Wails 实例的部分延迟到 startup）。
@@ -49,6 +60,7 @@ func newCore() (*core, error) {
 		NewsSvc:      services.NewNewsService(),
 		AISvc:        services.NewAIService(settingsSvc),
 		NotifySvc:    notifications.New(),
+		newsPayloads: make(map[string]string),
 	}
 	logger.Info("所有服务实例创建完成")
 	return c, nil
@@ -74,15 +86,45 @@ func (c *core) startup(wailsApp *application.App) {
 	c.SettingsSvc.SetOnChange(c.Scheduler.RefreshNow)
 
 	// 快讯桌面通知：调度器检测到新快讯时回调，封装 Wails 通知服务
-	c.Scheduler.SetNewsNotifier(func(title, body, id string) {
+	c.Scheduler.SetNewsNotifier(func(title, body string, item model.NewsFlash) {
 		if c.NotifySvc == nil {
 			return
 		}
+		// 预生成新闻窗口载荷（与前端 NewsPage.openNewsWindow 编码一致），
+		// 缓存到 id，并随通知 Data 下发，便于点击通知时直接打开对应弹窗
+		payload := buildNewsWindowPayload(item)
+		c.newsMu.Lock()
+		c.newsPayloads[item.ID] = payload
+		c.newsMu.Unlock()
 		if err := c.NotifySvc.SendNotification(notifications.NotificationOptions{
-			ID: id, Title: title, Body: body,
+			ID: item.ID, Title: title, Body: body,
+			Data: map[string]interface{}{"payload": payload},
 		}); err != nil {
 			logger.Warn("发送桌面通知失败: %v", err)
 		}
+	})
+	// 点击通知：打开对应的新闻详情弹窗（优先用 Data 载荷，回退到 id 缓存）
+	c.NotifySvc.OnNotificationResponse(func(result notifications.NotificationResult) {
+		if result.Error != nil {
+			logger.Warn("处理通知响应失败: %v", result.Error)
+			return
+		}
+		id := result.Response.ID
+		payload, _ := result.Response.UserInfo["payload"].(string)
+		if payload == "" {
+			c.newsMu.Lock()
+			payload = c.newsPayloads[id]
+			c.newsMu.Unlock()
+		}
+		if id == "" || payload == "" {
+			return
+		}
+		// 窗口操作需回主线程执行
+		application.InvokeAsync(func() {
+			if err := c.WindowSvc.OpenNewsWindow(id, payload); err != nil {
+				logger.Warn("点击通知打开新闻窗口失败: %v", err)
+			}
+		})
 	})
 	// 启动时请求一次通知授权（macOS 需用户允许；失败不影响主流程）
 	go func() {
@@ -131,6 +173,44 @@ func (c *core) services() []application.Service {
 		application.NewService(c.AISvc),
 		application.NewService(c.NotifySvc),
 	}
+}
+
+// buildNewsWindowPayload 生成新闻详情窗口的 base64 载荷，编码方式与前端
+// NewsPage.openNewsWindow 完全一致：base64(encodeURIComponent(JSON))，
+// 以便复用 WindowService.OpenNewsWindow 与 NewsWindow 的解码逻辑。
+func buildNewsWindowPayload(item model.NewsFlash) string {
+	data := map[string]string{
+		"kind":    "flash",
+		"id":      item.ID,
+		"title":   item.Title,
+		"time":    item.Time,
+		"url":     fmt.Sprintf("https://finance.eastmoney.com/a/%s.html", item.ID),
+		"summary": item.Summary,
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString([]byte(encodeURIComponent(string(raw))))
+}
+
+// encodeURIComponent 复刻 JS encodeURIComponent 的转义规则：
+// 不转义 A-Z a-z 0-9 以及 -_.!~*'( )，其余按 UTF-8 字节转为 %XX（大写十六进制）。
+func encodeURIComponent(s string) string {
+	const safe = "-_.!~*'()"
+	const hex = "0123456789ABCDEF"
+	var b strings.Builder
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || strings.IndexByte(safe, c) >= 0 {
+			b.WriteByte(c)
+			continue
+		}
+		b.WriteByte('%')
+		b.WriteByte(hex[c>>4])
+		b.WriteByte(hex[c&0x0f])
+	}
+	return b.String()
 }
 
 // shutdown 应用关闭时的资源清理。

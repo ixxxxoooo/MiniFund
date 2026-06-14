@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { ExternalLink, FolderInput, Trash2, Wallet } from "lucide-react";
 import type { WatchItem } from "@bindings/minifund/internal/model";
 import { WindowService } from "@bindings/minifund/services";
+import { CopyButton } from "@/components/fund/fund-list-helpers";
 import { QuoteText } from "@/components/market/QuoteText";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pager } from "@/components/ui/pager";
@@ -18,8 +19,8 @@ import { useSettingsStore } from "@/stores/settings";
 import { useUIStore } from "@/stores/ui";
 import { useWatchlistStore } from "@/stores/watchlist";
 
-/** 自选表格每页条数 */
-const WATCH_PAGE_SIZE = 20;
+/** 自选表格每页条数兜底值（容器高度测量前/异常时使用） */
+const WATCH_PAGE_SIZE_FALLBACK = 20;
 
 interface WatchlistTableProps {
   /** 点击"持仓"按钮回调（弹出持仓编辑） */
@@ -82,7 +83,7 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
       const est = estimates[it.code];
       return est?.hasEstimate ? est.estimate : -Infinity;
     },
-    growth: (it) => {
+    todayGrowth: (it) => {
       const est = estimates[it.code];
       return est?.hasEstimate ? est.estimateGrowth : -Infinity;
     },
@@ -90,11 +91,28 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
     marketValue: (it) => metrics(it).marketValue ?? -Infinity,
   });
 
-  // 分页：默认每页 20 条；条目数变化或翻页越界时自动钳制
+  // 分页：每页条数按表格可视高度自适应（窗口越大每页越多），越界时自动钳制
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [pageSize, setPageSize] = useState(WATCH_PAGE_SIZE_FALLBACK);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const recompute = () => {
+      const headerH = el.querySelector("thead")?.getBoundingClientRect().height ?? 30;
+      const rowH = el.querySelector("tbody tr")?.getBoundingClientRect().height ?? 40;
+      const avail = el.clientHeight - headerH;
+      if (rowH > 0 && avail > 0) setPageSize(Math.max(5, Math.floor(avail / rowH)));
+    };
+    recompute();
+    const ro = new ResizeObserver(recompute);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(sorted.length / WATCH_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const pageClamped = Math.min(page, totalPages);
-  const pageItems = sorted.slice((pageClamped - 1) * WATCH_PAGE_SIZE, pageClamped * WATCH_PAGE_SIZE);
+  const pageItems = sorted.slice((pageClamped - 1) * pageSize, pageClamped * pageSize);
 
   const hidden = hideAmounts || stealth;
   const cols = zhCN.watchlist.columns;
@@ -110,14 +128,14 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
 
   return (
     <>
-    <div className="scroll-always min-h-0 flex-1 overflow-auto rounded-[var(--radius-panel)] border border-[var(--border-subtle)]">
+    <div ref={scrollRef} className="scroll-always min-h-0 flex-1 overflow-auto rounded-[var(--radius-panel)] border border-[var(--border-subtle)]">
       <table className="w-full border-collapse">
         <thead className="sticky top-0 z-10">
           <tr>
             {header("name", cols.name, "left")}
+            {header("todayGrowth", cols.todayGrowth)}
             {header("nav", cols.nav)}
             {header("estimate", cols.estimate)}
-            {header("growth", cols.growth)}
             {header("todayProfit", cols.todayProfit)}
             {header("marketValue", cols.marketValue)}
             <th className="data-grid-header border-b text-center">{cols.actions}</th>
@@ -132,7 +150,7 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
               <tr
                 key={item.code}
                 className={cn(
-                  "hover:bg-[var(--row-hover)]",
+                  "group hover:bg-[var(--row-hover)]",
                   flash === "up" && "quote-flash-up",
                   flash === "down" && "quote-flash-down"
                 )}
@@ -143,8 +161,18 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
                     <span className="truncate text-[length:var(--size-font-xs)] text-[var(--fg)]">
                       {item.name || est?.name || item.code}
                     </span>
-                    <span className="quote-num text-2xs text-[var(--fg-muted)]">{item.code}</span>
+                    <div className="flex items-center gap-1">
+                      <span className="quote-num text-2xs text-[var(--fg-muted)]">{item.code}</span>
+                      <CopyButton value={item.code} />
+                    </div>
                   </div>
+                </td>
+                <td className="data-grid-cell text-right">
+                  {est?.hasEstimate ? (
+                    <QuoteText value={est.estimateGrowth} neutral={stealth} />
+                  ) : (
+                    zhCN.watchlist.noEstimate
+                  )}
                 </td>
                 <td className="data-grid-cell text-right">
                   <div className="flex flex-col items-end py-0.5">
@@ -154,13 +182,6 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
                 </td>
                 <td className="data-grid-cell text-right">
                   {est?.hasEstimate ? formatNav(est.estimate) : zhCN.watchlist.noEstimate}
-                </td>
-                <td className="data-grid-cell text-right">
-                  {est?.hasEstimate ? (
-                    <QuoteText value={est.estimateGrowth} neutral={stealth} />
-                  ) : (
-                    zhCN.watchlist.noEstimate
-                  )}
                 </td>
                 <td className="data-grid-cell text-right">
                   {todayProfit != null ? (
@@ -195,7 +216,7 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
         </tbody>
       </table>
     </div>
-    {sorted.length > WATCH_PAGE_SIZE && (
+    {sorted.length > pageSize && (
       <Pager pageIndex={pageClamped} totalPages={totalPages} onGoto={setPage} />
     )}
     <ConfirmDialog

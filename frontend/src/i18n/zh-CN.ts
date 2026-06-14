@@ -110,6 +110,7 @@ export const zhCN = {
       nav: "净值",
       estimate: "估算净值",
       growth: "估算涨跌",
+      todayGrowth: "今日涨幅",
       todayProfit: "当日预估收益",
       marketValue: "持仓市值",
       actions: "操作",
@@ -146,6 +147,7 @@ export const zhCN = {
     placeholder: "输入基金代码 / 名称 / 拼音首字母 / 基金公司（支持模糊搜索）",
     prompt: "输入关键字搜索基金或基金公司",
     result: "搜索结果",
+    recent: "最近搜索",
     perf: { day: "今日", week: "近1周", month: "近1月", month3: "近3月", year1: "近1年" },
   },
   position: {
@@ -326,6 +328,10 @@ export const zhCN = {
     aiKeyPlaceholder: "sk-...",
     aiModel: "模型名称",
     aiModelPlaceholder: "如 deepseek-chat",
+    aiTest: "测试可用性",
+    aiTestBtn: "测试",
+    aiTesting: "测试中…",
+    aiTestOk: "连接成功",
     behavior: "行为",
     closeAction: "关闭主窗口时",
     closeActionOptions: { hide: "隐藏到托盘", quit: "退出应用" },
@@ -349,6 +355,9 @@ export const zhCN = {
     confirm: "确认",
     cancel: "取消",
     loading: "加载中…",
+    copyCode: "复制代码",
+    copied: "已复制",
+    clear: "清空",
   },
   /** 指数目录（设置页与行情栏共用） */
   indexCatalog: [

@@ -38,7 +38,9 @@ export function BreadthChart({ breadth, compact = false }: BreadthChartProps) {
     return rows.map((r) => ({ ...r, ratio: r.count / max }));
   }, [breadth]);
 
-  const barArea = compact ? 44 : 88;
+  const barArea = compact ? 52 : 96;
+  // 预留柱顶家数文字高度，柱体按剩余空间换算像素高度，保证数字不溢出容器
+  const labelH = compact ? 11 : 14;
 
   return (
     <div className="flex w-full flex-col gap-1">
@@ -53,13 +55,14 @@ export function BreadthChart({ breadth, compact = false }: BreadthChartProps) {
         <span className="text-[var(--fg-muted)]">平 {breadth.flatCount}</span>
         <span className="text-[var(--quote-up)]">涨 {breadth.upCount}</span>
       </div>
-      {/* 分布柱体 */}
+      {/* 分布柱体（家数常显在柱顶，便于核对数据） */}
       <div className="flex items-end gap-[3px]" style={{ height: barArea }}>
         {buckets.map((b, i) => (
-          <div key={i} className="group relative flex h-full flex-1 flex-col items-center justify-end">
+          <div key={i} className="relative flex h-full flex-1 flex-col items-center justify-end">
             <span
               className={cn(
-                "quote-num pointer-events-none absolute -top-3.5 hidden text-2xs group-hover:block",
+                "quote-num pointer-events-none mb-0.5 leading-none",
+                compact ? "text-[9px]" : "text-2xs",
                 b.dir === "up" ? "text-[var(--quote-up)]" : b.dir === "down" ? "text-[var(--quote-down)]" : "text-[var(--fg-muted)]"
               )}
             >
@@ -68,7 +71,7 @@ export function BreadthChart({ breadth, compact = false }: BreadthChartProps) {
             <div
               className="w-full rounded-t-[2px]"
               style={{
-                height: `${Math.max(b.ratio * 100, 2)}%`,
+                height: Math.max(b.ratio * (barArea - labelH), 2),
                 background:
                   b.dir === "up" ? "var(--quote-up)" : b.dir === "down" ? "var(--quote-down)" : "var(--fg-muted)",
                 opacity: b.dir === "flat" ? 0.5 : 0.9,

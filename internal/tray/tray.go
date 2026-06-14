@@ -32,6 +32,8 @@ type Options struct {
 	OnPauseToggle func(paused bool)
 	// OnStealthToggle 菜单"摸鱼模式"勾选回调
 	OnStealthToggle func(stealth bool)
+	// OnRestart 菜单"重启"回调
+	OnRestart func()
 	// StealthChecked 初始摸鱼模式状态
 	StealthChecked bool
 }
@@ -64,6 +66,11 @@ func Setup(app *application.App, opts Options) *Tray {
 		}
 	})
 	menu.AddSeparator()
+	menu.Add("重启 " + version.AppName).OnClick(func(ctx *application.Context) {
+		if opts.OnRestart != nil {
+			opts.OnRestart()
+		}
+	})
 	menu.Add("退出 " + version.AppName).OnClick(func(ctx *application.Context) {
 		app.Quit()
 	})

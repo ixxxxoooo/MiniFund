@@ -3,6 +3,7 @@ import { RefreshCw, Settings } from "lucide-react";
 import { Window } from "@wailsio/runtime";
 import { WindowService } from "@bindings/minifund/services";
 import { BreadthChart } from "@/components/charts/BreadthChart";
+import { CopyButton } from "@/components/fund/fund-list-helpers";
 import { QuoteText } from "@/components/market/QuoteText";
 import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
@@ -152,11 +153,14 @@ export function TrayPanel() {
             return (
               <div
                 key={item.code}
-                className="flex items-center gap-2 border-b border-[var(--border-subtle)] px-2 py-1.5 last:border-b-0 hover:bg-[var(--row-hover)]"
+                className="group flex items-center gap-2 border-b border-[var(--border-subtle)] px-2 py-1.5 last:border-b-0 hover:bg-[var(--row-hover)]"
                 onDoubleClick={() => void call("打开详情窗口", () => WindowService.OpenDetailWindow(item.code))}
               >
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-2xs text-[var(--fg)]">{item.name || item.code}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="truncate text-2xs text-[var(--fg)]">{item.name || item.code}</span>
+                    <CopyButton value={item.code} />
+                  </div>
                   {profit != null && (
                     <span className="quote-num whitespace-nowrap text-2xs text-[var(--fg-muted)]">
                       {formatMoney(profit, hidden)}

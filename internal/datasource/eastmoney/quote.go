@@ -13,9 +13,10 @@ import (
 
 // K 线来源标识。
 const (
-	KSourceTencent = "tencent" // 腾讯（A股主要 + 港股，day/week/month 原生）
-	KSourceSinaCN  = "sinaCN"  // 新浪 A 股指数（北证 50；周/月服务端聚合）
-	KSourceSinaUS  = "sinaUS"  // 新浪美股指数（道指/纳指/标普；周/月服务端聚合）
+	KSourceTencent   = "tencent"   // 腾讯（A股主要 + 港股，day/week/month 原生）
+	KSourceSinaCN    = "sinaCN"    // 新浪 A 股指数（北证 50；周/月服务端聚合）
+	KSourceSinaUS    = "sinaUS"    // 新浪美股指数（道指/纳指/标普；周/月服务端聚合）
+	KSourceEastmoney = "eastmoney" // 东财 push2his（腾讯/新浪均无该指数时使用，如韩国 KOSPI）
 )
 
 // IndexMeta 行情中心指数元信息（名称、分组、东财 secid、腾讯符号、新浪符号与 K 线来源）。
@@ -49,6 +50,8 @@ var MarketCenterIndexes = []IndexMeta{
 	{"100.IXIC", "usIXIC", ".IXIC", KSourceSinaUS, "纳斯达克", "美股"},
 	{"100.NDX", "usNDX", ".NDX", KSourceSinaUS, "纳斯达克100", "美股"},
 	{"100.SPX", "usINX", ".INX", KSourceSinaUS, "标普500", "美股"},
+	// 韩国 KOSPI：腾讯/新浪均无对应符号，实时报价走东财 ulist（100.KS11），K 线走东财兜底。
+	{"100.KS11", "", "", KSourceEastmoney, "韩国KOSPI", "韩国"},
 }
 
 // FindIndexBySecid 按 secid 查找行情中心指数元信息（服务层做主源/兜底切换用）。
@@ -132,6 +135,34 @@ func FetchMarketCenterQuotes(ctx context.Context) ([]model.MarketIndexQuote, err
 	}
 	if len(out) == 0 {
 		return nil, fmt.Errorf("指数实时行情为空")
+	}
+	return out, nil
+}
+
+// FetchIndexQuotesBySecids 按 secid 列表批量拉取实时报价（ulist.np），返回 secid → 报价。
+// 仅填充价格/涨跌字段（名称、分组由调用方按清单补全），用于腾讯无符号指数（如韩国 KOSPI）的实时补缺。
+func FetchIndexQuotesBySecids(ctx context.Context, secids []string) (map[string]model.MarketIndexQuote, error) {
+	out := make(map[string]model.MarketIndexQuote, len(secids))
+	if len(secids) == 0 {
+		return out, nil
+	}
+	url := fmt.Sprintf(indexRealtimeAPI, strings.Join(secids, ","), time.Now().UnixMilli())
+	body, err := datasource.FetchText(ctx, url, quoteCenterReferer)
+	if err != nil {
+		return nil, fmt.Errorf("拉取指数实时行情失败: %w", err)
+	}
+	var raw rawIndexRealtimeResponse
+	if err := json.Unmarshal([]byte(body), &raw); err != nil {
+		return nil, fmt.Errorf("解析指数实时行情失败: %w", err)
+	}
+	for _, d := range raw.Data.Diff {
+		secid := fmt.Sprintf("%d.%s", d.Market, d.Code)
+		out[secid] = model.MarketIndexQuote{
+			Secid:         secid,
+			Price:         rawNumber(d.Price),
+			Change:        rawNumber(d.Chg),
+			ChangePercent: rawNumber(d.Pct),
+		}
 	}
 	return out, nil
 }

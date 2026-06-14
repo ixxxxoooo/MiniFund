@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FundService } from "@bindings/minifund/services";
+import { AIService, FundService } from "@bindings/minifund/services";
 import { Button } from "@/components/ui/button";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
@@ -140,6 +140,7 @@ export function SettingsPage() {
   const update = useSettingsStore((s) => s.update);
   const items = useWatchlistStore((s) => s.items);
   const [indexState, setIndexState] = useState<"idle" | "loading" | "done" | "failed">("idle");
+  const [aiTest, setAiTest] = useState<{ state: "idle" | "loading" | "ok" | "failed"; msg?: string }>({ state: "idle" });
 
   if (!settings) {
     return (
@@ -160,6 +161,17 @@ export function SettingsPage() {
     setIndexState("loading");
     const ok = await call("更新基金代码表", () => FundService.RefreshFundIndex());
     setIndexState(ok !== null ? "done" : "failed");
+  };
+
+  // AI 连接测试：直接调用以捕获后端返回的具体错误信息
+  const handleTestAI = async () => {
+    setAiTest({ state: "loading" });
+    try {
+      const msg = await AIService.TestConnection();
+      setAiTest({ state: "ok", msg: msg || zhCN.settings.aiTestOk });
+    } catch (err) {
+      setAiTest({ state: "failed", msg: err instanceof Error ? err.message : String(err) });
+    }
   };
 
   return (
@@ -285,6 +297,21 @@ export function SettingsPage() {
               placeholder={zhCN.settings.aiModelPlaceholder}
               onChange={(v) => void update({ aiModel: v })}
             />
+          </Row>
+          <Row label={zhCN.settings.aiTest}>
+            <div className="flex items-center gap-2">
+              {aiTest.state === "ok" && (
+                <span className="text-2xs text-[var(--success)]">{aiTest.msg}</span>
+              )}
+              {aiTest.state === "failed" && (
+                <span className="max-w-[220px] truncate text-2xs text-[var(--danger)]" title={aiTest.msg}>
+                  {aiTest.msg}
+                </span>
+              )}
+              <Button size="sm" variant="outline" disabled={aiTest.state === "loading"} onClick={() => void handleTestAI()}>
+                {aiTest.state === "loading" ? zhCN.settings.aiTesting : zhCN.settings.aiTestBtn}
+              </Button>
+            </div>
           </Row>
         </Section>
 

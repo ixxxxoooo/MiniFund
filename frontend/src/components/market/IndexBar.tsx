@@ -11,8 +11,9 @@ export function IndexBar() {
   const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
 
   return (
-    <div className="titlebar-no-drag flex items-center gap-[var(--size-padding)] overflow-hidden">
-      {indexes.slice(0, 5).map((q) => (
+    // 标题栏空间有限：展示全部已选指数，超出部分横向滚动（隐藏滚动条），避免被裁剪后「看不到」
+    <div className="titlebar-no-drag scroll-none flex min-w-0 items-center justify-end gap-[var(--size-padding)] overflow-x-auto">
+      {indexes.map((q) => (
         <div key={q.symbol} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-2xs">
           <span className="text-[var(--fg-secondary)]">{q.name}</span>
           <span className="quote-num text-[var(--fg)]">{q.price.toFixed(2)}</span>

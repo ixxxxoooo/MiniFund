@@ -47,13 +47,16 @@ export function TitleBar({ children, onClose, className }: TitleBarProps) {
 
   return (
     <div
+      // 双击标题栏拖拽区：最大化窗口，已最大化时还原（与 macOS 行为一致）。
+      onDoubleClick={() => void WindowToggleMaximise()}
       className={cn(
         "titlebar-drag flex h-[var(--size-toolbar)] shrink-0 items-center gap-[var(--size-gap)] border-b px-[var(--size-padding)]",
         "border-[var(--toolbar-border)] bg-[var(--toolbar-bg)] vibrancy",
         className
       )}
     >
-      <div className="flex items-center gap-2">
+      {/* 红绿灯按钮：双击不应触发标题栏的最大化切换 */}
+      <div className="flex items-center gap-2" onDoubleClick={(e) => e.stopPropagation()}>
         <TrafficLight color="#ff5f57" onClick={handleClose} label="关闭窗口" />
         <TrafficLight color="#febc2e" onClick={() => void WindowMinimise()} label="最小化" />
         <TrafficLight color="#28c840" onClick={() => void WindowToggleMaximise()} label="最大化" />

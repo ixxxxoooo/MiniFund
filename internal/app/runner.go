@@ -1,12 +1,33 @@
 package app
 
 import (
+	"os"
+	"os/exec"
+	"syscall"
+
 	"minifund/internal/logger"
 	"minifund/internal/tray"
 	"minifund/internal/version"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
+
+// relaunchApp 启动一个新的应用进程（用于「重启」）。调用方随后应退出当前进程。
+// 子进程放入独立进程组并脱离父进程标准流，避免父进程退出时被连带终止。
+func relaunchApp() error {
+	exe, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	cmd := exec.Command(exe)
+	// 独立进程组：父进程退出不会向子进程发送信号
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// 不继承父进程标准流，避免父进程退出后文件描述符关闭导致子进程异常
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	return cmd.Start()
+}
 
 // Run 启动 Wails 应用：装配服务、创建窗口与托盘，进入主循环。
 func Run(resources EmbeddedResources) error {
@@ -60,6 +81,14 @@ func Run(resources EmbeddedResources) error {
 			if err := coreApp.SettingsSvc.Update(current); err != nil {
 				logger.Warn("切换摸鱼模式失败: %v", err)
 			}
+		},
+		OnRestart: func() {
+			logger.Info("收到重启请求，启动新实例并退出当前进程")
+			if err := relaunchApp(); err != nil {
+				logger.Warn("重启失败: %v", err)
+				return
+			}
+			wailsApp.Quit()
 		},
 	})
 

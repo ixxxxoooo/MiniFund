@@ -260,6 +260,7 @@ GetArticleContent(url string) (string, error) // 抓取文章 #ContentBody 正�
 Available() (bool, error)                   // AI 是否启用且配置完整
 InterpretNews(title, content string) (string, error)        // 对单条新闻做解读（非流式，兜底）
 InterpretNewsStream(streamID, title, content string) error  // 流式解读：经 ai:chunk/done/error 事件推送增量
+TestConnection() (string, error)                            // 用当前 AI 配置发起最小请求校验连通性（与启用开关无关）
 SetApp(app *application.App)                // 注入 Wails 实例以发流式事件（装配时调用）
 
 // SettingsService
@@ -270,7 +271,9 @@ Get() (*AppSettings, error) / Update(patch AppSettings) error
 OpenDetailWindow(code) / OpenNewsWindow(id, payload) / ShowMainWindow() / HideMainWindow() / QuitApp()
 ```
 
-- 桌面通知复用 Wails `pkg/services/notifications`：在 `core.go` 注册为服务并 `RequestNotificationAuthorization`，通过 `scheduler.SetNewsNotifier` 注入回调供快讯轮询调用（macOS 需已签名的 .app 包）。
+- 桌面通知复用 Wails `pkg/services/notifications`：在 `core.go` 注册为服务并 `RequestNotificationAuthorization`，通过 `scheduler.SetNewsNotifier(func(title, body string, item model.NewsFlash))` 注入回调供快讯轮询调用（macOS 需已签名的 .app 包）。
+- **通知点击打开新闻弹窗**：发送通知时按前端一致的编码（`base64(encodeURIComponent(JSON))`，`core.go` 内 `buildNewsWindowPayload`/`encodeURIComponent` 复刻）生成新闻窗口载荷，随 `NotificationOptions.Data` 下发并按 id 缓存；`NotifySvc.OnNotificationResponse` 回调中取载荷（优先 `UserInfo`，回退 id 缓存），经 `application.InvokeAsync` 调 `WindowService.OpenNewsWindow` 打开对应弹窗。
+- **托盘「重启」**：`tray.Options.OnRestart` → `runner.relaunchApp()`（`os.Executable` + `exec.Command` 启动新实例）后 `app.Quit()` 退出当前进程。
 
 - 服务注册沿用 MiniDB 装配模式：`internal/app/core.go` 构造服务 → `services()` 返回 `[]application.Service` → `runner.go` 传入 `application.Options`。
 
@@ -285,7 +288,9 @@ OpenDetailWindow(code) / OpenNewsWindow(id, payload) / ShowMainWindow() / HideMa
 | `market` | 指数、板块、监控状态（phase） | 否（事件驱动） |
 | `marketCenter` | 行情中心指数清单 + 选中指数 K 线（借 `market:indexes` 事件驱动列表刷新，K 线按需拉取） | 否（事件驱动 + 按需） |
 | `ui` | 面板开关、选中项、金额隐藏开关（含主窗口当前页，默认「行情中心」） | localStorage（部分） |
-| `columns` | 各表格（排行/主题基金）列显隐配置 | localStorage |
+| `columns` | 各表格（排行/主题基金/搜索）列显隐配置 | localStorage |
+| `searchHistory` | 搜索关键字历史（最近 10 条，去重置顶） | localStorage |
+| `compare` | 基金对比当前选择 + 历史对比批次（跨页/重开保持） | localStorage |
 
 - 数据流约定：**写操作一律调用 bindings → Go 落库 → Go 发事件 → 各窗口 store 更新**，禁止前端先改本地再同步（避免多窗口状态漂移）。
 

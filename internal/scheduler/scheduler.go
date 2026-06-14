@@ -58,8 +58,8 @@ type Scheduler struct {
 
 	// setTrayTitle 托盘标题更新回调（由 app 装配时注入）
 	setTrayTitle func(string)
-	// newsNotify 桌面通知回调（由 app 装配时注入，封装 Wails 通知服务）
-	newsNotify func(title, body, id string)
+	// newsNotify 桌面通知回调（由 app 装配时注入，封装 Wails 通知服务）；item 为触发通知的最新快讯
+	newsNotify func(title, body string, item model.NewsFlash)
 
 	mu            sync.Mutex
 	paused        bool
@@ -105,7 +105,7 @@ func (s *Scheduler) SetTrayTitleUpdater(fn func(string)) {
 }
 
 // SetNewsNotifier 注入桌面通知回调（装配时调用）。
-func (s *Scheduler) SetNewsNotifier(fn func(title, body, id string)) {
+func (s *Scheduler) SetNewsNotifier(fn func(title, body string, item model.NewsFlash)) {
 	s.mu.Lock()
 	s.newsNotify = fn
 	s.mu.Unlock()
@@ -577,7 +577,7 @@ func (s *Scheduler) runNewsRound() {
 		if len(fresh) > 1 {
 			body = fmt.Sprintf("%s（等 %d 条新快讯）", latest.Title, len(fresh))
 		}
-		notify("财经快讯", body, latest.ID)
+		notify("财经快讯", body, latest)
 		logger.Info("推送快讯通知: 新增 %d 条", len(fresh))
 	}
 }

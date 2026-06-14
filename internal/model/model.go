@@ -236,15 +236,23 @@ type RankPage struct {
 }
 
 // FundPerf 基金阶段收益（用于搜索结果行内异步补全展示）。
-// 今日来自 fundgz 估算涨跌（gszzl），其余周期来自移动端 FundMNPeriodIncrease。
+// 今日来自 fundgz 估算涨跌（gszzl），单位净值/净值日期同样取自 fundgz；
+// 其余周期均来自移动端 FundMNPeriodIncrease（同一接口，无需额外请求）。
 type FundPerf struct {
 	Code        string  `json:"code"`        // 基金代码
+	Nav         float64 `json:"nav"`         // 单位净值（fundgz dwjz）
+	NavDate     string  `json:"navDate"`     // 净值日期（fundgz jzrq）
 	DayGrowth   float64 `json:"dayGrowth"`   // 今日（估算涨跌，%）
 	WeekGrowth  float64 `json:"weekGrowth"`  // 近1周（%）
 	MonthGrowth float64 `json:"monthGrowth"` // 近1月（%）
 	Month3      float64 `json:"month3"`      // 近3月（%）
+	Month6      float64 `json:"month6"`      // 近6月（%）
 	Year1       float64 `json:"year1"`       // 近1年（%）
+	Year2       float64 `json:"year2"`       // 近2年（%）
+	Year3       float64 `json:"year3"`       // 近3年（%）
 	Ytd         float64 `json:"ytd"`         // 今年来（%）
+	SinceStart  float64 `json:"sinceStart"`  // 成立来（%）
+	HasNav      bool    `json:"hasNav"`      // 是否取到单位净值
 	HasDay      bool    `json:"hasDay"`      // 是否取到今日估算
 	HasPeriod   bool    `json:"hasPeriod"`   // 是否取到周期收益
 }

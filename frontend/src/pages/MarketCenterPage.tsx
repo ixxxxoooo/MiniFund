@@ -27,12 +27,17 @@ function priceColorClass(changePercent: number, stealth: boolean): string {
   return "text-[var(--quote-flat)]";
 }
 
-/** 成交量友好格式化（亿/万）。 */
-function formatVol(v: number): string {
+/**
+ * 成交量友好格式化（亿/万），并按市场分组附带单位：
+ * A股成交量以「手」计（腾讯/东财口径），港股/美股/韩国以「股」计（新浪/腾讯口径），
+ * 两类量纲不同，显式标注单位避免被误读为同一口径。
+ */
+function formatVol(v: number, group: string): string {
   if (!Number.isFinite(v) || v <= 0) return "—";
-  if (v >= 1e8) return `${(v / 1e8).toFixed(2)}亿`;
-  if (v >= 1e4) return `${(v / 1e4).toFixed(2)}万`;
-  return v.toFixed(0);
+  const unit = group === "A股" ? "手" : "股";
+  if (v >= 1e8) return `${(v / 1e8).toFixed(2)}亿${unit}`;
+  if (v >= 1e4) return `${(v / 1e4).toFixed(2)}万${unit}`;
+  return `${v.toFixed(0)}${unit}`;
 }
 
 /**
@@ -94,7 +99,7 @@ export function MarketCenterPage() {
         { label: zhCN.market.stat.open, value: latest.open.toFixed(2) },
         { label: zhCN.market.stat.high, value: latest.high.toFixed(2) },
         { label: zhCN.market.stat.low, value: latest.low.toFixed(2) },
-        { label: zhCN.market.stat.volume, value: formatVol(latest.volume) },
+        { label: zhCN.market.stat.volume, value: formatVol(latest.volume, selectedQuote?.group ?? "") },
       ]
     : [];
 

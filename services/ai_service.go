@@ -51,6 +51,23 @@ func (s *AIService) Available() (bool, error) {
 	return enabled && strings.TrimSpace(base) != "" && strings.TrimSpace(key) != "" && strings.TrimSpace(mdl) != "", nil
 }
 
+// TestConnection 使用当前 AI 配置发起一次最小化请求，校验服务地址/密钥/模型是否可用。
+// 与启用开关无关：只要配置填写完整即可测试，便于用户在正式启用前确认连通性。
+// 成功返回提示文案，失败返回具体错误。
+func (s *AIService) TestConnection() (string, error) {
+	_, base, key, mdl := s.settings.AIConfig()
+	base, key, mdl = strings.TrimSpace(base), strings.TrimSpace(key), strings.TrimSpace(mdl)
+	if base == "" || key == "" || mdl == "" {
+		return "", fmt.Errorf("请先填写服务地址、API 密钥与模型名称")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if _, err := ai.Chat(ctx, ai.Config{BaseURL: base, APIKey: key, Model: mdl}, "你是连接测试助手。", "请只回复两个字：可用"); err != nil {
+		return "", err
+	}
+	return "连接成功", nil
+}
+
 // buildPrompt 拼接解读用的用户消息（标题 + 正文）。
 func buildPrompt(title, content string) string {
 	user := strings.TrimSpace(title)

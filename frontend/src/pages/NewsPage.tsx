@@ -8,13 +8,14 @@ import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
 import { cn } from "@/lib/utils";
 import { useNewsStore } from "@/stores/news";
+import { useSettingsStore } from "@/stores/settings";
 
 type Tab = "flash" | "roll";
 
 /** 列表每页条数 */
 const PAGE_SIZE = 20;
-/** 快讯自动刷新倒计时（秒） */
-const AUTO_REFRESH_SEC = 10;
+/** 快讯自动刷新倒计时兜底（秒）：设置未加载时使用 */
+const DEFAULT_REFRESH_SEC = 60;
 
 /** 打开新闻独立窗口所需的载荷 */
 interface NewsPayload {
@@ -43,6 +44,8 @@ export function NewsPage() {
   const rollFailed = useNewsStore((s) => s.rollFailed);
   const refreshFlash = useNewsStore((s) => s.refreshFlash);
   const loadRoll = useNewsStore((s) => s.loadRoll);
+  // 快讯自动刷新间隔与「设置 - 快讯拉取间隔」保持一致
+  const refreshSec = useSettingsStore((s) => s.settings?.newsPollSec ?? DEFAULT_REFRESH_SEC);
 
   const [tab, setTab] = useState<Tab>("flash");
   const [refreshing, setRefreshing] = useState(false);
@@ -51,32 +54,32 @@ export function NewsPage() {
 
   // 顶部时钟 + 倒计时（仅快讯页生效）
   const [now, setNow] = useState(() => new Date());
-  const [countdown, setCountdown] = useState(AUTO_REFRESH_SEC);
+  const [countdown, setCountdown] = useState(refreshSec);
 
   useEffect(() => {
     if (tab === "roll") void loadRoll();
   }, [tab, loadRoll]);
 
-  // 快讯页 1 秒心跳：刷新时钟并递减倒计时，归零时自动刷新
+  // 快讯页 1 秒心跳：刷新时钟并递减倒计时，归零时自动刷新（间隔跟随设置）
   useEffect(() => {
     if (tab !== "flash") return;
-    setCountdown(AUTO_REFRESH_SEC);
+    setCountdown(refreshSec);
     const id = window.setInterval(() => {
       setNow(new Date());
       setCountdown((c) => {
         if (c <= 1) {
           void refreshFlash();
-          return AUTO_REFRESH_SEC;
+          return refreshSec;
         }
         return c - 1;
       });
     }, 1000);
     return () => window.clearInterval(id);
-  }, [tab, refreshFlash]);
+  }, [tab, refreshFlash, refreshSec]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    setCountdown(AUTO_REFRESH_SEC);
+    setCountdown(refreshSec);
     if (tab === "flash") await refreshFlash();
     else await loadRoll(true);
     setRefreshing(false);

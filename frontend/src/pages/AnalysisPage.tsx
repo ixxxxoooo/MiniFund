@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Plus, Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowLeftRight, ChevronDown, ChevronRight, History, Plus, Search, Trash2, X } from "lucide-react";
 import type { FundDetail, FundIndexItem, ProfitHistoryPoint, XrayStock } from "@bindings/minifund/internal/model";
 import { FundService, PortfolioService } from "@bindings/minifund/services";
 import { BarChart } from "@/components/charts/BarChart";
@@ -10,6 +10,7 @@ import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
 import { formatMoney, formatNav, formatPercent, formatScale } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useCompareStore, COMPARE_MAX } from "@/stores/compare";
 import { useSettingsStore } from "@/stores/settings";
 import { useUIStore } from "@/stores/ui";
 import { useWatchlistStore } from "@/stores/watchlist";
@@ -228,12 +229,6 @@ const COMPARE_RANGES: { key: keyof typeof zhCN.analysis.compareRange; days: numb
   { key: "y3", days: 1095 },
 ];
 
-// 对比表详情上下文：把已加载的基金详情提供给各单元格，避免逐行透传
-const CompareDetailsContext = createContext<Record<string, FundDetail>>({});
-function useCompareDetail(code: string): FundDetail | undefined {
-  return useContext(CompareDetailsContext)[code];
-}
-
 // 对比表本地文案（不引入 i18n 改动，集中在此便于维护）
 const COMPARE_TEXT = {
   empty: "搜索或从自选中选择 2-6 只基金，对比业绩与净值走势",
@@ -243,7 +238,13 @@ const COMPARE_TEXT = {
   tableTitle: "业绩对比",
   chartTitle: "净值收益率走势对比（起点归一化）",
   metric: "指标",
+  fund: "基金",
   loading: "加载中…",
+  clear: "清空对比",
+  transpose: "切换行列",
+  history: "历史对比",
+  historyEmpty: "暂无历史",
+  fundUnit: "只",
 };
 
 // 阶段收益行：label 展示名，key 对应 PeriodReturn.period（来自 FundMNPeriodIncrease）
@@ -283,20 +284,89 @@ function formatRate(rate: string): string {
   return Number.isFinite(n) ? `${n}%` : s;
 }
 
+/** 对比指标定义：每项返回已格式化的单元格内容，供「列=基金」与「行=基金」两种排布复用 */
+function buildMetrics(stealth: boolean): { label: string; cell: (d: FundDetail) => ReactNode }[] {
+  const q = (v: number | null) =>
+    v == null ? (
+      <span className="text-[var(--fg-muted)]">—</span>
+    ) : (
+      <QuoteText value={v} text={formatPercent(v)} neutral={stealth} />
+    );
+  return [
+    { label: "类型", cell: (d) => d.type || "—" },
+    {
+      label: "最新净值",
+      cell: (d) => {
+        const n = latestNav(d);
+        return n ? (
+          <span className="quote-num">
+            {formatNav(n.nav)}
+            <span className="ml-1 text-2xs text-[var(--fg-muted)]">{n.date.slice(5)}</span>
+          </span>
+        ) : (
+          "—"
+        );
+      },
+    },
+    {
+      label: "日增长率",
+      cell: (d) => q(latestNav(d) ? d.netWorthTrend[d.netWorthTrend.length - 1].growth : null),
+    },
+    ...COMPARE_PERIOD_ROWS.map((row) => ({
+      label: row.label,
+      cell: (d: FundDetail) => {
+        const m = periodMap(d);
+        return q(row.key in m ? m[row.key] : null);
+      },
+    })),
+    { label: "最大回撤", cell: (d) => q(d.maxDrawdown < 0 ? d.maxDrawdown : null) },
+    { label: "基金经理", cell: (d) => d.managers?.[0]?.name || "—" },
+    { label: "基金公司", cell: (d) => d.company || "—" },
+    { label: "申购费率", cell: (d) => formatRate(d.rate) },
+    { label: "规模", cell: (d) => formatScale(Number(d.scale)) },
+    { label: "成立日期", cell: (d) => d.estabDate || "—" },
+  ];
+}
+
 function CompareView() {
   const items = useWatchlistStore((s) => s.items);
   const load = useWatchlistStore((s) => s.load);
   const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
-  const [selected, setSelected] = useState<string[]>([]);
+
+  // 对比选择 / 历史持久化在 store：切换菜单或重开窗口后仍保留
+  const selected = useCompareStore((s) => s.selected);
+  const toggleSel = useCompareStore((s) => s.toggle);
+  const removeSel = useCompareStore((s) => s.remove);
+  const clearSel = useCompareStore((s) => s.clear);
+  const restoreSel = useCompareStore((s) => s.restore);
+  const history = useCompareStore((s) => s.history);
+  const clearHistory = useCompareStore((s) => s.clearHistory);
+
   const [details, setDetails] = useState<Record<string, FundDetail>>({});
   const [rangeDays, setRangeDays] = useState(365);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FundIndexItem[]>([]);
+  // 业绩对比表排布方向：byFund=列基金/行指标（默认），byMetric=行基金/列指标（横向）
+  const [orient, setOrient] = useState<"byFund" | "byMetric">("byFund");
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const historyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 补全已选基金详情（含从持久化恢复的选择）
+  useEffect(() => {
+    selected.forEach((code) => {
+      if (details[code]) return;
+      void call("加载对比基金", () => FundService.GetFundDetail(code)).then((d) => {
+        if (d) setDetails((prev) => ({ ...prev, [code]: d }));
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected]);
 
   // 搜索（防抖 200ms）；空查询时展示自选
   useEffect(() => {
@@ -313,21 +383,28 @@ function CompareView() {
     return () => clearTimeout(timer);
   }, [query]);
 
+  // 选基浮窗 / 历史浮窗失焦自动关闭
+  useEffect(() => {
+    if (!pickerOpen && !historyOpen) return;
+    const handler = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (pickerOpen && pickerRef.current && !pickerRef.current.contains(t)) setPickerOpen(false);
+      if (historyOpen && historyRef.current && !historyRef.current.contains(t)) setHistoryOpen(false);
+    };
+    window.addEventListener("mousedown", handler);
+    return () => window.removeEventListener("mousedown", handler);
+  }, [pickerOpen, historyOpen]);
+
   const toggleFund = useCallback(
     (code: string) => {
-      setSelected((prev) => {
-        if (prev.includes(code)) return prev.filter((c) => c !== code);
-        if (prev.length >= 6) return prev;
-        return [...prev, code];
-      });
-      // 拉取并缓存详情（净值走势 + 阶段收益 + 标签信息）
+      toggleSel(code);
       if (!details[code]) {
         void call("加载对比基金", () => FundService.GetFundDetail(code)).then((d) => {
           if (d) setDetails((prev) => ({ ...prev, [code]: d }));
         });
       }
     },
-    [details]
+    [details, toggleSel]
   );
 
   const series = useMemo<CompareSeries[]>(() => {
@@ -349,9 +426,35 @@ function CompareView() {
     ? results.map((r) => ({ code: r.code, name: r.name }))
     : items.map((it) => ({ code: it.code, name: it.name || it.code }));
 
+  const metrics = useMemo(() => buildMetrics(stealth), [stealth]);
+
+  /** 基金表头单元格（色点 + 名称 + 代码） */
+  const fundHeadCell = (code: string, i: number, center: boolean) => {
+    const d = details[code];
+    return (
+      <div className={cn("flex flex-col", center ? "items-center" : "items-start")}>
+        <div className="flex items-center gap-1">
+          <span
+            className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+            style={{ background: COMPARE_COLORS[i % COMPARE_COLORS.length] }}
+          />
+          <span className="truncate" title={d?.name ?? code}>
+            {d?.name ?? code}
+          </span>
+        </div>
+        <div className="quote-num text-2xs font-normal text-[var(--fg-muted)]">{code}</div>
+      </div>
+    );
+  };
+
+  const cellOf = (code: string, m: { cell: (d: FundDetail) => ReactNode }) => {
+    const d = details[code];
+    return d ? m.cell(d) : <span className="text-[var(--fg-muted)]">…</span>;
+  };
+
   return (
     <div className="scroll-always flex min-h-0 flex-1 flex-col gap-[var(--size-gap)] overflow-y-auto">
-      {/* 已选基金 chips + 添加（搜索/自选） */}
+      {/* 已选基金 chips + 添加（搜索/自选）+ 历史 + 清空 */}
       <div className="flex flex-wrap items-center gap-1.5">
         {selected.map((code, i) => {
           const d = details[code];
@@ -363,7 +466,7 @@ function CompareView() {
               <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: COMPARE_COLORS[i % COMPARE_COLORS.length] }} />
               {d?.name ?? code}
               <button
-                onClick={() => toggleFund(code)}
+                onClick={() => removeSel(code)}
                 className="rounded-full p-0.5 text-[var(--fg-muted)] hover:text-[var(--danger)]"
                 aria-label={zhCN.common.cancel}
               >
@@ -372,11 +475,11 @@ function CompareView() {
             </span>
           );
         })}
-        <div className="relative">
-          <Tooltip content={selected.length >= 6 ? zhCN.analysis.compareMax : zhCN.analysis.compareAdd}>
+        <div className="relative" ref={pickerRef}>
+          <Tooltip content={selected.length >= COMPARE_MAX ? zhCN.analysis.compareMax : zhCN.analysis.compareAdd}>
             <button
               onClick={() => setPickerOpen((o) => !o)}
-              disabled={selected.length >= 6}
+              disabled={selected.length >= COMPARE_MAX}
               className="flex items-center gap-0.5 rounded-full border border-dashed border-[var(--border-color)] px-2 py-0.5 text-2xs text-[var(--fg-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:opacity-40"
             >
               <Plus size={11} />
@@ -406,7 +509,7 @@ function CompareView() {
                 ) : (
                   pickerList.map((it) => {
                     const active = selected.includes(it.code);
-                    const disabled = !active && selected.length >= 6;
+                    const disabled = !active && selected.length >= COMPARE_MAX;
                     return (
                       <button
                         key={it.code}
@@ -427,6 +530,67 @@ function CompareView() {
             </div>
           )}
         </div>
+
+        {/* 历史对比下拉 */}
+        <div className="relative" ref={historyRef}>
+          <Tooltip content={COMPARE_TEXT.history}>
+            <button
+              onClick={() => setHistoryOpen((o) => !o)}
+              className="flex items-center gap-0.5 rounded-full border border-[var(--border-subtle)] px-2 py-0.5 text-2xs text-[var(--fg-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent)]"
+            >
+              <History size={11} />
+              {COMPARE_TEXT.history}
+            </button>
+          </Tooltip>
+          {historyOpen && (
+            <div className="absolute left-0 top-7 z-20 w-72 rounded-[var(--radius-panel)] border border-[var(--border-color)] bg-[var(--surface-elevated)] py-1 shadow-[var(--shadow-md)]">
+              {history.length === 0 ? (
+                <div className="px-3 py-2 text-2xs text-[var(--fg-muted)]">{COMPARE_TEXT.historyEmpty}</div>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between px-3 py-1">
+                    <span className="text-2xs text-[var(--fg-muted)]">{COMPARE_TEXT.history}</span>
+                    <button
+                      onClick={() => clearHistory()}
+                      className="text-2xs text-[var(--fg-muted)] hover:text-[var(--danger)]"
+                    >
+                      {zhCN.common.clear}
+                    </button>
+                  </div>
+                  <div className="max-h-52 overflow-y-auto border-t border-[var(--border-subtle)] pt-1">
+                    {history.map((batch, idx) => (
+                      <button
+                        key={idx}
+                        onClick={() => {
+                          restoreSel(batch);
+                          setHistoryOpen(false);
+                        }}
+                        className="block w-full px-3 py-1.5 text-left text-2xs text-[var(--fg)] hover:bg-[var(--row-hover)]"
+                      >
+                        <span className="quote-num text-[var(--fg-secondary)]">
+                          {batch.length} {COMPARE_TEXT.fundUnit}
+                        </span>
+                        <span className="ml-2 quote-num text-[var(--fg-muted)]">{batch.join(" / ")}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {selected.length > 0 && (
+          <Tooltip content={COMPARE_TEXT.clear}>
+            <button
+              onClick={() => clearSel()}
+              className="flex items-center gap-0.5 rounded-full border border-[var(--border-subtle)] px-2 py-0.5 text-2xs text-[var(--fg-secondary)] hover:border-[var(--danger)] hover:text-[var(--danger)]"
+            >
+              <Trash2 size={11} />
+              {COMPARE_TEXT.clear}
+            </button>
+          </Tooltip>
+        )}
       </div>
 
       {selected.length === 0 ? (
@@ -435,96 +599,83 @@ function CompareView() {
         </div>
       ) : (
         <>
-          {/* 业绩对比表：列=基金，行=指标 */}
+          {/* 业绩对比表：支持列=基金 / 行=基金 两种排布切换 */}
           <div>
-            <div className="mb-1 text-[length:var(--size-font-xs)] text-[var(--fg-secondary)]">
-              {COMPARE_TEXT.tableTitle}
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-[length:var(--size-font-xs)] text-[var(--fg-secondary)]">
+                {COMPARE_TEXT.tableTitle}
+              </span>
+              <Tooltip content={COMPARE_TEXT.transpose}>
+                <button
+                  onClick={() => setOrient((o) => (o === "byFund" ? "byMetric" : "byFund"))}
+                  className="flex items-center gap-0.5 rounded-[var(--radius-btn)] px-2 py-0.5 text-2xs text-[var(--fg-secondary)] hover:bg-[var(--row-hover)] hover:text-[var(--accent)]"
+                >
+                  <ArrowLeftRight size={11} />
+                  {COMPARE_TEXT.transpose}
+                </button>
+              </Tooltip>
             </div>
-            <CompareDetailsContext.Provider value={details}>
             <div className="overflow-x-auto rounded-[var(--radius-panel)] border border-[var(--border-subtle)] bg-[var(--surface)]">
-              <table className="w-full border-collapse text-[length:var(--size-font-xs)]">
-                <thead>
-                  <tr className="bg-[var(--surface-secondary)]">
-                    <th className="sticky left-0 z-10 bg-[var(--surface-secondary)] px-2 py-1.5 text-left font-medium text-[var(--fg-secondary)]">
-                      {COMPARE_TEXT.metric}
-                    </th>
-                    {selected.map((code, i) => {
-                      const d = details[code];
-                      return (
+              {orient === "byFund" ? (
+                <table className="w-full border-collapse text-[length:var(--size-font-xs)]">
+                  <thead>
+                    <tr className="bg-[var(--surface-secondary)]">
+                      <th className="sticky left-0 z-10 bg-[var(--surface-secondary)] px-2 py-1.5 text-left font-medium text-[var(--fg-secondary)]">
+                        {COMPARE_TEXT.metric}
+                      </th>
+                      {selected.map((code, i) => (
                         <th key={code} className="min-w-[120px] px-2 py-1.5 text-center font-medium text-[var(--fg)]">
-                          <div className="flex items-center justify-center gap-1">
-                            <span
-                              className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                              style={{ background: COMPARE_COLORS[i % COMPARE_COLORS.length] }}
-                            />
-                            <span className="truncate" title={d?.name ?? code}>
-                              {d?.name ?? code}
-                            </span>
-                          </div>
-                          <div className="quote-num text-2xs font-normal text-[var(--fg-muted)]">{code}</div>
+                          {fundHeadCell(code, i, true)}
                         </th>
-                      );
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  <InfoRow
-                    label="类型"
-                    selected={selected}
-                    render={(d) => d.type || "—"}
-                  />
-                  <InfoRow
-                    label="最新净值"
-                    selected={selected}
-                    render={(d) => {
-                      const n = latestNav(d);
-                      return n ? (
-                        <span className="quote-num">
-                          {formatNav(n.nav)}
-                          <span className="ml-1 text-2xs text-[var(--fg-muted)]">{n.date.slice(5)}</span>
-                        </span>
-                      ) : (
-                        "—"
-                      );
-                    }}
-                  />
-                  <QuoteRow
-                    label="日增长率"
-                    selected={selected}
-                    stealth={stealth}
-                    value={(d) => latestNav(d) ? d.netWorthTrend[d.netWorthTrend.length - 1].growth : null}
-                  />
-                  {COMPARE_PERIOD_ROWS.map((row) => (
-                    <QuoteRow
-                      key={row.key}
-                      label={row.label}
-                      selected={selected}
-                      stealth={stealth}
-                      value={(d) => {
-                        const m = periodMap(d);
-                        return row.key in m ? m[row.key] : null;
-                      }}
-                    />
-                  ))}
-                  <QuoteRow
-                    label="最大回撤"
-                    selected={selected}
-                    stealth={stealth}
-                    value={(d) => (d.maxDrawdown < 0 ? d.maxDrawdown : null)}
-                  />
-                  <InfoRow label="基金经理" selected={selected} render={(d) => d.managers?.[0]?.name || "—"} />
-                  <InfoRow label="基金公司" selected={selected} render={(d) => d.company || "—"} />
-                  <InfoRow label="申购费率" selected={selected} render={(d) => formatRate(d.rate)} />
-                  <InfoRow
-                    label="规模"
-                    selected={selected}
-                    render={(d) => formatScale(Number(d.scale))}
-                  />
-                  <InfoRow label="成立日期" selected={selected} render={(d) => d.estabDate || "—"} />
-                </tbody>
-              </table>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metrics.map((m) => (
+                      <tr key={m.label} className="border-t border-[var(--border-subtle)]">
+                        <td className="sticky left-0 z-10 whitespace-nowrap bg-[var(--surface)] px-2 py-1.5 text-[var(--fg-secondary)]">
+                          {m.label}
+                        </td>
+                        {selected.map((code) => (
+                          <td key={code} className="px-2 py-1.5 text-center">
+                            {cellOf(code, m)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <table className="w-full border-collapse text-[length:var(--size-font-xs)]">
+                  <thead>
+                    <tr className="bg-[var(--surface-secondary)]">
+                      <th className="sticky left-0 z-10 bg-[var(--surface-secondary)] px-2 py-1.5 text-left font-medium text-[var(--fg-secondary)]">
+                        {COMPARE_TEXT.fund}
+                      </th>
+                      {metrics.map((m) => (
+                        <th key={m.label} className="min-w-[88px] whitespace-nowrap px-2 py-1.5 text-center font-medium text-[var(--fg-secondary)]">
+                          {m.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selected.map((code, i) => (
+                      <tr key={code} className="border-t border-[var(--border-subtle)]">
+                        <td className="sticky left-0 z-10 whitespace-nowrap bg-[var(--surface)] px-2 py-1.5 text-left">
+                          {fundHeadCell(code, i, false)}
+                        </td>
+                        {metrics.map((m) => (
+                          <td key={m.label} className="px-2 py-1.5 text-center">
+                            {cellOf(code, m)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
-            </CompareDetailsContext.Provider>
             {selected.some((c) => !details[c]) && (
               <div className="mt-1 text-2xs text-[var(--fg-muted)]">{COMPARE_TEXT.loading}</div>
             )}
@@ -566,77 +717,5 @@ function CompareView() {
         </>
       )}
     </div>
-  );
-}
-
-/** 对比表中性信息行（类型/经理/公司/费率/规模/日期等） */
-function InfoRow({
-  label,
-  selected,
-  render,
-}: {
-  label: string;
-  selected: string[];
-  render: (d: FundDetail) => ReactNode;
-}) {
-  return (
-    <CompareRow label={label} selected={selected} cell={(d) => render(d)} />
-  );
-}
-
-/** 对比表涨跌行（阶段收益/日增长/最大回撤），统一用 QuoteText 配色 */
-function QuoteRow({
-  label,
-  selected,
-  stealth,
-  value,
-}: {
-  label: string;
-  selected: string[];
-  stealth: boolean;
-  value: (d: FundDetail) => number | null;
-}) {
-  return (
-    <CompareRow
-      label={label}
-      selected={selected}
-      cell={(d) => {
-        const v = value(d);
-        if (v == null) return <span className="text-[var(--fg-muted)]">—</span>;
-        return <QuoteText value={v} text={formatPercent(v)} neutral={stealth} />;
-      }}
-    />
-  );
-}
-
-/** 对比表通用行：首列指标名（sticky），其余列按基金渲染 */
-function CompareRow({
-  label,
-  selected,
-  cell,
-}: {
-  label: string;
-  selected: string[];
-  cell: (d: FundDetail) => ReactNode;
-}) {
-  return (
-    <tr className="border-t border-[var(--border-subtle)]">
-      <td className="sticky left-0 z-10 whitespace-nowrap bg-[var(--surface)] px-2 py-1.5 text-[var(--fg-secondary)]">
-        {label}
-      </td>
-      {selected.map((code) => (
-        <CompareCell key={code} code={code} cell={cell} />
-      ))}
-    </tr>
-  );
-}
-
-/** 单个对比单元格：详情未加载完时占位 */
-function CompareCell({ code, cell }: { code: string; cell: (d: FundDetail) => ReactNode }) {
-  const details = useCompareDetail(code);
-  return (
-    <td className="px-2 py-1.5 text-center">
-      {details ? cell(details) : <span className="text-[var(--fg-muted)]">…</span>}
-    </td>
   );
 }

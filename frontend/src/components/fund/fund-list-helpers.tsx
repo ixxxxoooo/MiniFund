@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Plus } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Copy, Plus } from "lucide-react";
 import type { FundPerf, FundTheme } from "@bindings/minifund/internal/model";
 import { FundService } from "@bindings/minifund/services";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -68,12 +68,12 @@ function chipColorIndex(seed: string): number {
 }
 
 /**
- * 基金所属主题标签：彩色药丸（按主题名稳定取色），最多展示 2 个，多余以 +N 折叠，hover 显示全部。
- * 配色取自 globals.css 的 --chip-* token（规避红/绿，避免与涨跌混淆）。
+ * 基金所属主题标签：彩色药丸（按主题名稳定取色），默认最多展示 2 个，多余以 +N 折叠，hover 显示全部。
+ * max 控制最多展示数量（详情页空间充裕可调大）。配色取自 globals.css 的 --chip-* token（规避红/绿）。
  */
-export function ThemeChips({ themes, className }: { themes?: FundTheme[]; className?: string }) {
+export function ThemeChips({ themes, className, max = 2 }: { themes?: FundTheme[]; className?: string; max?: number }) {
   if (!themes || themes.length === 0) return null;
-  const shown = themes.slice(0, 2);
+  const shown = themes.slice(0, max);
   const rest = themes.length - shown.length;
   return (
     <div
@@ -97,6 +97,75 @@ export function ThemeChips({ themes, className }: { themes?: FundTheme[]; classN
       })}
       {rest > 0 && <span className="shrink-0 text-[10px] text-[var(--fg-muted)]">+{rest}</span>}
     </div>
+  );
+}
+
+/**
+ * 复制文本到剪贴板：优先 navigator.clipboard，降级到隐藏 textarea + execCommand，
+ * 兼容 Wails WebView 非安全上下文。返回是否成功。
+ */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // 落到下方兜底方案
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 复制图标按钮：用于列表基金名称旁，悬浮显示，点击复制基金代码，成功后短暂显示对勾。
+ * 默认随父级 group-hover 显示（父元素需带 `group` 类），可用 alwaysVisible 关闭该行为。
+ */
+export function CopyButton({
+  value,
+  className,
+  alwaysVisible = false,
+}: {
+  value: string;
+  className?: string;
+  alwaysVisible?: boolean;
+}) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  return (
+    <Tooltip content={copied ? zhCN.common.copied : zhCN.common.copyCode}>
+      <button
+        aria-label={zhCN.common.copyCode}
+        onClick={(e) => {
+          e.stopPropagation();
+          void copyText(value).then((ok) => {
+            if (!ok) return;
+            setCopied(true);
+            window.clearTimeout(timer.current);
+            timer.current = window.setTimeout(() => setCopied(false), 1200);
+          });
+        }}
+        className={cn(
+          "shrink-0 rounded-[var(--radius-sm)] p-0.5 text-[var(--fg-muted)] transition-colors hover:bg-[var(--row-selected)] hover:text-[var(--accent)]",
+          !alwaysVisible && "opacity-0 group-hover:opacity-100 focus:opacity-100",
+          className
+        )}
+      >
+        {copied ? <Check size={12} className="text-[var(--quote-up)]" /> : <Copy size={12} />}
+      </button>
+    </Tooltip>
   );
 }
 

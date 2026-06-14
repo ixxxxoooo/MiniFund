@@ -168,7 +168,8 @@ func (s *FundService) GetFundThemes(codes []string) (map[string][]model.FundThem
 }
 
 // GetFundPerformance 批量补全一组基金的阶段收益（code → 收益），供搜索结果行内展示。
-// 今日取 fundgz 估算涨跌（gszzl，单批并发），其余周期取移动端 FundMNPeriodIncrease（受限并发）；
+// 今日涨跌与单位净值/净值日期取 fundgz（gszzl/dwjz/jzrq，单批并发），
+// 近1周~成立来各周期取移动端 FundMNPeriodIncrease（受限并发，同一接口一次取齐）；
 // 命中 3 分钟缓存直接返回，单只失败跳过不影响整体。
 func (s *FundService) GetFundPerformance(codes []string) (map[string]model.FundPerf, error) {
 	result := make(map[string]model.FundPerf)
@@ -233,10 +234,18 @@ func (s *FundService) GetFundPerformance(codes []string) (map[string]model.FundP
 					p.MonthGrowth = r.Value
 				case "3Y":
 					p.Month3 = r.Value
+				case "6Y":
+					p.Month6 = r.Value
 				case "1N":
 					p.Year1 = r.Value
+				case "2N":
+					p.Year2 = r.Value
+				case "3N":
+					p.Year3 = r.Value
 				case "JN":
 					p.Ytd = r.Value
+				case "LN":
+					p.SinceStart = r.Value
 				}
 			}
 			p.HasPeriod = true
@@ -250,7 +259,17 @@ func (s *FundService) GetFundPerformance(codes []string) (map[string]model.FundP
 	defer cancel()
 	if ests, err := eastmoney.FetchEstimates(ctx, missing); err == nil {
 		for _, e := range ests {
-			if p, ok := perfs[e.Code]; ok && e.HasEstimate {
+			p, ok := perfs[e.Code]
+			if !ok {
+				continue
+			}
+			// 单位净值/净值日期来自 fundgz（dwjz/jzrq），与估值同一响应，无需额外请求。
+			if e.PrevNav > 0 {
+				p.Nav = e.PrevNav
+				p.NavDate = e.NavDate
+				p.HasNav = true
+			}
+			if e.HasEstimate {
 				p.DayGrowth = e.EstimateGrowth
 				p.HasDay = true
 			}

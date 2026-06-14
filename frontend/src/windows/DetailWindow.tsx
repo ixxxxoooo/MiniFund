@@ -5,6 +5,7 @@ import type { FundDetail, ManagerInfo, NavPage } from "@bindings/minifund/intern
 import { FundService } from "@bindings/minifund/services";
 import { LineChart } from "@/components/charts/LineChart";
 import { ManagerDialog } from "@/components/fund/ManagerDialog";
+import { ThemeChips, useFundThemes } from "@/components/fund/fund-list-helpers";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { QuoteText } from "@/components/market/QuoteText";
 import { Badge } from "@/components/ui/badge";
@@ -119,6 +120,8 @@ export function DetailWindow({ code }: DetailWindowProps) {
   const estimates = useMarketStore((s) => s.estimates);
   const loadSettings = useSettingsStore((s) => s.load);
   const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
+  // 基金所属主题标签（与排行/搜索同一懒加载来源，带后端缓存）
+  const themesMap = useFundThemes([code]);
 
   const [detail, setDetail] = useState<FundDetail | null>(null);
   const [failed, setFailed] = useState(false);
@@ -260,6 +263,8 @@ export function DetailWindow({ code }: DetailWindowProps) {
               <div className="flex flex-wrap items-center gap-1.5">
                 {detail.type && <Badge variant="secondary">{detail.type}</Badge>}
                 {detail.company && <Badge variant="secondary">{detail.company}</Badge>}
+                {/* 所属主题标签（彩色药丸，最多展示 6 个，hover 显示全部） */}
+                <ThemeChips themes={themesMap[detail.code]} max={6} />
                 {detail.indexName && (
                   <Badge variant="secondary">
                     {zhCN.detail.tags.index} {detail.indexName}

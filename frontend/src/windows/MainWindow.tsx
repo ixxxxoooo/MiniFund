@@ -81,16 +81,15 @@ export function MainWindow() {
     <div className="flex h-full flex-col bg-[var(--surface)]">
       <TitleBar>
         <div className="flex w-full items-center justify-between gap-[var(--size-padding)]">
-          {/* 搜索入口（Cmd+K） */}
-          <button
-            onClick={() => setSearchOpen(true)}
-            className="titlebar-no-drag flex h-[var(--size-input-sm)] w-60 shrink-0 items-center gap-2 rounded-[var(--radius-input)] border border-[var(--border-subtle)] bg-[var(--surface)] px-2 text-2xs text-[var(--fg-muted)] hover:border-[var(--border-color)]"
-          >
-            <Search size={12} />
-            <span className="flex-1 text-left">{zhCN.main.searchPlaceholder}</span>
-            <kbd className="rounded-[var(--radius-sm)] border border-[var(--border-subtle)] px-1">⌘K</kbd>
-          </button>
-          <IndexBar />
+          {/* 应用名称（搜索入口已收敛到侧边栏「搜索」页） */}
+          <span className="flex shrink-0 items-center gap-1.5 text-[length:var(--size-font-sm)] font-semibold text-[var(--fg)]">
+            <CandlestickChart size={14} className="text-[var(--accent)]" />
+            {zhCN.app.name}
+          </span>
+          {/* 指数行情条占据剩余宽度并可收缩，内部横向滚动展示全部已选指数 */}
+          <div className="flex min-w-0 flex-1 justify-end">
+            <IndexBar />
+          </div>
         </div>
       </TitleBar>
 
@@ -123,7 +122,8 @@ export function MainWindow() {
         <main className="flex min-w-0 flex-1 flex-col">
           {page === "market" && <MarketCenterPage />}
           {page === "watchlist" && <WatchlistPage />}
-          {page === "search" && <SearchPage />}
+          {/* 搜索页常驻挂载、非激活时隐藏：切走再回来时上次的关键字与结果仍在 */}
+          <SearchPage visible={page === "search"} />
           {page === "analysis" && <AnalysisPage />}
           {page === "ranking" && <RankingPage />}
           {page === "sectors" && <SectorPage />}

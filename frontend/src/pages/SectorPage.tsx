@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-react";
 import type { RankPage, SectorItem, ThemeDetail } from "@bindings/minifund/internal/model";
 import { MarketService, WindowService } from "@bindings/minifund/services";
+import { CopyButton } from "@/components/fund/fund-list-helpers";
 import { QuoteText } from "@/components/market/QuoteText";
 import { ColumnToggle } from "@/components/ui/column-toggle";
 import { SortableHeader } from "@/components/ui/sortable-header";
@@ -479,13 +480,16 @@ function ThemeFundsView({
               {(page?.items ?? []).map((item) => (
                 <tr
                   key={item.code}
-                  className="hover:bg-[var(--row-hover)]"
+                  className="group hover:bg-[var(--row-hover)]"
                   onDoubleClick={() => void call("打开详情窗口", () => WindowService.OpenDetailWindow(item.code))}
                 >
                   <td className="data-grid-cell">
                     <div className="flex flex-col py-0.5">
                       <span className="truncate text-[length:var(--size-font-xs)] text-[var(--fg)]">{item.name}</span>
-                      <span className="quote-num text-2xs text-[var(--fg-muted)]">{item.code}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="quote-num text-2xs text-[var(--fg-muted)]">{item.code}</span>
+                        <CopyButton value={item.code} />
+                      </div>
                     </div>
                   </td>
                   <td className="data-grid-cell text-right">{formatNav(item.nav)}</td>

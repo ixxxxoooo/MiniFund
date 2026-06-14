@@ -106,7 +106,10 @@ func (s *MarketService) GetMarketCenterQuotes() ([]model.MarketIndexQuote, error
 
 	syms := make([]string, 0, len(eastmoney.MarketCenterIndexes))
 	for _, m := range eastmoney.MarketCenterIndexes {
-		syms = append(syms, m.Tencent)
+		// 跳过无腾讯符号的指数（如韩国 KOSPI），其实时报价稍后由东财补全。
+		if m.Tencent != "" {
+			syms = append(syms, m.Tencent)
+		}
 	}
 	quotes, err := tencent.Source{}.FetchIndexQuotes(ctx, syms)
 	if err != nil {
@@ -127,13 +130,33 @@ func (s *MarketService) GetMarketCenterQuotes() ([]model.MarketIndexQuote, error
 	out := make([]model.MarketIndexQuote, 0, len(eastmoney.MarketCenterIndexes))
 	for _, m := range eastmoney.MarketCenterIndexes {
 		mq := model.MarketIndexQuote{Secid: m.Secid, Name: m.Name, Group: m.Group}
-		if q, ok := bySym[m.Tencent]; ok {
+		if q, ok := bySym[m.Tencent]; ok && m.Tencent != "" {
 			mq.Price = q.Price
 			mq.Change = q.Change
 			mq.ChangePercent = q.ChangePercent
 		}
 		out = append(out, mq)
 	}
+
+	// 腾讯无符号的指数（如韩国 KOSPI）改用东财 ulist 补全实时报价；失败则保留占位（不影响其他指数）。
+	var fillSecids []string
+	for _, m := range eastmoney.MarketCenterIndexes {
+		if m.Tencent == "" {
+			fillSecids = append(fillSecids, m.Secid)
+		}
+	}
+	if len(fillSecids) > 0 {
+		if filled, ferr := eastmoney.FetchIndexQuotesBySecids(ctx, fillSecids); ferr == nil {
+			for i := range out {
+				if q, ok := filled[out[i].Secid]; ok {
+					out[i].Price = q.Price
+					out[i].Change = q.Change
+					out[i].ChangePercent = q.ChangePercent
+				}
+			}
+		}
+	}
+
 	s.quoteCache.set("center-quotes", out)
 	return out, nil
 }
@@ -170,6 +193,8 @@ func (s *MarketService) GetIndexKline(secid, period string) ([]model.Kline, erro
 		if kl, err := (sina.Source{}).FetchUSIndexKline(ctx, meta.Sina, period, limit); err == nil && len(kl) >= 2 {
 			list = kl
 		}
+	case eastmoney.KSourceEastmoney:
+		// 韩国 KOSPI 等无腾讯/新浪源的指数：直接走下方东财 push2his 兜底。
 	default:
 		if meta.Tencent != "" {
 			if kl, err := (tencent.Source{}).FetchIndexKline(ctx, meta.Tencent, period, limit); err == nil && len(kl) >= 2 {
