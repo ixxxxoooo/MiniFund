@@ -6,6 +6,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { useMarketCenterStore, type KlinePeriod } from "@/stores/marketCenter";
 import { useSettingsStore } from "@/stores/settings";
 import { zhCN } from "@/i18n/zh-CN";
+import { quoteDirection } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const PERIODS: { id: KlinePeriod; label: string }[] = [
@@ -13,6 +14,18 @@ const PERIODS: { id: KlinePeriod; label: string }[] = [
   { id: "week", label: zhCN.market.period.week },
   { id: "month", label: zhCN.market.period.month },
 ];
+
+/**
+ * 指数点位/数值的着色类：随涨跌方向与涨跌幅同色（红涨绿跌跟随 token）。
+ * stealth（摸鱼模式）下统一中性色，不暴露涨跌。
+ */
+function priceColorClass(changePercent: number, stealth: boolean): string {
+  if (stealth) return "text-[var(--quote-flat)]";
+  const dir = quoteDirection(changePercent);
+  if (dir === "up") return "text-[var(--quote-up)]";
+  if (dir === "down") return "text-[var(--quote-down)]";
+  return "text-[var(--quote-flat)]";
+}
 
 /** 成交量友好格式化（亿/万）。 */
 function formatVol(v: number): string {
@@ -119,7 +132,7 @@ export function MarketCenterPage() {
                       {q.name}
                     </span>
                     <span className="flex shrink-0 flex-col items-end leading-tight">
-                      <span className="quote-num text-2xs text-[var(--fg)]">
+                      <span className={cn("quote-num text-2xs", priceColorClass(q.changePercent, stealth))}>
                         {q.price > 0 ? q.price.toFixed(2) : "—"}
                       </span>
                       <QuoteText value={q.changePercent} neutral={stealth} className="text-2xs" />
@@ -149,7 +162,7 @@ export function MarketCenterPage() {
             </div>
             {selectedQuote && selectedQuote.price > 0 ? (
               <div className="flex items-baseline gap-3">
-                <span className="quote-num text-xl font-semibold leading-none text-[var(--fg)]">
+                <span className={cn("quote-num text-xl font-semibold leading-none", priceColorClass(headPct, stealth))}>
                   {selectedQuote.price.toFixed(2)}
                 </span>
                 <QuoteText

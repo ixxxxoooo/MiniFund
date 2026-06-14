@@ -6,6 +6,7 @@ import { SearchPalette } from "@/components/fund/SearchPalette";
 import { Tooltip } from "@/components/ui/tooltip";
 import { MarketCenterPage } from "@/pages/MarketCenterPage";
 import { WatchlistPage } from "@/pages/WatchlistPage";
+import { SearchPage } from "@/pages/SearchPage";
 import { AnalysisPage } from "@/pages/AnalysisPage";
 import { RankingPage } from "@/pages/RankingPage";
 import { SectorPage } from "@/pages/SectorPage";
@@ -24,6 +25,7 @@ import { useUIStore, type PageId } from "@/stores/ui";
 const NAV_ITEMS: { id: PageId; label: string; icon: React.ReactNode }[] = [
   { id: "market", label: zhCN.nav.market, icon: <CandlestickChart size={14} /> },
   { id: "watchlist", label: zhCN.nav.watchlist, icon: <LayoutGrid size={14} /> },
+  { id: "search", label: zhCN.nav.search, icon: <Search size={14} /> },
   { id: "analysis", label: zhCN.nav.analysis, icon: <LineChart size={14} /> },
   { id: "ranking", label: zhCN.nav.ranking, icon: <ListOrdered size={14} /> },
   { id: "sectors", label: zhCN.nav.sectors, icon: <BarChart3 size={14} /> },
@@ -121,6 +123,7 @@ export function MainWindow() {
         <main className="flex min-w-0 flex-1 flex-col">
           {page === "market" && <MarketCenterPage />}
           {page === "watchlist" && <WatchlistPage />}
+          {page === "search" && <SearchPage />}
           {page === "analysis" && <AnalysisPage />}
           {page === "ranking" && <RankingPage />}
           {page === "sectors" && <SectorPage />}

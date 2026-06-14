@@ -36,6 +36,7 @@ GET https://fundgz.1234567.com.cn/js/{fundCode}.js
 - 返回 JSONP：`jsonpgz({...});`，需正则提取 JSON 体。
 - 交易时段约每分钟更新一次；非交易日返回最近交易日数据。
 - QDII / 部分 FOF 无盘中估值（`gsz` 为空或长期不更新），需在业务层标记。
+- **滞后问题（重要修复）**：`fundgz` 在当日净值正式公布后会**滞后**——`dwjz`（最新净值）可能仍停留在上一交易日，`gsz/gszzl` 仍是已被实际净值取代的盘中估算（周末/节假日尤甚）。因此自选列表「最新净值」「估值净值」「估算涨跌」会与详情页（历史净值）对不上。**校正策略**：调度器每轮估值后用权威历史净值（`f10/lsjz`，与详情页同源）校正——「最新净值」始终取历史净值最新一条；当估算对应交易日（`gztime` 日期）≤ 最新已确认净值日期时，判定估算已过期并清除（自选估值/估算涨跌列显示「—」），仅在盘中（估算交易日尚未确认）保留实时估算。校正按 TTL 5 分钟 + 自选集合变化节流（`internal/scheduler` 的 `reconcileEstimates`/`latestNavCache`，批量历史净值 `eastmoney.FetchLatestNavs`，并发 ≤ 8）。
 
 返回字段：
 
@@ -138,24 +139,35 @@ Referer: https://fund.eastmoney.com/ztjj/default.html
 ```
 
 - **数据源切换（重要修复）**：原先直连 `push2.eastmoney.com/api/qt/clist/get` 拉板块行情。实测桌面端 Go 客户端请求 push2 会在 **TLS 握手成功后被反爬静默断连（`EOF`）**，且无论补全 `Referer`/`ut` token/Cookie/浏览器请求头/HTTP1.1 均无法绕过（同一客户端访问 `fund.eastmoney.com`/`fundmobapi.eastmoney.com`/`api.fund.eastmoney.com` 均正常，浏览器访问 push2 也正常 —— 即 push2/quote 边缘对非浏览器客户端做了指纹拦截）。故改用**天天基金「主题基金」页（ztjj）同款、且主机可达**的 `api.fund.eastmoney.com/ztjj/GetZTJJListNew`。
-- 参数：`tt` 板块类别 —— `0` 全部 / `001002` 行业 / `001003` 概念；`dt=syl` 涨幅；`st` 周期同时也是返回值字段名 —— `D` 今日 / `W` 近1周 / `M` 近1月 / `Q` 近3月 / `SY` 今年来（`Y` 为近1年）；`pn=500` 一次取全。**注意：该接口忽略 `dt=zjlr`**（资金流入与涨幅返回完全相同的涨幅值），资金流入需另用 push2delay（见下）。
+- 参数：`tt` 板块类别 —— `0` 全部 / `001002` 行业 / `001003` 概念；`dt` 数据类型 —— `syl` 涨幅 / `zjlr` 资金流入；`st` 周期同时也是返回值字段名 —— 涨幅模式 `D` 今日 / `W` 近1周 / `M` 近1月 / `Q` 近3月 / `SY` 今年来（`Y` 为近1年）；`pn=500` 一次取全。
+- **资金流入模式（重要更正）**：早期误判为「该接口忽略 `dt=zjlr`」。实测真正用法是 `dt=zjlr` 必须配合 `st=FLOW`（今日）/ `FLOW_W`（近1周）/ `FLOW_M`（近1月）/ `FLOW_Q`（近3月），返回的值字段名即 `FLOW`/`FLOW_W`/...，单位为元（主力资金净流入）。若仍传 `st=D` 则会回退为涨幅值，故此前才误以为「忽略 zjlr」。资金流入与涨幅同源、同为 ztjj 主题代码体系（`BK000xxx`），因此「按资金流入」视图点击主题可直接进入主题相关基金列表（无需再走 push2delay 的标准板块码）。
 - 返回 `{"Data":[{"INDEXCODE":"BK000651","INDEXNAME":"光模块","M":6.1}, ...]}`：`INDEXCODE` 主题代码、`INDEXNAME` 主题名、值字段名随 `st` 变化。值可能为数字、`"--"` 或 `null`，解析层（`parseZTJJ`/`rawNumber`）用 `RawMessage` 容错为 0；兼容纯 JSON 与 JSONP 包装。
 - **五档合并**：一个类别需 5 次请求（`st=D`/`W`/`M`/`Q`/`SY`）按 `INDEXCODE` 合并为 `ChangePercent`/`Week`/`Month`/`Month3`/`Ytd`。首档（今日）失败则整体失败，其余档失败仅该档为 0。顺序串行、按今日涨幅降序建序。
 - CPO/PCB/**光模块**/算力/液冷/存储芯片 等热门主题均在其中，覆盖了 push2 时代「缺热门主题」的诉求。
 - **阶段说明**：热力页「按涨幅」提供 今日/近1周/近1月/近3月/今年来 五档，按所选阶段涨幅降序着色（红涨绿跌跟随主题 token）。
 
-#### 2.6.1 板块资金流入（东财 `push2delay`，「按资金流入」排序）
+#### 2.6.1 板块资金流入（与「按涨幅」同源 ztjj，`dt=zjlr` + 周期 `st`）
 
 ```
-GET https://push2delay.eastmoney.com/api/qt/clist/get?fid=f62&po=1&np=1&pz=200&pn=1&fs={过滤}&fields=f12,f14,f3,f62&_={毫秒时间戳}
-Referer: https://data.eastmoney.com/
+GET https://api.fund.eastmoney.com/ztjj/GetZTJJListNew?tt={类别}&dt=zjlr&st={FLOW|FLOW_W|FLOW_M|FLOW_Q}&pi=1&pn=500&_={毫秒时间戳}
+Referer: https://fund.eastmoney.com/ztjj/default.html
 ```
 
-- **可达性**：普通 `push2` 对桌面端 Go 请求会被反爬静默断连，但**延迟行情站点 `push2delay.eastmoney.com` 可达**，用于取标准行业/概念板块的主力资金净流入排行。
-- 参数：`fs` 过滤串 —— 行业 `m:90+t:2` / 概念 `m:90+t:3` / 全部 `m:90+t:2,m:90+t:3`；`fid=f62` 按主力净流入排序。
-- 返回 `data.diff`（对象 `{"0":{...}}` 或数组两种形态，解析层兼容）：`f12` 板块代码、`f14` 名称、`f3` 今日涨幅（**百分数 ×100，需 ÷100**）、`f62` 主力净流入（元）。实现见 `internal/datasource/eastmoney/moneyflow.go` 的 `FetchSectorMoneyFlow`，按净流入降序。
-- ⚠️ **代码体系差异**：push2delay 标准板块码为 `BK0xxx`，与 ztjj 主题码 `BK000xxx` **不互通**。故「按资金流入」视图为独立的标准板块列表，点击格子用系统浏览器打开东财板块页 `https://quote.eastmoney.com/bk/90.{BK代码}.html`（不进入主题基金列表）。
-- **点击主题 → 相关基金（重要）**：点击热力格子直接进入「主题相关基金」列表，按主题代码 `BKxxxxxx` 调用 `api.fund.eastmoney.com/ZTJJ/GetBKRelTopicFundNew?tp={BK代码}&isbuy=1&sort={排序键}&sorttype={DESC|ASC}&pageindex=N&pagesize=50`（即天天基金 `fund.eastmoney.com/ztjj/#!curr/{BK代码}/fst/DESC` 同款接口）。返回 `{"Data":[{FCODE,SHORTNAME,DWJZ,RZDF,SYL_Z/Y/3Y/6Y/1N/2N/3N/JN/LN,SYRQ,...}],"TotalCount":n}`，字段多为数字（可能为 `null`），复用 `RankItem/RankPage` 解析；排序键 `RZDF`(日)/`SYL_Z`(周)/`SYL_Y`(月)/`SYL_3Y`(近3月)/`SYL_6Y`(近6月)/`SYL_1N`(近1年)/`SYL_JN`(今年来)。配套 `GetBKDetailInfoNew?tp={BK代码}` 提供主题自身各周期涨幅与排名（暂作展示备用）。
+- **数据源切换（重要修复）**：原「按资金流入」走 `push2delay.eastmoney.com` 取标准行业/概念板块（代码 `BK0xxx`），与 ztjj 主题码 `BK000xxx` 不互通，导致点击只能用浏览器打开东财板块页、无法进入主题相关基金，且主题集与「按涨幅」不一致。现统一改用与「按涨幅」同源的 `GetZTJJListNew`，仅把 `dt` 切为 `zjlr`。
+- **阶段（新增）**：资金流入支持四档周期——`FLOW` 实时（今日）/ `FLOW_W` 近1周 / `FLOW_M` 近1月 / `FLOW_Q` 近3月，返回值字段名与 `st` 同名（单位：元）。前端阶段键 `now/week/month/m3` 经 `FetchSectorMoneyFlow(kind, stage)` 映射到上述 `st`；无「今年来」档。`FLOW_M`/`FLOW_Q` 接口返回顺序不稳定，实现层统一按净流入降序。
+- 返回 `{"Data":[{"INDEXCODE":"BK000047","INDEXNAME":"有色金属","FLOW":14487557760.0}, ...]}`：`INDEXCODE` 主题代码（与涨幅视图一致）、`INDEXNAME` 主题名、`FLOW/FLOW_W/FLOW_M/FLOW_Q` 对应周期主力净流入（元）。实现见 `internal/datasource/eastmoney/sector.go` 的 `FetchSectorMoneyFlow`。`moneyflow.go`（push2delay 方案）已删除。
+- **统一点击行为**：两种排序（涨幅 / 资金流入）的主题均为 `BK000xxx`，点击热力格子统一进入「主题相关基金」列表（不再有「资金流入只能开网页」的差异）。
+
+#### 2.6.2 主题相关基金与主题详情（ztjj `GetBKRelTopicFundNew` / `GetBKDetailInfoNew`）
+
+```
+GET https://api.fund.eastmoney.com/ZTJJ/GetBKRelTopicFundNew?tp={BK代码}&isbuy=1&sort={排序键}&sorttype={DESC|ASC}&pageindex=N&pagesize=50&_={毫秒}
+GET https://api.fund.eastmoney.com/ZTJJ/GetBKDetailInfoNew?tp={BK代码}&_={毫秒}
+Referer: https://fund.eastmoney.com/ztjj/default.html
+```
+
+- **相关基金（`GetBKRelTopicFundNew`）**：即天天基金 `fund.eastmoney.com/ztjj/#!syl/Y/curr/{BK代码}/fst/DESC` 同款接口，**分页**（`pageindex`/`pagesize`，单页 50 条）。返回 `{"Data":[{FCODE,SHORTNAME,DWJZ,RZDF,SYL_Z/Y/3Y/6Y/1N/2N/3N/JN/LN,SYRQ,...}],"TotalCount":n}`，字段多为数字（可能为 `null`），复用 `RankItem/RankPage` 解析；排序键 `RZDF`(日)/`SYL_Z`(周)/`SYL_Y`(月)/`SYL_3Y`(近3月)/`SYL_6Y`(近6月)/`SYL_1N`(近1年)/`SYL_JN`(今年来)。`isbuy=1` 仅可购买（如光模块 462 只），`isbuy=0` 含全部（495 只）。前端按 `TotalCount/50` 计算页数、翻页预取，完整覆盖全部相关基金（解决「数据不全」）。
+- **主题详情（`GetBKDetailInfoNew`，主题相关基金页顶部面板）**：返回主题自身各周期涨幅与同类排名 `{"Data":{"D","W","M","Q","Y","SY","RANKW","RANKM","RANKQ","RANKY","RANKSY","WSC","MSC","QSC","YSC","SYSC","SEC_CODE","SEC_NAME"}}`。映射 `model.ThemeDetail`：`D`→日涨幅（无排名）、`W/M/Q/Y/SY`→近1周/近1月/近3月/近1年/今年来涨幅、`RANK*`→同类排名、`*SC`→同类总数。实现见 `sector.go` 的 `FetchThemeDetail`/`parseThemeDetail`，服务层 `MarketService.GetThemeDetail`（60s 缓存），前端在主题相关基金页顶部以「涨幅 + 排名 x/总数」展示。
 
 ### 2.7 主题基金（按板块找基金）
 
@@ -251,7 +263,7 @@ Header: Referer: https://finance.sina.com.cn/
 > - 新浪源仅提供日线，**周/月线由服务端聚合**（开取区间首日、收取末日、高低取极值、量累计，涨跌幅按相邻收盘推算），实现见 `internal/datasource/sina/kline.go`。
 > - 东财 `push2his` 保留为最后兜底（多数情况下被反爬，基本不生效）。
 
-**指数清单（secid ↔ 腾讯符号）**：上证 `1.000001`/`sh000001`、深证成指 `0.399001`/`sz399001`、创业板指 `0.399006`/`sz399006`、科创50 `1.000688`/`sh000688`、北证50 `0.899050`/`bj899050`、沪深300 `1.000300`/`sh000300`、上证50 `1.000016`/`sh000016`、中证500 `1.000905`/`sh000905`、中证1000 `1.000852`/`sh000852`、恒生 `100.HSI`/`hkHSI`、国企 `100.HSCEI`/`hkHSCEI`、道琼斯 `100.DJIA`/`usDJI`、纳斯达克 `100.NDX`/`usIXIC`、标普500 `100.SPX`/`usINX`。
+**指数清单（secid ↔ 腾讯符号）**：上证 `1.000001`/`sh000001`、深证成指 `0.399001`/`sz399001`、创业板指 `0.399006`/`sz399006`、科创50 `1.000688`/`sh000688`、北证50 `0.899050`/`bj899050`、沪深300 `1.000300`/`sh000300`、上证50 `1.000016`/`sh000016`、中证500 `1.000905`/`sh000905`、中证1000 `1.000852`/`sh000852`、恒生 `100.HSI`/`hkHSI`、国企 `100.HSCEI`/`hkHSCEI`、道琼斯 `100.DJIA`/`usDJI`、纳斯达克 `100.IXIC`/`usIXIC`、纳斯达克100 `100.NDX`/`usNDX`、标普500 `100.SPX`/`usINX`。
 
 **批量实时报价（主源：腾讯 `qt.gtimg.cn`）**：
 

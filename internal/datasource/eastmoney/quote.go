@@ -46,7 +46,8 @@ var MarketCenterIndexes = []IndexMeta{
 	{"100.HSI", "hkHSI", "", KSourceTencent, "恒生指数", "港股"},
 	{"100.HSCEI", "hkHSCEI", "", KSourceTencent, "国企指数", "港股"},
 	{"100.DJIA", "usDJI", ".DJI", KSourceSinaUS, "道琼斯", "美股"},
-	{"100.NDX", "usIXIC", ".IXIC", KSourceSinaUS, "纳斯达克", "美股"},
+	{"100.IXIC", "usIXIC", ".IXIC", KSourceSinaUS, "纳斯达克", "美股"},
+	{"100.NDX", "usNDX", ".NDX", KSourceSinaUS, "纳斯达克100", "美股"},
 	{"100.SPX", "usINX", ".INX", KSourceSinaUS, "标普500", "美股"},
 }
 

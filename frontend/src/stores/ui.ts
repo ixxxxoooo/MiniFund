@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 /** 主窗口页面标识 */
-export type PageId = "market" | "watchlist" | "analysis" | "ranking" | "sectors" | "news" | "settings";
+export type PageId = "market" | "watchlist" | "search" | "analysis" | "ranking" | "sectors" | "news" | "settings";
 
 interface UIStore {
   /** 当前页面 */
