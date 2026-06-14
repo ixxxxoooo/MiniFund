@@ -16,18 +16,18 @@ jobs:
     runs-on: macos-14
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 安装 Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
 
       - name: 安装 Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
 
       - name: 启用 pnpm
         run: corepack enable
@@ -53,7 +53,7 @@ jobs:
         run: wails3 task dmg:darwin ARCH=arm64
 
       - name: 上传产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: macos-dmg
           path: bin/*.dmg
@@ -67,18 +67,18 @@ jobs:
         shell: bash
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: 安装 Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
 
       - name: 安装 Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
 
       - name: 启用 pnpm
         run: corepack enable
@@ -118,7 +118,7 @@ jobs:
           7z a "MiniFund-${{ steps.ver.outputs.version }}-windows-amd64.zip" ./dist-zip/*
 
       - name: 上传产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: windows-zip
           path: MiniFund-*-windows-amd64.zip
@@ -130,7 +130,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: 下载所有产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: artifacts
 
@@ -140,29 +140,36 @@ jobs:
           find artifacts -type f \( -name '*.dmg' -o -name '*.zip' \) -exec cp {} release/ \;
           ls -la release
 
-      - name: 发布 Release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: release/*
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          body: |
-            ## MiniFund ${{ github.ref_name }}
+      - name: 准备发布说明
+        run: |
+          cat > release_body.md <<EOF
+          ## MiniFund ${GITHUB_REF_NAME}
 
-            > 基金监控桌面工具。估值为估算值，仅供参考，不构成投资建议。
+          > 基金监控桌面工具。估值为估算值，仅供参考，不构成投资建议。
 
-            ### 下载
-            - **macOS (Apple Silicon)**：`MiniFund-*-arm64.dmg`
-            - **Windows (x64)**：`MiniFund-*-windows-amd64.zip`
+          ### 下载
+          - **macOS (Apple Silicon)**：\`MiniFund-*-arm64.dmg\`
+          - **Windows (x64)**：\`MiniFund-*-windows-amd64.zip\`
 
-            ### macOS 首次打开（重要）
-            本应用未做 Apple 付费公证，下载后会被 Gatekeeper 拦截（提示「已损坏」）。
-            打开 DMG 后，双击其中的 **「解除安全限制.command」**，或在终端执行：
-            ```bash
-            xattr -dr com.apple.quarantine /Applications/MiniFund.app
-            ```
-            详见 DMG 内「首次打开必读.txt」。
+          ### macOS 首次打开（重要）
+          本应用未做 Apple 付费公证，下载后会被 Gatekeeper 拦截（提示「已损坏」）。
+          打开 DMG 后，双击其中的 **「解除安全限制.command」**，或在终端执行：
+          \`\`\`bash
+          xattr -dr com.apple.quarantine /Applications/MiniFund.app
+          \`\`\`
+          详见 DMG 内「首次打开必读.txt」。
 
-            ### Windows 首次运行
-            若 SmartScreen 拦截，点击「更多信息」→「仍要运行」。
-            如缺少 WebView2 运行时，请到微软官网安装。详见 ZIP 内「首次运行说明.txt」。
+          ### Windows 首次运行
+          若 SmartScreen 拦截，点击「更多信息」→「仍要运行」。
+          如缺少 WebView2 运行时，请到微软官网安装。详见 ZIP 内「首次运行说明.txt」。
+          EOF
+
+      - name: 创建 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" release/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "MiniFund ${GITHUB_REF_NAME}" \
+            --notes-file release_body.md \
+            --verify-tag
