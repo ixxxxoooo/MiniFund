@@ -1,0 +1,168 @@
+name: Release
+
+# 发布构建：推送形如 v1.2.3 的标签时，自动构建 macOS DMG 与 Windows EXE，
+# 并创建 GitHub Release 上传产物。
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: 构建 macOS DMG (arm64)
+    runs-on: macos-14
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 启用 pnpm
+        run: corepack enable
+
+      - name: 读取 Wails 版本
+        id: env
+        run: |
+          source project.env
+          echo "wails=$WAILS_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: 安装 wails3 CLI
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@${{ steps.env.outputs.wails }}
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: 将标签版本写入 project.env
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -i.bak "s/^APP_VERSION=.*/APP_VERSION=$VERSION/" project.env && rm -f project.env.bak
+          echo "构建版本：$VERSION"
+
+      - name: 构建 DMG
+        run: wails3 task dmg:darwin ARCH=arm64
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: bin/*.dmg
+          if-no-files-found: error
+
+  windows:
+    name: 构建 Windows EXE (amd64)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 启用 pnpm
+        run: corepack enable
+
+      - name: 校验 C 编译器（CGO + go-sqlite3 必需）
+        run: gcc --version
+
+      - name: 读取 Wails 版本
+        id: env
+        run: |
+          source project.env
+          echo "wails=$WAILS_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: 安装 wails3 CLI
+        run: |
+          go install github.com/wailsapp/wails/v3/cmd/wails3@${{ steps.env.outputs.wails }}
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: 解析版本号
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: 将标签版本写入 project.env
+        run: |
+          sed -i.bak "s/^APP_VERSION=.*/APP_VERSION=${{ steps.ver.outputs.version }}/" project.env && rm -f project.env.bak
+
+      - name: 构建 EXE
+        env:
+          CGO_ENABLED: "1"
+        run: wails3 task build:windows ARCH=amd64
+
+      - name: 打包 ZIP（含首次运行说明）
+        run: |
+          mkdir -p dist-zip
+          cp bin/minifund.exe "dist-zip/MiniFund.exe"
+          cp "build/windows/首次运行说明.txt" "dist-zip/首次运行说明.txt"
+          7z a "MiniFund-${{ steps.ver.outputs.version }}-windows-amd64.zip" ./dist-zip/*
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-zip
+          path: MiniFund-*-windows-amd64.zip
+          if-no-files-found: error
+
+  release:
+    name: 创建 GitHub Release
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载所有产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 整理发布文件
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.dmg' -o -name '*.zip' \) -exec cp {} release/ \;
+          ls -la release
+
+      - name: 发布 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            ## MiniFund ${{ github.ref_name }}
+
+            > 基金监控桌面工具。估值为估算值，仅供参考，不构成投资建议。
+
+            ### 下载
+            - **macOS (Apple Silicon)**：`MiniFund-*-arm64.dmg`
+            - **Windows (x64)**：`MiniFund-*-windows-amd64.zip`
+
+            ### macOS 首次打开（重要）
+            本应用未做 Apple 付费公证，下载后会被 Gatekeeper 拦截（提示「已损坏」）。
+            打开 DMG 后，双击其中的 **「解除安全限制.command」**，或在终端执行：
+            ```bash
+            xattr -dr com.apple.quarantine /Applications/MiniFund.app
+            ```
+            详见 DMG 内「首次打开必读.txt」。
+
+            ### Windows 首次运行
+            若 SmartScreen 拦截，点击「更多信息」→「仍要运行」。
+            如缺少 WebView2 运行时，请到微软官网安装。详见 ZIP 内「首次运行说明.txt」。

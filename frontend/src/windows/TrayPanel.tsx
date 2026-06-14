@@ -159,7 +159,7 @@ export function TrayPanel() {
                 <div className="flex min-w-0 flex-1 flex-col">
                   <div className="flex items-center gap-1">
                     <span className="truncate text-2xs text-[var(--fg)]">{item.name || item.code}</span>
-                    <CopyButton value={item.code} />
+                    <CopyButton value={item.code} name={item.name} />
                   </div>
                   {profit != null && (
                     <span className="quote-num whitespace-nowrap text-2xs text-[var(--fg-muted)]">

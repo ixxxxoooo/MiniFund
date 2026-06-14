@@ -3,7 +3,7 @@
  * 与 internal/scheduler/scheduler.go 中的事件名保持一致。
  */
 import { EventsOn } from "./runtime";
-import type { FundEstimate, IndexQuote, MonitorState, NewsFlash } from "@bindings/minifund/internal/model";
+import type { FundEstimate, IndexQuote, MarketIndexQuote, MonitorState, NewsFlash } from "@bindings/minifund/internal/model";
 
 /**
  * 当日净值确认事件载荷。
@@ -31,6 +31,11 @@ export function onEstimates(cb: (data: FundEstimate[]) => void): () => void {
 /** 订阅指数行情刷新 */
 export function onIndexes(cb: (data: IndexQuote[]) => void): () => void {
   return EventsOn("market:indexes", cb);
+}
+
+/** 订阅行情中心指数刷新（调度器每 30s 主动推送 A股/港股/美股/韩国清单，全天候） */
+export function onMarketCenter(cb: (data: MarketIndexQuote[]) => void): () => void {
+  return EventsOn("market:center", cb);
 }
 
 /** 订阅当日净值确认 */

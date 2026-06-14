@@ -13,8 +13,8 @@ import (
 // rawSearchResponse 东财搜索接口（FundSearchAPI）返回结构，仅取所属主题（ZTJJInfo）。
 type rawSearchResponse struct {
 	Datas []struct {
-		CODE      string `json:"CODE"`
-		ZTJJInfo  []struct {
+		CODE     string `json:"CODE"`
+		ZTJJInfo []struct {
 			TTYPE     string `json:"TTYPE"`     // 主题代码 BKxxxxxx
 			TTYPENAME string `json:"TTYPENAME"` // 主题名称
 		} `json:"ZTJJInfo"`

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { Kline, MarketIndexQuote } from "@bindings/minifund/internal/model";
 import { MarketService } from "@bindings/minifund/services";
 import { call, getLastCallError } from "@/lib/wails/call";
-import { onIndexes } from "@/lib/wails/events";
+import { onMarketCenter } from "@/lib/wails/events";
 
 /** K 线周期 */
 export type KlinePeriod = "day" | "week" | "month";
@@ -22,8 +22,10 @@ interface MarketCenterStore {
   klineError: string | null;
   /** 初始化：拉取列表 + 订阅指数事件驱动刷新（仅首次生效） */
   init: () => void;
-  /** 拉取指数实时报价列表 */
+  /** 拉取指数实时报价列表（窗口初始化用） */
   loadQuotes: () => Promise<void>;
+  /** 应用一批指数报价（初始化拉取与事件推送共用：更新列表 + 首次默认选中） */
+  applyQuotes: (list: MarketIndexQuote[]) => void;
   /** 拉取当前选中指数 + 周期的 K 线 */
   loadKline: () => Promise<void>;
   /** 选中指数 */
@@ -46,17 +48,22 @@ export const useMarketCenterStore = create<MarketCenterStore>()((set, get) => ({
     if (initialized) return;
     initialized = true;
     void get().loadQuotes();
-    // 借指数行情推送事件驱动列表刷新：后端 5s 缓存合并重复请求，前端不自行 setInterval 轮询（遵守架构约定）。
-    onIndexes(() => {
-      void get().loadQuotes();
+    // 调度器每 30s 主动拉取并广播行情中心指数（全天候，覆盖美股/韩国盘外时段）；
+    // 前端直接消费推送 payload，不自行 setInterval 轮询 binding（遵守架构约定）。
+    onMarketCenter((list) => {
+      if (list && list.length > 0) get().applyQuotes(list);
     });
   },
 
   loadQuotes: async () => {
     const list = await call("加载行情中心指数", () => MarketService.GetMarketCenterQuotes());
     if (!list) return;
+    get().applyQuotes(list);
+  },
+
+  applyQuotes: (list) => {
     set({ quotes: list });
-    // 首次加载默认选中第一个并拉取其 K 线
+    // 首次有数据时默认选中第一个并拉取其 K 线
     if (!get().selected && list.length > 0) {
       set({ selected: list[0].secid });
       void get().loadKline();

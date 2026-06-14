@@ -35,9 +35,14 @@ export function useFundThemes(codes: string[]): Record<string, FundTheme[] | und
   return map;
 }
 
+/** 收益分批拉取的批大小：大结果集（搜索全量排序）分批合并，表格渐进填充并实时重排。 */
+const PERF_CHUNK = 40;
+
 /**
  * 批量补全一组基金的阶段收益（code → 收益：今日/近1周/近1月/近3月/近1年/今年来）。
  * codes 变化时增量合并；后端命中 3 分钟缓存，翻页几乎零等待。
+ * codes 较多时（如搜索页全量排序，最多 300 只）按 PERF_CHUNK 分批顺序拉取，
+ * 每批返回即合并，表格随之渐进填充并自动重排，避免一次性长等待。
  */
 export function useFundPerformance(codes: string[]): Record<string, FundPerf | undefined> {
   const [map, setMap] = useState<Record<string, FundPerf | undefined>>({});
@@ -45,10 +50,15 @@ export function useFundPerformance(codes: string[]): Record<string, FundPerf | u
   useEffect(() => {
     if (codes.length === 0) return;
     let cancelled = false;
-    void call("加载基金收益", () => FundService.GetFundPerformance(codes)).then((res) => {
-      if (cancelled || !res) return;
-      setMap((prev) => ({ ...prev, ...res }));
-    });
+    void (async () => {
+      for (let i = 0; i < codes.length; i += PERF_CHUNK) {
+        if (cancelled) return;
+        const chunk = codes.slice(i, i + PERF_CHUNK);
+        const res = await call("加载基金收益", () => FundService.GetFundPerformance(chunk));
+        if (cancelled || !res) continue;
+        setMap((prev) => ({ ...prev, ...res }));
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -129,28 +139,33 @@ export async function copyText(text: string): Promise<boolean> {
 }
 
 /**
- * 复制图标按钮：用于列表基金名称旁，悬浮显示，点击复制基金代码，成功后短暂显示对勾。
+ * 复制图标按钮：用于列表基金名称旁，悬浮显示，点击复制，成功后短暂显示对勾。
+ * 传入 name 时复制「名称 代码」（便于粘贴后一眼识别），否则仅复制 value（代码）。
  * 默认随父级 group-hover 显示（父元素需带 `group` 类），可用 alwaysVisible 关闭该行为。
  */
 export function CopyButton({
   value,
+  name,
   className,
   alwaysVisible = false,
 }: {
   value: string;
+  name?: string;
   className?: string;
   alwaysVisible?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  // 复制内容：有名称则「名称 代码」，否则仅代码
+  const text = name ? `${name} ${value}` : value;
   return (
     <Tooltip content={copied ? zhCN.common.copied : zhCN.common.copyCode}>
       <button
         aria-label={zhCN.common.copyCode}
         onClick={(e) => {
           e.stopPropagation();
-          void copyText(value).then((ok) => {
+          void copyText(text).then((ok) => {
             if (!ok) return;
             setCopied(true);
             window.clearTimeout(timer.current);

@@ -57,17 +57,27 @@ func TestSearchFundsPage(t *testing.T) {
 	}
 
 	// 公司名（基金名前缀）+ 分页：每页 2 条，第 1 页应有 2 条且总数 3
-	p1, err := s.SearchFundsPage("易方达", 1, 2)
+	p1, err := s.SearchFundsPage("易方达", "all", 1, 2)
 	if err != nil || p1.Total != 3 || len(p1.Items) != 2 {
 		t.Fatalf("分页搜索第 1 页失败: %v total=%d len=%d", err, p1.Total, len(p1.Items))
 	}
 	// 第 2 页应剩 1 条
-	p2, _ := s.SearchFundsPage("易方达", 2, 2)
+	p2, _ := s.SearchFundsPage("易方达", "all", 2, 2)
 	if p2.Total != 3 || len(p2.Items) != 1 {
 		t.Fatalf("分页搜索第 2 页失败: total=%d len=%d", p2.Total, len(p2.Items))
 	}
+	// 类型筛选：仅股票型应只剩 1 条（易方达消费行业）
+	gp, err := s.SearchFundsPage("易方达", "gp", 1, 10)
+	if err != nil || gp.Total != 1 || len(gp.Items) != 1 || gp.Items[0].Code != "110022" {
+		t.Fatalf("类型筛选(股票)失败: %v total=%d len=%d", err, gp.Total, len(gp.Items))
+	}
+	// 类型筛选：混合型应有 2 条
+	hh, _ := s.SearchFundsPage("易方达", "hh", 1, 10)
+	if hh.Total != 2 {
+		t.Fatalf("类型筛选(混合)失败: total=%d", hh.Total)
+	}
 	// 空关键字返回空集且不报错
-	empty, err := s.SearchFundsPage("  ", 1, 2)
+	empty, err := s.SearchFundsPage("  ", "all", 1, 2)
 	if err != nil || empty.Total != 0 || len(empty.Items) != 0 {
 		t.Fatalf("空关键字应返回空集: %v %+v", err, empty)
 	}

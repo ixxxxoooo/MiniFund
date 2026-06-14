@@ -90,15 +90,15 @@ func (s *WindowService) CreateTrayPanelWindow() *application.WebviewWindow {
 		return s.trayPanel
 	}
 	win := s.app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:          "tray-panel",
-		Title:         "",
-		Width:         320,
-		Height:        520,
-		URL:           "/#/tray",
-		Frameless:     true,
-		AlwaysOnTop:   true,
-		DisableResize: true,
-		Hidden:        true,
+		Name:             "tray-panel",
+		Title:            "",
+		Width:            320,
+		Height:           520,
+		URL:              "/#/tray",
+		Frameless:        true,
+		AlwaysOnTop:      true,
+		DisableResize:    true,
+		Hidden:           true,
 		BackgroundType:   application.BackgroundTypeTransparent,
 		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
 		Mac: application.MacWindow{
@@ -162,13 +162,13 @@ func (s *WindowService) OpenDetailWindow(code string) error {
 		return nil
 	}
 	win := s.app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:      "detail-" + code,
-		Title:     version.AppName,
-		Width:     1120,
-		Height:    840,
-		MinWidth:  900,
-		MinHeight: 640,
-		URL:       "/#/detail/" + code,
+		Name:             "detail-" + code,
+		Title:            version.AppName,
+		Width:            1120,
+		Height:           840,
+		MinWidth:         900,
+		MinHeight:        640,
+		URL:              "/#/detail/" + code,
 		Frameless:        true,
 		BackgroundType:   application.BackgroundTypeTransparent,
 		BackgroundColour: application.NewRGBA(0, 0, 0, 0),
@@ -201,13 +201,13 @@ func (s *WindowService) OpenNewsWindow(id string, payload string) error {
 		return nil
 	}
 	win := s.app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:      "news-" + id,
-		Title:     version.AppName,
-		Width:     1280,
-		Height:    900,
-		MinWidth:  900,
-		MinHeight: 600,
-		URL:       "/#/news/" + payload,
+		Name:             "news-" + id,
+		Title:            version.AppName,
+		Width:            1280,
+		Height:           900,
+		MinWidth:         900,
+		MinHeight:        600,
+		URL:              "/#/news/" + payload,
 		Frameless:        true,
 		BackgroundType:   application.BackgroundTypeTransparent,
 		BackgroundColour: application.NewRGBA(0, 0, 0, 0),

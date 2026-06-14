@@ -1,4 +1,4 @@
-// Package logger 提供简单的文件日志能力，日志写入 ~/Library/Logs/MiniFund/。
+// Package logger 提供简单的文件日志能力，日志目录由 config.LogDir() 按平台决定。
 package logger
 
 import (
@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"minifund/internal/config"
 )
 
 var (
@@ -16,13 +18,9 @@ var (
 
 // Init 初始化日志系统，打开（或创建）日志文件。
 func Init() error {
-	home, err := os.UserHomeDir()
+	dir, err := config.LogDir()
 	if err != nil {
-		return fmt.Errorf("获取用户目录失败: %w", err)
-	}
-	dir := filepath.Join(home, "Library", "Logs", "MiniFund")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("创建日志目录失败: %w", err)
+		return err
 	}
 	f, err := os.OpenFile(filepath.Join(dir, "minifund.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {

@@ -53,6 +53,40 @@ tasks:
       - xattr -cr "{{.BIN_DIR}}/{{.APP_NAME}}.app"
       - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app"
 
+  dmg:
+    summary: 打包 .app 并制作 DMG（含解除安全限制脚本与说明）
+    cmds:
+      - task: package
+        vars:
+          ARCH: "{{.ARCH}}"
+      - task: create:dmg
+        vars:
+          ARCH: "{{.ARCH}}"
+
+  create:dmg:
+    summary: 将 .app、应用程序软链、解除限制脚本与说明打包为 DMG
+    cmds:
+      - rm -rf "{{.BIN_DIR}}/dmg-staging"
+      - mkdir -p "{{.BIN_DIR}}/dmg-staging"
+      # 在 DMG 内将 bundle 重命名为展示名，访达中显示为 MiniFund
+      - cp -R "{{.BIN_DIR}}/{{.APP_NAME}}.app" "{{.BIN_DIR}}/dmg-staging/{{.APP_DISPLAY_NAME}}.app"
+      # 拖拽安装目标：指向「应用程序」的软链
+      - ln -sf /Applications "{{.BIN_DIR}}/dmg-staging/应用程序"
+      # 随包附带：解除安全限制脚本 + 首次打开说明
+      - cp "build/darwin/dmg/解除安全限制.command" "{{.BIN_DIR}}/dmg-staging/解除安全限制.command"
+      - chmod +x "{{.BIN_DIR}}/dmg-staging/解除安全限制.command"
+      - cp "build/darwin/dmg/首次打开必读.txt" "{{.BIN_DIR}}/dmg-staging/首次打开必读.txt"
+      # 清理扩展属性，避免把 quarantine/Finder 信息带进映像
+      - find "{{.BIN_DIR}}/dmg-staging" -name '._*' -delete 2>/dev/null || true
+      - xattr -cr "{{.BIN_DIR}}/dmg-staging" 2>/dev/null || true
+      - rm -f "{{.OUTPUT_DMG}}"
+      - hdiutil create -volname "{{.APP_DISPLAY_NAME}}" -srcfolder "{{.BIN_DIR}}/dmg-staging" -ov -format UDZO "{{.OUTPUT_DMG}}"
+      - rm -rf "{{.BIN_DIR}}/dmg-staging"
+      - echo "DMG 已生成：{{.OUTPUT_DMG}}"
+    vars:
+      ARCH_NAME: '{{.ARCH | default ARCH}}'
+      OUTPUT_DMG: '{{.BIN_DIR}}/{{.APP_DISPLAY_NAME}}-{{.APP_VERSION}}-{{.ARCH | default ARCH}}.dmg'
+
   run:
     summary: 以 .app 形式运行（保证托盘/通知等系统能力正常）
     cmds:

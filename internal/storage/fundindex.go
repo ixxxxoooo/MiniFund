@@ -83,10 +83,21 @@ func (s *Store) SearchFunds(keyword string, limit, offset int) ([]model.FundInde
 	return items, rows.Err()
 }
 
+// searchTypeLike 搜索页「基金类型筛选」键 → fund_index.type 的 LIKE 子串（与排行页类型一致）。
+// all/空 不过滤；其余按类型名子串匹配（债券含「定开债券」，指数含「指数型」等）。
+var searchTypeLike = map[string]string{
+	"gp":   "%股票%",
+	"hh":   "%混合%",
+	"zq":   "%债券%",
+	"zs":   "%指数%",
+	"qdii": "%QDII%",
+	"fof":  "%FOF%",
+}
+
 // SearchFundsPage 本地模糊搜索（分页）：在 SearchFunds 同款匹配规则基础上附带总数，
-// 供排行页「就地搜索」按页展示。pageIndex 从 1 开始。
-func (s *Store) SearchFundsPage(keyword string, pageIndex, pageSize int) (*model.FundIndexPage, error) {
-	if pageSize <= 0 || pageSize > 100 {
+// 供搜索页按页展示。fundType 为类型筛选键（all/gp/hh/zq/zs/qdii/fof，空或 all 不过滤）。pageIndex 从 1 开始。
+func (s *Store) SearchFundsPage(keyword, fundType string, pageIndex, pageSize int) (*model.FundIndexPage, error) {
+	if pageSize <= 0 || pageSize > 500 {
 		pageSize = 20
 	}
 	if pageIndex < 1 {
@@ -99,8 +110,13 @@ func (s *Store) SearchFundsPage(keyword string, pageIndex, pageSize int) (*model
 	}
 	upper := strings.ToUpper(kw)
 	// 匹配条件：代码前缀 / 名称包含 / 拼音首字母前缀 / 全拼包含（与 SearchFunds 保持一致）
-	where := "WHERE code LIKE ? OR name LIKE ? OR pinyin_abbr LIKE ? OR pinyin_full LIKE ?"
+	where := "WHERE (code LIKE ? OR name LIKE ? OR pinyin_abbr LIKE ? OR pinyin_full LIKE ?)"
 	whereArgs := []any{kw + "%", "%" + kw + "%", upper + "%", "%" + upper + "%"}
+	// 追加类型筛选
+	if like, ok := searchTypeLike[fundType]; ok {
+		where += " AND type LIKE ?"
+		whereArgs = append(whereArgs, like)
+	}
 
 	if err := s.db.QueryRow("SELECT COUNT(*) FROM fund_index "+where, whereArgs...).Scan(&page.Total); err != nil {
 		return nil, fmt.Errorf("统计搜索结果失败: %w", err)

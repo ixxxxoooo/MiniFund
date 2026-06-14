@@ -81,6 +81,8 @@ func (c *core) startup(wailsApp *application.App) {
 	c.PortfolioSvc.SetScheduler(c.Scheduler)
 	c.PortfolioSvc.SetDetailProvider(c.FundSvc.GetFundDetail)
 	c.MarketSvc.SetScheduler(c.Scheduler)
+	// 行情中心指数由调度器每 30s 主动拉取并广播（封装 MarketService，避免包循环依赖）
+	c.Scheduler.SetMarketCenterProvider(c.MarketSvc.GetMarketCenterQuotes)
 	c.NewsSvc.SetScheduler(c.Scheduler)
 	c.AISvc.SetApp(wailsApp)
 	c.SettingsSvc.SetOnChange(c.Scheduler.RefreshNow)

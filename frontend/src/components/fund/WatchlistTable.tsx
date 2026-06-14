@@ -172,7 +172,7 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
                     </div>
                     <div className="flex items-center gap-1">
                       <span className="quote-num text-2xs text-[var(--fg-muted)]">{item.code}</span>
-                      <CopyButton value={item.code} />
+                      <CopyButton value={item.code} name={item.name} />
                     </div>
                   </div>
                 </td>

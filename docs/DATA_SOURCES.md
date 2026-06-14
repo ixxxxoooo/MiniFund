@@ -62,6 +62,7 @@ GET https://fund.eastmoney.com/js/fundcode_search.js
 - 返回 JS 数组：`var r = [["000001","HXCZHH","华夏成长混合","混合型-灵活","HUAXIACHENGZHANGHUNHE"],...]`。
 - 字段依次为：代码、拼音首字母、名称、类型、拼音全拼。
 - 约 2 万条，体积约 2MB。**策略：首次启动全量拉取并存入本地 SQLite，之后每周更新一次**，搜索完全走本地索引（代码/名称/拼音首字母/全拼模糊匹配）。
+- **类型筛选**：搜索页支持按基金类型过滤（与排行一致：股票/混合/债券/指数/QDII/FOF），后端 `Store.SearchFundsPage(keyword, fundType, ...)` 对本地索引 `type` 字段加 `LIKE` 子串条件（如 `%债券%` 含「定开债券」），不新增网络请求。
 
 ### 2.3 历史净值
 
@@ -116,16 +117,17 @@ Header: Referer: https://fundf10.eastmoney.com/
 
 #### 重仓债券（纯债/债券型基金）
 
-移动端持仓接口仅返回股票持仓，纯债/债券型基金股票持仓为空。无股票持仓时改拉天天基金 f10 **债券持仓**（`zqcc`，GBK 编码的 JS 片段 `var apidata={content:"<table>…"}`）：
+移动端持仓接口仅返回股票持仓，纯债/债券型基金股票持仓为空。无股票持仓时改拉天天基金 f10 **债券持仓**（`zqcc`，JS 片段 `var apidata={content:"<table>…"}`）：
 
 ```
 GET https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=zqcc&code={code}&rt={ms}
 Header: Referer: https://fundf10.eastmoney.com/
 ```
 
-- 解析：取 `apidata.content` 首个 `<tbody>`（最新报告期），逐行取列「债券代码 / 债券名称 / 占净值比例」映射到 `BondHolding{bondCode,bondName,percent}`。
-- 限频/降级：仅在**股票持仓为空**时请求（避免对股票型基金多发一次请求）；失败不影响详情主体（持仓区降级为「暂无持仓数据」）。
-- 展示：详情页持仓区在无股票持仓时标题切换为「重仓债券」，行展示「债券代码 / 债券名称 / 占比条 + 占净值比例」（债券无个股涨跌幅，不展示涨跌列）。
+- **编码（重要）**：该 `zqcc` 接口返回 **UTF-8**（与多数 f10 老接口的 GBK 不同），必须用 `FetchText` 直接读取；**严禁** GBK 解码——否则会把 UTF-8 中文劈成「浜/杞/€」等乱码（曾因误用 GBK 出现债券名乱码）。
+- 解析：取 `apidata.content` 首个 `<tbody>`（最新报告期），逐行取列「债券代码 / 债券名称 / 占净值比例」映射到 `BondHolding{bondCode,bondName,percent}`（正则按标准 JS 引号字符串提取 `content`，再剥离 HTML 标签）。
+- 限频/降级：详情每次拉取**始终补拉一次**债券持仓（债券型/二级债基常同时持股持债，详情页用 Tab 分别展示；纯股票/指数基金多为空）；失败不影响详情主体。详情结果服务层缓存，命中缓存不重复请求。
+- 展示：详情页持仓区**股票/债券分两块、Tab 切换**——有股票默认「股票」Tab、否则「债券」；某类型无数据则不显示该 Tab。债券行展示「债券代码 / 债券名称 / 占比条 + 占净值比例」（债券无个股涨跌幅，不展示涨跌列），条目较多时固定行高 + 滚动。
 
 ### 2.4.1 基金交易状态（申购/赎回状态与单日限额）
 
@@ -267,9 +269,9 @@ Header: Referer: https://finance.sina.com.cn/
 
 上证指数（sh000001）、深证成指（sz399001）、创业板指（sz399006）、沪深300（sh000300）、恒生指数（hkHSI）、纳斯达克（usIXIC）、标普500（usINX）。用户可在设置中增删。
 
-### 3.4 行情中心（腾讯主源 + 新浪美股/北证源 + 东财兜底/韩国）
+### 3.4 行情中心（腾讯主源 + 新浪美股/北证源 + 东财兜底）
 
-行情中心展示常见 A 股/港股/美股/韩国指数清单及选中指数的 K 线。指数清单（含东财 `secid`、腾讯符号、新浪符号与 K 线来源标识 `KSource`）硬编码在 `internal/datasource/eastmoney/quote.go` 的 `MarketCenterIndexes`；服务层 `MarketService.GetIndexKline` 按 `KSource` 路由。
+行情中心展示常见 A 股/港股/美股指数清单及选中指数的 K 线。指数清单（含东财 `secid`、腾讯符号、新浪符号与 K 线来源标识 `KSource`）硬编码在 `internal/datasource/eastmoney/quote.go` 的 `MarketCenterIndexes`；服务层 `MarketService.GetIndexKline` 按 `KSource` 路由。
 
 > ⚠️ **重要：东财 `push2`/`push2his` 域名对非浏览器客户端会被指纹拦截**（连接直接关闭、返回空响应；高频访问后整段时间不可用）。因此行情中心**实时报价一律走腾讯**（覆盖全部，稳定）；**K 线按市场分源**：
 > - A 股主要指数 + 港股 → 腾讯 `fqkline`（完整历史，日/周/月原生）；
@@ -278,9 +280,10 @@ Header: Referer: https://finance.sina.com.cn/
 > - 新浪源仅提供日线，**周/月线由服务端聚合**（开取区间首日、收取末日、高低取极值、量累计，涨跌幅按相邻收盘推算），实现见 `internal/datasource/sina/kline.go`。
 > - 东财 `push2his` 保留为最后兜底（多数情况下被反爬，基本不生效）。
 
-**指数清单（secid ↔ 腾讯符号）**：上证 `1.000001`/`sh000001`、深证成指 `0.399001`/`sz399001`、创业板指 `0.399006`/`sz399006`、科创50 `1.000688`/`sh000688`、北证50 `0.899050`/`bj899050`、沪深300 `1.000300`/`sh000300`、上证50 `1.000016`/`sh000016`、中证500 `1.000905`/`sh000905`、中证1000 `1.000852`/`sh000852`、恒生 `100.HSI`/`hkHSI`、国企 `100.HSCEI`/`hkHSCEI`、道琼斯 `100.DJIA`/`usDJI`、纳斯达克 `100.IXIC`/`usIXIC`、纳斯达克100 `100.NDX`/`usNDX`、标普500 `100.SPX`/`usINX`、**韩国KOSPI `100.KS11`（无腾讯/新浪符号，`KSource=eastmoney`）**。
+**指数清单（secid ↔ 腾讯符号）**：上证 `1.000001`/`sh000001`、深证成指 `0.399001`/`sz399001`、创业板指 `0.399006`/`sz399006`、科创50 `1.000688`/`sh000688`、北证50 `0.899050`/`bj899050`、沪深300 `1.000300`/`sh000300`、上证50 `1.000016`/`sh000016`、中证500 `1.000905`/`sh000905`、中证1000 `1.000852`/`sh000852`、恒生 `100.HSI`/`hkHSI`、道琼斯 `100.DJIA`/`usDJI`、纳斯达克 `100.IXIC`/`usIXIC`、纳斯达克100 `100.NDX`/`usNDX`、标普500 `100.SPX`/`usINX`。
+> 已下线：港股**国企指数**（`100.HSCEI`）、**韩国KOSPI**（`100.KS11`）从清单移除。`KSource=eastmoney`/`FetchIndexQuoteSingle`（东财单标的 `stock/get`）当前无清单项使用，作为兜底实现保留备查（行情数据源最优方案待评估）。
 
-> 📌 **成交量单位**：A 股指数成交量以「**手**」计（腾讯/东财口径），港股/美股/韩国以「**股**」计（腾讯/新浪口径），两类量纲不同。前端 `MarketCenterPage.formatVol(v, group)` 按分组显式标注单位，避免被误读为同一口径。
+> 📌 **成交额币种**：行情中心展示「**成交额**」（非成交量），按各市场本币标注：A 股「元」、港股「港元」，**不做汇率换算**；美股成交额来源不稳定，前端不展示。前端 `MarketCenterPage.formatAmount(v, group)` 按分组取币种（`AMOUNT_CURRENCY` 无对应币种即跳过）。
 
 **批量实时报价（主源：腾讯 `qt.gtimg.cn`）**：
 
@@ -288,11 +291,12 @@ Header: Referer: https://finance.sina.com.cn/
 GET https://qt.gtimg.cn/q=s_sh000001,s_hkHSI,s_usDJI,...
 ```
 
-- 复用 `tencent.Source.FetchIndexQuotes`（GBK 文本，`~` 分隔，取名称/点位/涨跌点/涨跌幅）；一次请求返回全部指数。
+- 复用 `tencent.Source.FetchIndexQuotes`（GBK 文本，`~` 分隔，取名称/点位/涨跌点/涨跌幅/**成交额**）；一次请求返回全部指数。
+- **成交额**：腾讯简易行情字段 `[7]` 为成交额（单位**万元/万港元/万美元**），换算为本币基础单位（×1e4）写入 `Amount`。前端仅对 **A股（元）/港股（港元）** 展示成交额并标注币种，**不做汇率换算**，无数据显示「—」；**美股成交额来源不稳定，前端不展示**（`AMOUNT_CURRENCY` 无美股币种即跳过该项）。
 - 后端 5s 内存缓存合并多窗口/多次事件触发的重复请求；按清单顺序输出并补名称占位。
 - 兜底：腾讯整体失败时回退东财 `ulist.np`（`https://push2.eastmoney.com/api/qt/ulist.np/get?secids=...&fields=f2,f3,f4,f12,f13,f14`），仍失败才报错。
-- **腾讯无符号的指数（韩国KOSPI）**：腾讯轮询跳过这些指数（`Tencent==""`），随后用东财 `ulist.np` 按 `secid` 批量补全实时报价（`eastmoney.FetchIndexQuotesBySecids`，每轮一次小请求）；补全失败仅占位不影响其他指数。
-  - **匹配修正（KOSPI 拉取失败修复）**：全球指数在 `ulist.np` 返回的 `f13`（市场号）/`f12`（代码大小写）可能与请求清单不完全一致，导致按「市场.代码」精确匹配失败、KOSPI 一直占位（拉取数据失败）。`FetchIndexQuotesBySecids` 与东财兜底 `FetchMarketCenterQuotes` 均增加「按代码（忽略大小写）回退匹配到请求清单 `secid`」的逻辑，确保 KOSPI 实时报价能正确回填。
+- **腾讯无符号指数的单标的兜底（当前无清单项使用，保留备查）**：对 `Tencent==""` 的指数用东财**单标的接口** `stock/get` 按 `secid` 逐个补全实时报价（`eastmoney.FetchIndexQuoteSingle`，`https://push2.eastmoney.com/api/qt/stock/get?secid=...&fltt=2&fields=f43,...,f48,...,f169,f170`：`f43` 最新价 / `f169` 涨跌额 / `f170` 涨跌幅 / `f48` 成交额）。曾用于韩国KOSPI（批量 `ulist.np` 对海外标的常返回缺失/异常），现 KOSPI/国企指数已下线，此路径暂无清单触发。
+- **主动刷新**：行情中心指数由 `internal/scheduler` 每 **30s** 主动拉取并通过 `market:center` 事件广播（独立于交易时段与监控暂停，覆盖美股 CN 夜盘等盘外时段）；前端 `marketCenter` store 直接消费推送 payload，不自行 `setInterval` 轮询 binding。
 
 **K 线（主源：腾讯 `web.ifzq.gtimg.cn`）**：
 
@@ -314,7 +318,7 @@ Referer: https://finance.sina.com.cn/
 
 - 新浪响应为带注释/JSONP 包装，取首个 `[` 到末个 `]` 之间的 JSON 数组解析；A 股行字段 `{day,open,high,low,close,volume}`，美股行字段单字母 `{d,o,h,l,c,v,a}`。
 - 切换逻辑（`MarketService.GetIndexKline`）：按 `KSource` 选 腾讯 / 新浪CN / 新浪US → 不足 2 根则回退东财 `push2his` → 仍不足 2 根返回「该指数历史 K 线暂不可用」。
-- **韩国KOSPI（`KSource=eastmoney`）**：腾讯/新浪均无该指数，K 线**直接走东财 `push2his`**（`secid=100.KS11`）。东财被反爬时该指数 K 线不可用（显示提示），但其实时报价仍由 `ulist.np` 正常补全。
+- **`KSource=eastmoney`（当前无清单项使用，保留备查）**：腾讯/新浪均无对应符号的指数，K 线**直接走东财 `push2his`**。曾用于韩国KOSPI（`secid=100.KS11`），现已从清单下线。
 - `klt`：101 日 / 102 周 / 103 月。后端 60s 内存缓存（按 `secid + 周期` 维度）；K 线按需请求（选中指数/切换周期时拉取），不进入调度器轮询。
 
 ## 4. 限频、缓存与降级策略

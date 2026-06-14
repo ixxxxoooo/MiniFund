@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Search, X } from "lucide-react";
-import type { FundIndexItem, FundIndexPage, FundPerf, FundTheme } from "@bindings/minifund/internal/model";
+import type { FundIndexItem, FundPerf, FundTheme } from "@bindings/minifund/internal/model";
 import { FundService, WindowService } from "@bindings/minifund/services";
 import { AddButton, CopyButton, ThemeChips, useFundPerformance, useFundThemes } from "@/components/fund/fund-list-helpers";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,6 @@ import { QuoteText } from "@/components/market/QuoteText";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
 import { formatNav } from "@/lib/format";
-import { usePrefetchPager } from "@/lib/pager";
 import { cn } from "@/lib/utils";
 import { useColumnsStore } from "@/stores/columns";
 import { useSearchHistoryStore } from "@/stores/searchHistory";
@@ -23,6 +22,9 @@ import { useWatchlistStore } from "@/stores/watchlist";
 const SEARCH_PAGE_SIZE = 30;
 
 const cols = zhCN.ranking.columns;
+
+/** 基金类型筛选键（与基金排行一致） */
+type FundType = keyof typeof zhCN.ranking.types;
 
 /** 固定列宽（px）：序号 / 基金名称（行内含彩色主题标签）/ 操作列 */
 const RANK_W = 46;
@@ -90,8 +92,8 @@ const SEARCH_COLUMNS: SearchCol[] = [
   },
 ];
 
-/** 默认隐藏的列（近6月 / 近2年 / 近3年 / 成立来，避免列过多；单位净值默认展示） */
-const DEFAULT_HIDDEN = ["month6", "year2", "year3", "since"];
+/** 默认隐藏的列（近2年 / 成立来，避免列过多；单位净值/近6月/近3年默认展示，便于直接排序） */
+const DEFAULT_HIDDEN = ["year2", "since"];
 
 /** 列 key → 排序取值（页内排序）；返回 null 的行（数据未补全）恒排末尾 */
 function searchSortValue(item: FundIndexItem, perf: FundPerf | undefined, key: string): number | string | null {
@@ -137,6 +139,8 @@ const TABLE_ID = "search";
 export function SearchPage({ visible }: { visible: boolean }) {
   const [input, setInput] = useState("");
   const [keyword, setKeyword] = useState("");
+  // 基金类型筛选（常驻保持，切走再回来不重置）
+  const [fundType, setFundType] = useState<FundType>("all");
   const searching = keyword.trim().length > 0;
   const inputRef = useRef<HTMLInputElement>(null);
   const history = useSearchHistoryStore((s) => s.items);
@@ -200,10 +204,9 @@ export function SearchPage({ visible }: { visible: boolean }) {
       </div>
 
       {searching ? (
-        <SearchResults keyword={keyword} />
+        <SearchResults keyword={keyword} fundType={fundType} onTypeChange={setFundType} />
       ) : (
         <div className="flex w-full max-w-xl flex-col items-center gap-3">
-          <span className="text-[length:var(--size-font-xs)] text-[var(--fg-muted)]">{zhCN.searchPage.prompt}</span>
           {history.length > 0 && (
             <div className="flex w-full flex-col items-center gap-1.5">
               <div className="flex items-center gap-2 text-2xs text-[var(--fg-muted)]">
@@ -250,29 +253,60 @@ export function SearchPage({ visible }: { visible: boolean }) {
   );
 }
 
-/** 搜索结果列表：本地索引分页（名称/代码/拼音/公司前缀匹配）+ 阶段收益异步补全 + 列显隐。 */
-function SearchResults({ keyword }: { keyword: string }) {
+/** 搜索结果列表：本地索引一次性取齐命中（名称/代码/拼音/公司前缀匹配）+ 类型筛选，
+ * 默认不排序（保持命中原始顺序）；点击列头时对「全部命中结果」排序，再做客户端分页与列显隐。 */
+function SearchResults({
+  keyword,
+  fundType,
+  onTypeChange,
+}: {
+  keyword: string;
+  fundType: FundType;
+  onTypeChange: (t: FundType) => void;
+}) {
   const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
   const hidden = useColumnsStore((s) => s.hidden[TABLE_ID]) ?? DEFAULT_HIDDEN;
   const ensure = useColumnsStore((s) => s.ensure);
   useEffect(() => ensure(TABLE_ID, DEFAULT_HIDDEN), [ensure]);
 
-  const { page, pageIndex, loading, failed, goto } = usePrefetchPager<FundIndexPage>(
-    (pi) => call("搜索基金", () => FundService.SearchFundsPage(keyword, pi)),
-    `search|${keyword}`
-  );
-  const total = page?.total ?? 0;
-  const totalPages = page ? Math.max(1, Math.ceil(total / SEARCH_PAGE_SIZE)) : 1;
-  const items = page?.items ?? [];
-  const empty = !loading && !failed && items.length === 0;
-  const codes = useMemo(() => items.map((it) => it.code), [items]);
-  const themesMap = useFundThemes(codes);
-  const perfMap = useFundPerformance(codes);
+  // 一次性取齐全部命中（最多 searchAllMax 条）+ 真实总数，供全量排序
+  const [allItems, setAllItems] = useState<FundIndexItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const [pageIndex, setPageIndex] = useState(1);
 
-  // 页内排序：因阶段收益按页异步补全（不新增接口），排序作用于当前页已加载数据，
-  // 排序键变化或收益补全后自动重排；点击列头按 降序 → 升序 → 默认 循环。
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setFailed(false);
+    setPageIndex(1);
+    void call("搜索基金", () => FundService.SearchFundsAll(keyword, fundType)).then((res) => {
+      if (cancelled) return;
+      setLoading(false);
+      if (!res) {
+        setFailed(true);
+        setAllItems([]);
+        setTotal(0);
+        return;
+      }
+      setAllItems(res.items ?? []);
+      setTotal(res.total ?? 0);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [keyword, fundType]);
+
+  // 搜索即**预加载全部命中的收益**（最多 300 条，分批渐进合并到内存）：
+  // 之后点排序、翻页都直接在已加载的全量数据上做（切片/排序），无需再等待。主题标签仍仅按当前页加载（不参与排序）。
+  const allCodes = useMemo(() => allItems.map((it) => it.code), [allItems]);
+  const perfMap = useFundPerformance(allCodes);
+
+  // 排序：默认不排序（保持命中原始顺序）；点击列头作用于全部结果，循环 降序 → 升序 → 取消。
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
+  const sorting = !!(sortKey && sortDir);
   const toggleSort = (key: string) => {
     if (sortKey !== key) {
       setSortKey(key);
@@ -283,11 +317,13 @@ function SearchResults({ keyword }: { keyword: string }) {
       setSortKey(null);
       setSortDir(null);
     }
+    setPageIndex(1);
   };
+
   const sortedItems = useMemo(() => {
-    if (!sortKey || !sortDir) return items;
+    if (!sorting) return allItems; // 默认/取消排序：保持命中原始顺序
     const factor = sortDir === "asc" ? 1 : -1;
-    return [...items].sort((a, b) => {
+    return [...allItems].sort((a, b) => {
       const va = searchSortValue(a, perfMap[a.code], sortKey);
       const vb = searchSortValue(b, perfMap[b.code], sortKey);
       if (va == null && vb == null) return 0;
@@ -296,21 +332,42 @@ function SearchResults({ keyword }: { keyword: string }) {
       if (typeof va === "number" && typeof vb === "number") return (va - vb) * factor;
       return String(va).localeCompare(String(vb), "zh-CN") * factor;
     });
-  }, [items, sortKey, sortDir, perfMap]);
+  }, [allItems, sortKey, sortDir, perfMap]);
+
+  // 客户端分页：在已排序的全量结果上切片
+  const totalPages = Math.max(1, Math.ceil(sortedItems.length / SEARCH_PAGE_SIZE));
+  const pageItems = useMemo(
+    () => sortedItems.slice((pageIndex - 1) * SEARCH_PAGE_SIZE, pageIndex * SEARCH_PAGE_SIZE),
+    [sortedItems, pageIndex]
+  );
+  const pageCodes = useMemo(() => pageItems.map((it) => it.code), [pageItems]);
+  const themesMap = useFundThemes(pageCodes);
+  const empty = !loading && !failed && allItems.length === 0;
+  const truncated = total > allItems.length;
 
   const visibleCols = SEARCH_COLUMNS.filter((c) => !hidden.includes(c.key));
   const tableWidth = RANK_W + NAME_W + ACTION_W + visibleCols.reduce((sum, c) => sum + c.width, 0);
 
   return (
     <>
-      {/* 结果状态条 + 列设置 */}
-      <div className="flex items-center gap-2 text-2xs text-[var(--fg-muted)]">
-        <span className="min-w-0 flex-1">
-          {zhCN.searchPage.result}
-          {total > 0 && (
-            <span className="ml-1 text-[var(--fg-secondary)]">{zhCN.ranking.searchTotal.replace("{n}", String(total))}</span>
-          )}
-        </span>
+      {/* 工具栏：类型筛选（与基金排行一致）+ 列设置 */}
+      <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scroll-none">
+          {(Object.keys(zhCN.ranking.types) as FundType[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => onTypeChange(t)}
+              className={cn(
+                "h-[var(--size-tab)] shrink-0 rounded-[var(--radius-btn)] px-3 text-[length:var(--size-font-xs)]",
+                t === fundType
+                  ? "bg-[var(--row-selected)] font-medium text-[var(--accent)]"
+                  : "text-[var(--fg-secondary)] hover:bg-[var(--row-hover)]"
+              )}
+            >
+              {zhCN.ranking.types[t]}
+            </button>
+          ))}
+        </div>
         <ColumnToggle
           tableId={TABLE_ID}
           columns={[
@@ -318,6 +375,21 @@ function SearchResults({ keyword }: { keyword: string }) {
             ...SEARCH_COLUMNS.map((c) => ({ key: c.key, label: c.label })),
           ]}
         />
+      </div>
+
+      {/* 结果状态条 */}
+      <div className="flex items-center gap-2 text-2xs text-[var(--fg-muted)]">
+        <span className="min-w-0 flex-1">
+          {zhCN.searchPage.result}
+          {total > 0 && (
+            <span className="ml-1 text-[var(--fg-secondary)]">{zhCN.ranking.searchTotal.replace("{n}", String(total))}</span>
+          )}
+          {truncated && (
+            <span className="ml-2 text-[var(--warning)]">
+              {zhCN.searchPage.truncated.replace("{n}", String(allItems.length))}
+            </span>
+          )}
+        </span>
       </div>
 
       <div className="scroll-always relative min-h-0 flex-1 overflow-auto rounded-[var(--radius-panel)] border border-[var(--border-subtle)]">
@@ -368,7 +440,7 @@ function SearchResults({ keyword }: { keyword: string }) {
               </tr>
             </thead>
             <tbody className={cn(loading && "opacity-50")}>
-              {sortedItems.map((item, i) => (
+              {pageItems.map((item, i) => (
                 <SearchRow
                   key={item.code}
                   item={item}
@@ -384,7 +456,7 @@ function SearchResults({ keyword }: { keyword: string }) {
         )}
       </div>
 
-      <Pager pageIndex={pageIndex} totalPages={totalPages} loading={loading} onGoto={goto} />
+      <Pager pageIndex={pageIndex} totalPages={totalPages} loading={loading} onGoto={setPageIndex} />
     </>
   );
 }
@@ -421,7 +493,7 @@ function SearchRow({
           </div>
           <div className="flex items-center gap-1">
             <span className="quote-num text-2xs text-[var(--fg-muted)]">{item.code}</span>
-            <CopyButton value={item.code} />
+            <CopyButton value={item.code} name={item.name} />
           </div>
         </div>
       </td>

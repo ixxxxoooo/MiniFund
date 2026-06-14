@@ -28,6 +28,7 @@ var ztjjCategory = map[string]string{
 // 值字段名随 dt/st（数据类型/周期）变化：
 //   - dt=syl（涨幅）：D 今日 / W 近1周 / M 近1月 / Q 近3月 / SY 今年来；
 //   - dt=zjlr（资金流入）：FLOW 今日 / FLOW_W 近1周 / FLOW_M 近1月 / FLOW_Q 近3月（单位：元）。
+//
 // 用 RawMessage 容错（数字或 "--"/null）。
 type ztjjItem struct {
 	Code  string          `json:"INDEXCODE"`
@@ -235,12 +236,12 @@ func FetchSectorMoneyFlow(ctx context.Context, kind, stage string) ([]model.Sect
 type rawThemeDetail struct {
 	SecCode string          `json:"SEC_CODE"`
 	SecName string          `json:"SEC_NAME"`
-	D       json.RawMessage `json:"D"`   // 今日涨幅（%，无排名）
-	W       json.RawMessage `json:"W"`   // 近1周
-	M       json.RawMessage `json:"M"`   // 近1月
-	Q       json.RawMessage `json:"Q"`   // 近3月
-	Y       json.RawMessage `json:"Y"`   // 近1年
-	SY      json.RawMessage `json:"SY"`  // 今年来
+	D       json.RawMessage `json:"D"`  // 今日涨幅（%，无排名）
+	W       json.RawMessage `json:"W"`  // 近1周
+	M       json.RawMessage `json:"M"`  // 近1月
+	Q       json.RawMessage `json:"Q"`  // 近3月
+	Y       json.RawMessage `json:"Y"`  // 近1年
+	SY      json.RawMessage `json:"SY"` // 今年来
 	RankW   json.RawMessage `json:"RANKW"`
 	RankM   json.RawMessage `json:"RANKM"`
 	RankQ   json.RawMessage `json:"RANKQ"`

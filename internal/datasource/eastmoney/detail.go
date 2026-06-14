@@ -16,8 +16,8 @@ import (
 
 // trendRaw Data_netWorthTrend 数组元素结构。
 type trendRaw struct {
-	X            int64           `json:"x"` // 毫秒时间戳
-	Y            float64         `json:"y"` // 单位净值
+	X            int64           `json:"x"`            // 毫秒时间戳
+	Y            float64         `json:"y"`            // 单位净值
 	EquityReturn json.RawMessage `json:"equityReturn"` // 当日涨跌幅，可能为 null
 }
 
@@ -230,11 +230,13 @@ func parseBondHoldings(body string) []model.BondHolding {
 	return out
 }
 
-// FetchBondHoldings 拉取基金重仓债券（天天基金 f10 债券持仓 zqcc，最新一期，GBK 编码）。
+// FetchBondHoldings 拉取基金重仓债券（天天基金 f10 债券持仓 zqcc，最新一期）。
+// 注意：该 zqcc 接口返回 **UTF-8**（与多数 f10 老接口的 GBK 不同），
+// 必须用 FetchText 直接读取；若误用 GBK 解码会把 UTF-8 中文劈成「浜/杞」等乱码。
 // 仅纯债/债券型基金有意义；失败返回错误，由调用方降级（不影响详情主体）。
 func FetchBondHoldings(ctx context.Context, code string) ([]model.BondHolding, error) {
 	url := fmt.Sprintf("https://fundf10.eastmoney.com/FundArchivesDatas.aspx?type=zqcc&code=%s&rt=%d", code, time.Now().UnixMilli())
-	body, err := datasource.FetchGBKText(ctx, url, f10Referer)
+	body, err := datasource.FetchText(ctx, url, f10Referer)
 	if err != nil {
 		return nil, fmt.Errorf("拉取债券持仓失败: %w", err)
 	}
@@ -311,13 +313,12 @@ func FetchFundDetail(ctx context.Context, code string) (*model.FundDetail, error
 		logger.Warn("拉取重仓股失败: code=%s err=%v", code, err)
 	}
 
-	// 纯债/债券型基金通常无股票持仓，补拉重仓债券用于展示（仅在无股票持仓时请求，失败不影响主体）
-	if len(detail.Holdings) == 0 {
-		if bonds, err := FetchBondHoldings(ctx, code); err == nil {
-			detail.BondHoldings = bonds
-		} else {
-			logger.Warn("拉取债券持仓失败: code=%s err=%v", code, err)
-		}
+	// 重仓债券：债券型/混合债基/二级债基常同时持有股票与债券，详情页用 Tab 分别展示，
+	// 因此始终补拉债券持仓（best-effort；纯股票/指数基金多为空，失败不影响主体）。
+	if bonds, err := FetchBondHoldings(ctx, code); err == nil {
+		detail.BondHoldings = bonds
+	} else {
+		logger.Warn("拉取债券持仓失败: code=%s err=%v", code, err)
 	}
 
 	// 标签信息（类型/公司/跟踪指数/风险等级/规模）拉取失败同样不影响主体

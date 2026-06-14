@@ -750,6 +750,11 @@ export class IndexQuote {
      */
     "changePercent": number;
 
+    /**
+     * 成交额（本币基础单位：元/港元/美元等；0 表示无数据）
+     */
+    "amount": number;
+
     /** Creates a new IndexQuote instance. */
     constructor($$source: Partial<IndexQuote> = {}) {
         if (!("symbol" in $$source)) {
@@ -766,6 +771,9 @@ export class IndexQuote {
         }
         if (!("changePercent" in $$source)) {
             this["changePercent"] = 0;
+        }
+        if (!("amount" in $$source)) {
+            this["amount"] = 0;
         }
 
         Object.assign(this, $$source);
@@ -1060,7 +1068,7 @@ export class MarketBreadth {
 }
 
 /**
- * MarketIndexQuote 行情中心指数实时报价（来自东财 ulist.np，统一用 secid 标识）。
+ * MarketIndexQuote 行情中心指数实时报价（统一用 secid 标识）。
  */
 export class MarketIndexQuote {
     /**
@@ -1074,7 +1082,7 @@ export class MarketIndexQuote {
     "name": string;
 
     /**
-     * 分组（A股 / 港股 / 美股）
+     * 分组（A股 / 港股 / 美股 / 韩国）
      */
     "group": string;
 
@@ -1092,6 +1100,11 @@ export class MarketIndexQuote {
      * 涨跌幅（%）
      */
     "changePercent": number;
+
+    /**
+     * 成交额（各市场本币基础单位：A股元/港股港元/美股美元/韩国韩元；0 表示无数据，不做汇率换算）
+     */
+    "amount": number;
 
     /** Creates a new MarketIndexQuote instance. */
     constructor($$source: Partial<MarketIndexQuote> = {}) {
@@ -1112,6 +1125,9 @@ export class MarketIndexQuote {
         }
         if (!("changePercent" in $$source)) {
             this["changePercent"] = 0;
+        }
+        if (!("amount" in $$source)) {
+            this["amount"] = 0;
         }
 
         Object.assign(this, $$source);

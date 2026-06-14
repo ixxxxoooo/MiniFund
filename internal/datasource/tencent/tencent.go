@@ -13,8 +13,8 @@ import (
 )
 
 // parseQuotes 解析腾讯简易行情文本：
-// v_s_sh000001="1~上证指数~000001~3245.12~12.34~0.38~...";
-// 字段按 ~ 分隔：[0]类型 [1]名称 [2]代码 [3]点位 [4]涨跌点 [5]涨跌幅
+// v_s_sh000001="1~上证指数~000001~3245.12~12.34~0.38~成交量(手)~成交额(万元)~~总市值";
+// 字段按 ~ 分隔：[0]类型 [1]名称 [2]代码 [3]点位 [4]涨跌点 [5]涨跌幅 [6]成交量(手) [7]成交额(万元)
 func parseQuotes(body string, symbols []string) ([]model.IndexQuote, error) {
 	quotes := make([]model.IndexQuote, 0, len(symbols))
 	bySymbol := make(map[string]string, len(symbols))
@@ -45,6 +45,13 @@ func parseQuotes(body string, symbols []string) ([]model.IndexQuote, error) {
 		q.Price, _ = strconv.ParseFloat(f[3], 64)
 		q.Change, _ = strconv.ParseFloat(f[4], 64)
 		q.ChangePercent, _ = strconv.ParseFloat(f[5], 64)
+		// 成交额：简易行情 [7] 单位为「万元/万港元/万美元」，换算为本币基础单位（×1e4）；
+		// 部分海外指数无成交额返回（空或 0），保持 0 表示无数据。
+		if len(f) >= 8 {
+			if amt, err := strconv.ParseFloat(strings.TrimSpace(f[7]), 64); err == nil {
+				q.Amount = amt * 1e4
+			}
+		}
 		quotes = append(quotes, q)
 	}
 	if len(quotes) == 0 {

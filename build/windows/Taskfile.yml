@@ -1,0 +1,62 @@
+version: "3"
+
+includes:
+  common: ../Taskfile.yml
+
+tasks:
+  generate:icon:
+    summary: 从 appicon.png 生成 Windows .ico 图标
+    dir: build
+    sources:
+      - "appicon.png"
+    generates:
+      - "windows/icon.ico"
+    cmds:
+      - wails3 generate icons -input appicon.png -windowsfilename windows/icon.ico
+
+  generate:syso:
+    summary: 生成 Windows 资源对象（嵌入应用图标与清单到 .exe）
+    deps:
+      - task: generate:icon
+    cmds:
+      - wails3 generate syso -arch {{.ARCH}} -icon build/windows/icon.ico -manifest build/windows/wails.exe.manifest -out {{.APP_NAME}}_windows_{{.ARCH}}.syso
+    vars:
+      ARCH: '{{.ARCH | default "amd64"}}'
+
+  build:
+    summary: 构建 Windows 二进制（.exe）
+    deps:
+      - task: common:go:mod:tidy
+      - task: common:build:frontend
+        vars:
+          DEV:
+            ref: .DEV
+      - task: generate:syso
+        vars:
+          ARCH: '{{.ARCH | default "amd64"}}'
+    cmds:
+      - go build {{.BUILD_FLAGS}} -o {{.OUTPUT}}
+    vars:
+      ARCH: '{{.ARCH | default "amd64"}}'
+      BUILD_FLAGS: '{{if eq .DEV "true"}}-buildvcs=false{{else}}-tags production -trimpath -buildvcs=false -ldflags="-w -s -H windowsgui -X minifund/internal/version.Version={{.APP_VERSION}} -X minifund/internal/version.Commit={{.BUILD_COMMIT}} -X minifund/internal/version.BuildDate={{.BUILD_DATE}}"{{end}}'
+      DEFAULT_OUTPUT: "{{.BIN_DIR}}/{{.APP_NAME}}.exe"
+      OUTPUT: "{{.OUTPUT | default .DEFAULT_OUTPUT}}"
+    env:
+      GOOS: windows
+      CGO_ENABLED: 1
+      GOARCH: '{{.ARCH | default "amd64"}}'
+
+  package:
+    summary: 打包 Windows 生产版本（生成 .exe）
+    cmds:
+      - task: build
+        vars:
+          ARCH: "{{.ARCH | default \"amd64\"}}"
+
+  run:
+    summary: 构建并运行 Windows 应用
+    cmds:
+      - task: build
+        vars:
+          DEV: "true"
+      - "{{.BIN_DIR}}/{{.APP_NAME}}.exe"

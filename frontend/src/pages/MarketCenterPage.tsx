@@ -27,17 +27,22 @@ function priceColorClass(changePercent: number, stealth: boolean): string {
   return "text-[var(--quote-flat)]";
 }
 
+/** 各市场成交额展示币种（按本币标注，不做汇率换算）。美股成交额来源不稳定，不展示。 */
+const AMOUNT_CURRENCY: Record<string, string> = {
+  A股: "元",
+  港股: "港元",
+};
+
 /**
- * 成交量友好格式化（亿/万），并按市场分组附带单位：
- * A股成交量以「手」计（腾讯/东财口径），港股/美股/韩国以「股」计（新浪/腾讯口径），
- * 两类量纲不同，显式标注单位避免被误读为同一口径。
+ * 成交额友好格式化（亿/万 + 本币），按市场分组附带币种：
+ * A股「元」、港股「港元」、美股「美元」、韩国「韩元」，各按本币展示不做汇率换算（量纲不同，显式标注币种避免误读）。
  */
-function formatVol(v: number, group: string): string {
+function formatAmount(v: number, group: string): string {
   if (!Number.isFinite(v) || v <= 0) return "—";
-  const unit = group === "A股" ? "手" : "股";
-  if (v >= 1e8) return `${(v / 1e8).toFixed(2)}亿${unit}`;
-  if (v >= 1e4) return `${(v / 1e4).toFixed(2)}万${unit}`;
-  return `${v.toFixed(0)}${unit}`;
+  const cur = AMOUNT_CURRENCY[group] ?? "元";
+  if (v >= 1e8) return `${(v / 1e8).toFixed(2)}亿${cur}`;
+  if (v >= 1e4) return `${(v / 1e4).toFixed(2)}万${cur}`;
+  return `${v.toFixed(0)}${cur}`;
 }
 
 /**
@@ -99,7 +104,11 @@ export function MarketCenterPage() {
         { label: zhCN.market.stat.open, value: latest.open.toFixed(2) },
         { label: zhCN.market.stat.high, value: latest.high.toFixed(2) },
         { label: zhCN.market.stat.low, value: latest.low.toFixed(2) },
-        { label: zhCN.market.stat.volume, value: formatVol(latest.volume, selectedQuote?.group ?? "") },
+        // 成交额取实时报价（按市场本币展示），而非 K 线（腾讯 K 线不含成交额）；
+        // 美股成交额来源不稳定，不展示（AMOUNT_CURRENCY 无对应币种时跳过）。
+        ...(AMOUNT_CURRENCY[selectedQuote?.group ?? ""]
+          ? [{ label: zhCN.market.stat.amount, value: formatAmount(selectedQuote?.amount ?? 0, selectedQuote?.group ?? "") }]
+          : []),
       ]
     : [];
 

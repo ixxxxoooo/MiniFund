@@ -11,9 +11,10 @@ import (
 
 // PortfolioService 持仓与盈亏服务。
 // 计算口径见 docs/PRD.md 2.3 节：
-//   持仓市值 = 份额 × 最新净值（盘中用估算净值）
-//   当日预估收益 = 份额 × (估算净值 − 上一日净值)
-//   累计收益 = 份额 × (最新净值 − 成本价)
+//
+//	持仓市值 = 份额 × 最新净值（盘中用估算净值）
+//	当日预估收益 = 份额 × (估算净值 − 上一日净值)
+//	累计收益 = 份额 × (最新净值 − 成本价)
 type PortfolioService struct {
 	store *storage.Store
 	sched *scheduler.Scheduler

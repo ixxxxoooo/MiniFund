@@ -3,10 +3,13 @@ version: "3"
 includes:
   common: ./build/Taskfile.yml
   darwin: ./build/darwin/Taskfile.yml
+  windows: ./build/windows/Taskfile.yml
 
 vars:
   APP_NAME:
     sh: . ./project.env && printf "%s" "$APP_BINARY_NAME"
+  APP_DISPLAY_NAME:
+    sh: . ./project.env && printf "%s" "$APP_DISPLAY_NAME"
   BIN_DIR: "bin"
   VITE_PORT: "{{.WAILS_VITE_PORT | default 43827}}"
   APP_VERSION:
@@ -52,3 +55,24 @@ tasks:
       - task: darwin:package
         vars:
           ARCH: "{{.ARCH | default ARCH}}"
+
+  dmg:darwin:
+    summary: 打包 macOS .app 并制作 DMG（含解除安全限制脚本与说明）
+    cmds:
+      - task: darwin:dmg
+        vars:
+          ARCH: "{{.ARCH | default ARCH}}"
+
+  build:windows:
+    summary: 构建 Windows 二进制（.exe）
+    cmds:
+      - task: windows:build
+        vars:
+          ARCH: '{{.ARCH | default "amd64"}}'
+
+  package:windows:
+    summary: 打包 Windows 生产版本（.exe）
+    cmds:
+      - task: windows:package
+        vars:
+          ARCH: '{{.ARCH | default "amd64"}}'

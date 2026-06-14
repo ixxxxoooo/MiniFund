@@ -84,16 +84,29 @@ func (s *FundService) SearchFunds(keyword string, limit, offset int) ([]model.Fu
 // rankSearchPageSize 排行页「就地搜索」每页条数（与前端 SEARCH_PAGE_SIZE 保持一致）。
 const rankSearchPageSize = 30
 
+// searchAllMax 搜索页「全量排序」一次性返回的最大命中条数。
+// 搜索页需对全部结果排序（而非仅当前页），故一次取齐命中项交由前端排序+前端分页；
+// 命中超过该上限时只取前 N 条（按本地索引顺序），total 仍为真实总数，前端给出截断提示。
+const searchAllMax = 300
+
 // themeCacheTTL 基金主题缓存时效：30 天（主题/概念归属变动缓慢）。
 const themeCacheTTL = 30 * 24 * time.Hour
 
 // themeFetchConcurrency 缺失主题的并发拉取上限（避免对搜索接口高频请求被限流）。
 const themeFetchConcurrency = 4
 
-// SearchFundsPage 排行页就地搜索（本地索引分页，含总数）：匹配名称/代码/拼音，
-// 公司名通常为基金名前缀（如「易方达」可命中全部易方达系基金）。pageIndex 从 1 开始。
-func (s *FundService) SearchFundsPage(keyword string, pageIndex int) (*model.FundIndexPage, error) {
-	return s.store.SearchFundsPage(keyword, pageIndex, rankSearchPageSize)
+// SearchFundsPage 搜索页就地搜索（本地索引分页，含总数）：匹配名称/代码/拼音，
+// 公司名通常为基金名前缀（如「易方达」可命中全部易方达系基金）。
+// fundType 为类型筛选键（all/gp/hh/zq/zs/qdii/fof，与排行一致；空或 all 不过滤）。pageIndex 从 1 开始。
+func (s *FundService) SearchFundsPage(keyword, fundType string, pageIndex int) (*model.FundIndexPage, error) {
+	return s.store.SearchFundsPage(keyword, fundType, pageIndex, rankSearchPageSize)
+}
+
+// SearchFundsAll 搜索页全量命中（最多 searchAllMax 条 + 真实总数），供前端「对全部结果排序」。
+// 返回 items 为前 searchAllMax 条命中（本地索引顺序），total 为完整命中总数；
+// 阶段收益与排序均由前端在该结果集上完成（前端再做客户端分页）。
+func (s *FundService) SearchFundsAll(keyword, fundType string) (*model.FundIndexPage, error) {
+	return s.store.SearchFundsPage(keyword, fundType, 1, searchAllMax)
 }
 
 // GetFundThemes 批量获取一组基金所属的主题/概念标签（code → 主题列表）。

@@ -30,7 +30,12 @@ const (
 	EventWatchlistChanged = "watchlist:changed" // 自选/持仓变更（所有窗口需重新加载）
 	EventTrayPanelShown   = "traypanel:shown"   // 托盘面板弹出（面板重新加载数据）
 	EventNewsFlash        = "news:flash"        // 财经快讯刷新（推送最新快讯列表）
+	EventMarketCenter     = "market:center"     // 行情中心指数刷新（每 30s 推送 A股/港股/美股/韩国清单）
 )
+
+// marketCenterInterval 行情中心指数主动刷新间隔（30s，独立于交易时段，
+// 保证美股/韩国等盘外时段仍持续刷新）。
+const marketCenterInterval = 30 * time.Second
 
 // newsLastIDKey settings 表中记录最近一条已推送快讯 id 的键（重启后避免重复通知历史快讯）。
 const newsLastIDKey = "news_last_id"
@@ -60,6 +65,8 @@ type Scheduler struct {
 	setTrayTitle func(string)
 	// newsNotify 桌面通知回调（由 app 装配时注入，封装 Wails 通知服务）；item 为触发通知的最新快讯
 	newsNotify func(title, body string, item model.NewsFlash)
+	// marketCenterFn 行情中心指数拉取回调（由 app 装配注入 MarketService.GetMarketCenterQuotes，避免包循环依赖）
+	marketCenterFn func() ([]model.MarketIndexQuote, error)
 
 	mu            sync.Mutex
 	paused        bool
@@ -70,14 +77,16 @@ type Scheduler struct {
 	confirmedDate string          // confirmed 对应的日期
 
 	// 权威最新净值缓存（用于校正 fundgz 滞后的估值，按 TTL + 自选集合变化节流刷新）
-	latestNavs  map[string]model.NavRecord
-	latestNavAt time.Time
+	latestNavs   map[string]model.NavRecord
+	latestNavAt  time.Time
 	latestNavKey string
 
 	lastFlash   []model.NewsFlash // 最近一轮快讯缓存
 	lastFlashID string            // 最近一条快讯 id（用于增量判断与持久化）
 	newsInit    bool              // 是否已完成首轮快讯拉取（首轮不弹通知）
 	newsBusy    bool              // 快讯拉取进行中（避免并发重入）
+
+	marketCenterBusy bool // 行情中心拉取进行中（避免 30s 周期与首轮并发重入）
 
 	refreshCh     chan struct{}
 	newsRefreshCh chan struct{}
@@ -108,6 +117,13 @@ func (s *Scheduler) SetTrayTitleUpdater(fn func(string)) {
 func (s *Scheduler) SetNewsNotifier(fn func(title, body string, item model.NewsFlash)) {
 	s.mu.Lock()
 	s.newsNotify = fn
+	s.mu.Unlock()
+}
+
+// SetMarketCenterProvider 注入行情中心指数拉取回调（装配时调用，封装 MarketService）。
+func (s *Scheduler) SetMarketCenterProvider(fn func() ([]model.MarketIndexQuote, error)) {
+	s.mu.Lock()
+	s.marketCenterFn = fn
 	s.mu.Unlock()
 }
 
@@ -213,7 +229,8 @@ func (s *Scheduler) loop() {
 	// 启动时无条件拉一轮（非交易时段 fundgz 也会返回最近数据，保证 UI 有初始内容）
 	s.runEstimateRound()
 	s.runIndexRound()
-	s.runNewsRound() // 首轮快讯：填充缓存并广播，但不弹通知
+	s.runNewsRound()            // 首轮快讯：填充缓存并广播，但不弹通知
+	go s.runMarketCenterRound() // 首轮行情中心（异步，避免阻塞启动）
 	s.emitState()
 
 	ticker := time.NewTicker(2 * time.Second)
@@ -221,6 +238,7 @@ func (s *Scheduler) loop() {
 
 	var lastEstimate, lastIndex, lastNav time.Time
 	lastNews := time.Now()
+	lastMarketCenter := time.Now()
 	lastPhase := phaseAt(time.Now())
 
 	for {
@@ -237,6 +255,12 @@ func (s *Scheduler) loop() {
 			if now.Sub(lastNews) >= s.settings.NewsPollInterval() {
 				lastNews = now
 				go s.runNewsRound()
+			}
+			// 行情中心指数：独立于监控暂停与交易时段，每 30s 主动刷新
+			// （美股盘在 CN 夜间、韩国盘在 CN 日间，需全天候刷新）。
+			if now.Sub(lastMarketCenter) >= marketCenterInterval {
+				lastMarketCenter = now
+				go s.runMarketCenterRound()
 			}
 			if s.IsPaused() {
 				continue
@@ -358,6 +382,7 @@ func (s *Scheduler) runEstimateRound() {
 //   - 「最新净值」始终取历史净值最新一条（fundgz 的 dwjz 在净值公布后会滞后一个交易日）；
 //   - 当盘中估算对应的交易日（估值时间 gztime 的日期）已被确认时，该估算已过期，清除之，
 //     避免自选列表显示与详情页对不上的陈旧估值/估算涨跌。
+//
 // 盘中（估算交易日尚未确认）则保留 fundgz 的实时估算。
 func (s *Scheduler) reconcileEstimates(ctx context.Context, estimates []model.FundEstimate, otc []string) {
 	navs := s.latestNavCache(ctx, otc)
@@ -436,6 +461,35 @@ func (s *Scheduler) runIndexRound() {
 	s.mu.Unlock()
 	s.app.Event.Emit(EventIndexes, quotes)
 	s.updateTrayTitle()
+}
+
+// runMarketCenterRound 拉取一轮行情中心指数清单并广播（payload 直接下发，前端免再调 binding）。
+// 通过注入的回调拉取（封装 MarketService.GetMarketCenterQuotes，含 5s 缓存合并并发请求）。
+func (s *Scheduler) runMarketCenterRound() {
+	s.mu.Lock()
+	fn := s.marketCenterFn
+	busy := s.marketCenterBusy
+	if fn == nil || busy {
+		s.mu.Unlock()
+		return
+	}
+	s.marketCenterBusy = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		s.marketCenterBusy = false
+		s.mu.Unlock()
+	}()
+
+	quotes, err := fn()
+	if err != nil {
+		logger.Warn("行情中心指数轮询失败: %v", err)
+		return
+	}
+	if len(quotes) == 0 {
+		return
+	}
+	s.app.Event.Emit(EventMarketCenter, quotes)
 }
 
 // runNavConfirmRound 净值确认：逐只查询当日真实净值，确认后落库收益并广播。

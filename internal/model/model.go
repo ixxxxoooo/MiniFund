@@ -37,7 +37,7 @@ type NewsFlash struct {
 	Title     string   `json:"title"`     // 标题
 	Summary   string   `json:"summary"`   // 正文（短讯本身即完整内容，含【标题】前缀）
 	Time      string   `json:"time"`      // 发布时间（yyyy-MM-dd HH:mm:ss）
-	Important bool      `json:"important"` // 是否重要（接口 titleColor != 0，通常标红）
+	Important bool     `json:"important"` // 是否重要（接口 titleColor != 0，通常标红）
 	Stocks    []string `json:"stocks"`    // 关联标的代码（如 0.159940）
 }
 
@@ -70,16 +70,18 @@ type IndexQuote struct {
 	Price         float64 `json:"price"`         // 当前点位
 	Change        float64 `json:"change"`        // 涨跌点数
 	ChangePercent float64 `json:"changePercent"` // 涨跌幅（%）
+	Amount        float64 `json:"amount"`        // 成交额（本币基础单位：元/港元/美元等；0 表示无数据）
 }
 
-// MarketIndexQuote 行情中心指数实时报价（来自东财 ulist.np，统一用 secid 标识）。
+// MarketIndexQuote 行情中心指数实时报价（统一用 secid 标识）。
 type MarketIndexQuote struct {
 	Secid         string  `json:"secid"`         // 东财证券 id（市场.代码，如 1.000001 / 100.NDX）
 	Name          string  `json:"name"`          // 指数名称
-	Group         string  `json:"group"`         // 分组（A股 / 港股 / 美股）
+	Group         string  `json:"group"`         // 分组（A股 / 港股 / 美股 / 韩国）
 	Price         float64 `json:"price"`         // 最新点位
 	Change        float64 `json:"change"`        // 涨跌点数
 	ChangePercent float64 `json:"changePercent"` // 涨跌幅（%）
+	Amount        float64 `json:"amount"`        // 成交额（各市场本币基础单位：A股元/港股港元/美股美元/韩国韩元；0 表示无数据，不做汇率换算）
 }
 
 // Kline 指数 K 线数据点（来自东财 push2his）。
@@ -150,19 +152,19 @@ type TrendPoint struct {
 
 // FundDetail 基金详情聚合数据。
 type FundDetail struct {
-	Code           string       `json:"code"`           // 基金代码
-	Name           string       `json:"name"`           // 基金名称
-	Type           string       `json:"type"`           // 基金类型
-	Rate           string       `json:"rate"`           // 实际申购费率（%）
-	MinPurchase    string       `json:"minPurchase"`    // 最小申购金额
-	NetWorthTrend  []TrendPoint `json:"netWorthTrend"`  // 单位净值走势
-	AcWorthTrend   []TrendPoint `json:"acWorthTrend"`   // 累计净值走势
-	MaxDrawdown    float64      `json:"maxDrawdown"`    // 历史最大回撤（%，由单位净值序列计算，负值如 -23.45）
-	PeriodReturns  []PeriodReturn `json:"periodReturns"` // 阶段涨幅（近1月/近3月/近6月/近1年/近3年/成立来等）
-	Holdings       []Holding    `json:"holdings"`       // 前十重仓股
-	BondHoldings   []BondHolding `json:"bondHoldings"`  // 重仓债券（纯债/债券型基金，股票持仓为空时展示）
-	Managers       []ManagerInfo `json:"managers"`      // 现任基金经理
-	FetchedAt      int64        `json:"fetchedAt"`      // 数据抓取时间（Unix 秒）
+	Code          string         `json:"code"`          // 基金代码
+	Name          string         `json:"name"`          // 基金名称
+	Type          string         `json:"type"`          // 基金类型
+	Rate          string         `json:"rate"`          // 实际申购费率（%）
+	MinPurchase   string         `json:"minPurchase"`   // 最小申购金额
+	NetWorthTrend []TrendPoint   `json:"netWorthTrend"` // 单位净值走势
+	AcWorthTrend  []TrendPoint   `json:"acWorthTrend"`  // 累计净值走势
+	MaxDrawdown   float64        `json:"maxDrawdown"`   // 历史最大回撤（%，由单位净值序列计算，负值如 -23.45）
+	PeriodReturns []PeriodReturn `json:"periodReturns"` // 阶段涨幅（近1月/近3月/近6月/近1年/近3年/成立来等）
+	Holdings      []Holding      `json:"holdings"`      // 前十重仓股
+	BondHoldings  []BondHolding  `json:"bondHoldings"`  // 重仓债券（纯债/债券型基金，股票持仓为空时展示）
+	Managers      []ManagerInfo  `json:"managers"`      // 现任基金经理
+	FetchedAt     int64          `json:"fetchedAt"`     // 数据抓取时间（Unix 秒）
 	// 标签信息（来自移动端详情接口）
 	Company   string `json:"company"`   // 基金公司
 	IndexName string `json:"indexName"` // 跟踪指数（指数型基金）

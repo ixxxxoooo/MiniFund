@@ -134,26 +134,23 @@ func (s *MarketService) GetMarketCenterQuotes() ([]model.MarketIndexQuote, error
 			mq.Price = q.Price
 			mq.Change = q.Change
 			mq.ChangePercent = q.ChangePercent
+			mq.Amount = q.Amount // 成交额（本币基础单位，按市场展示币种，不做汇率换算）
 		}
 		out = append(out, mq)
 	}
 
-	// 腾讯无符号的指数（如韩国 KOSPI）改用东财 ulist 补全实时报价；失败则保留占位（不影响其他指数）。
-	var fillSecids []string
-	for _, m := range eastmoney.MarketCenterIndexes {
-		if m.Tencent == "" {
-			fillSecids = append(fillSecids, m.Secid)
+	// 腾讯无符号的指数（如韩国 KOSPI）改用东财单标的接口 stock/get 补全实时报价。
+	// 海外指数批量 ulist.np 常返回缺失/异常，单标的接口更稳定；失败则保留占位（不影响其他指数）。
+	for i := range out {
+		meta, ok := eastmoney.FindIndexBySecid(out[i].Secid)
+		if !ok || meta.Tencent != "" {
+			continue
 		}
-	}
-	if len(fillSecids) > 0 {
-		if filled, ferr := eastmoney.FetchIndexQuotesBySecids(ctx, fillSecids); ferr == nil {
-			for i := range out {
-				if q, ok := filled[out[i].Secid]; ok {
-					out[i].Price = q.Price
-					out[i].Change = q.Change
-					out[i].ChangePercent = q.ChangePercent
-				}
-			}
+		if q, ferr := eastmoney.FetchIndexQuoteSingle(ctx, out[i].Secid); ferr == nil && q.Price > 0 {
+			out[i].Price = q.Price
+			out[i].Change = q.Change
+			out[i].ChangePercent = q.ChangePercent
+			out[i].Amount = q.Amount
 		}
 	}
 

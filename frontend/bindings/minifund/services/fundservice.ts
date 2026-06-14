@@ -95,11 +95,23 @@ export function SearchFunds(keyword: string, limit: number, offset: number): $Ca
 }
 
 /**
- * SearchFundsPage 排行页就地搜索（本地索引分页，含总数）：匹配名称/代码/拼音，
- * 公司名通常为基金名前缀（如「易方达」可命中全部易方达系基金）。pageIndex 从 1 开始。
+ * SearchFundsAll 搜索页全量命中（最多 searchAllMax 条 + 真实总数），供前端「对全部结果排序」。
+ * 返回 items 为前 searchAllMax 条命中（本地索引顺序），total 为完整命中总数；
+ * 阶段收益与排序均由前端在该结果集上完成（前端再做客户端分页）。
  */
-export function SearchFundsPage(keyword: string, pageIndex: number): $CancellablePromise<model$0.FundIndexPage | null> {
-    return $Call.ByID(215218647, keyword, pageIndex).then(($result: any) => {
+export function SearchFundsAll(keyword: string, fundType: string): $CancellablePromise<model$0.FundIndexPage | null> {
+    return $Call.ByID(97938279, keyword, fundType).then(($result: any) => {
+        return $$createType14($result);
+    });
+}
+
+/**
+ * SearchFundsPage 搜索页就地搜索（本地索引分页，含总数）：匹配名称/代码/拼音，
+ * 公司名通常为基金名前缀（如「易方达」可命中全部易方达系基金）。
+ * fundType 为类型筛选键（all/gp/hh/zq/zs/qdii/fof，与排行一致；空或 all 不过滤）。pageIndex 从 1 开始。
+ */
+export function SearchFundsPage(keyword: string, fundType: string, pageIndex: number): $CancellablePromise<model$0.FundIndexPage | null> {
+    return $Call.ByID(215218647, keyword, fundType, pageIndex).then(($result: any) => {
         return $$createType14($result);
     });
 }

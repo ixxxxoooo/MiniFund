@@ -135,6 +135,7 @@ stateDiagram-v2
 | `monitor:state` | `{phase, nextChange, paused}` | 时段状态切换/暂停恢复 |
 | `datasource:degraded` | `{source, reason}` | 熔断/降级发生与恢复 |
 | `news:flash` | `NewsFlash[]` | 每轮快讯拉取完成（推送最新列表） |
+| `market:center` | `MarketIndexQuote[]` | 行情中心指数每 30s 主动拉取完成（全天候，独立于交易时段/暂停） |
 | `ai:chunk` | `{id, text}` | AI 流式解读「累计全文」（每次为截至当前的完整文本，前端取最长者；`id` 为前端生成的会话 ID） |
 | `ai:done` | `{id}` | AI 流式解读完成 |
 | `ai:error` | `{id, message}` | AI 流式解读失败 |
@@ -142,6 +143,7 @@ stateDiagram-v2
 - 使用 Wails3 `application.RegisterEvent[T]` 注册强类型事件（对齐 MiniDB updater 的做法）；前端在 `lib/wails/events.ts` 统一封装订阅。
 - **AI 流式解读**：`AIService.InterpretNewsStream(streamID, title, content)` 立即返回并在后台 goroutine 中以 SSE 读取大模型增量（`ai.ChatStream`）。后台 goroutine 将增量累计为「全文」，按 `streamID` 经 `ai:chunk` 事件推送**累计全文**（节流 60ms，收尾必补发一次完整文本）。前端按 `streamID` 过滤、取最长文本渲染——因 Wails 高频事件投递不保证顺序，按「增量片段」拼接会乱序串字，改推「累计全文 + 取最长」即可免疫乱序。`AIService` 经 `SetApp` 注入 `*application.App` 以发事件。
 - **财经快讯轮询**：调度器在主循环按 `SettingsProvider.NewsPollInterval()`（默认 60s，最小 30s）定时执行 `runNewsRound`，**独立于交易时段与暂停状态**。每轮拉取后广播 `news:flash`，并以 `settings.news_last_id` 游标判断新增条目；存在新增且开启「快讯桌面通知」时，经注入的 `newsNotify` 回调调用 Wails 通知服务（`pkg/services/notifications`）弹系统通知，首轮与重启后不补推历史。手动刷新经 `RefreshNewsNow()`（独立 channel）触发。
+- **行情中心指数轮询**：调度器主循环每 **30s** 执行 `runMarketCenterRound`（启动首轮异步执行），**独立于交易时段与暂停状态**（美股盘在 CN 夜间，需全天候刷新）。经注入的 `marketCenterFn` 回调（装配时绑定 `MarketService.GetMarketCenterQuotes`，规避 `services → scheduler` 包循环依赖）拉取后广播 `market:center`，payload 直接下发，前端 `marketCenter` store 消费 payload 免再调 binding；`marketCenterBusy` 防止周期与首轮并发重入。
 
 ## 5. 本地存储（internal/storage，SQLite）
 
@@ -228,8 +230,9 @@ CREATE TABLE alert_log (id INTEGER PRIMARY KEY, rule_id INTEGER, fired_at INTEGE
 ```go
 // FundService
 SearchFunds(keyword string, limit int) ([]FundIndexItem, error)
-SearchFundsPage(keyword string, pageIndex int) (*FundIndexPage, error) // 排行页就地搜索（本地索引分页，含总数；每页 30 条，匹配名称/代码/拼音/公司前缀）
-GetFundDetail(code string) (*FundDetail, error)          // 详情快照（缓存优先；含重仓股，纯债基金无股票持仓时含重仓债券 BondHoldings）
+SearchFundsPage(keyword, fundType string, pageIndex int) (*FundIndexPage, error) // 排行页就地搜索（本地索引分页，含总数；每页 30 条，匹配名称/代码/拼音/公司前缀；fundType 类型筛选 all/gp/hh/zq/zs/qdii/fof）
+SearchFundsAll(keyword, fundType string) (*FundIndexPage, error) // 搜索页全量命中（一次取齐最多 300 条 + 真实总数），供前端对「全部结果」排序+客户端分页（默认今日涨幅倒序；阶段收益分批补全后排序）
+GetFundDetail(code string) (*FundDetail, error)          // 详情快照（缓存优先；含重仓股 Holdings 与重仓债券 BondHoldings，始终补拉债券，详情页 Tab 分别展示）
 GetNavHistory(code string, page, size int) (*NavPage, error)
 GetFundRanking(fundType, sortKey string, page int) (*RankPage, error)
 GetFundThemes(codes []string) (map[string][]FundTheme, error) // 批量基金→所属主题/概念（30 天缓存，缺失项受限并发拉取）
@@ -286,7 +289,7 @@ OpenDetailWindow(code) / OpenNewsWindow(id, payload) / ShowMainWindow() / HideMa
 | `watchlist` | 分组与自选列表 + 实时估值合并视图 | Go SQLite |
 | `portfolio` | 持仓与盈亏汇总 | Go SQLite |
 | `market` | 指数、板块、监控状态（phase） | 否（事件驱动） |
-| `marketCenter` | 行情中心指数清单 + 选中指数 K 线（借 `market:indexes` 事件驱动列表刷新，K 线按需拉取） | 否（事件驱动 + 按需） |
+| `marketCenter` | 行情中心指数清单 + 选中指数 K 线（`market:center` 事件每 30s 推送清单 payload，K 线按需拉取） | 否（事件驱动 + 按需） |
 | `ui` | 面板开关、选中项、金额隐藏开关（含主窗口当前页，默认「行情中心」） | localStorage（部分） |
 | `columns` | 各表格（排行/主题基金/搜索）列显隐配置 | localStorage |
 | `searchHistory` | 搜索关键字历史（最近 10 条，去重置顶；支持单条删除/清空） | localStorage |

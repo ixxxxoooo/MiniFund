@@ -8,8 +8,8 @@ export const zhCN = {
   nav: {
     market: "行情中心",
     watchlist: "自选监控",
-    search: "搜索",
-    analysis: "分析",
+    search: "基金搜索",
+    analysis: "基金分析",
     ranking: "基金排行",
     sectors: "热门主题",
     news: "财经快讯",
@@ -26,7 +26,7 @@ export const zhCN = {
     klineFailed: "K 线加载失败，请稍后重试",
     quoteEmpty: "暂无指数行情",
     updatedAt: "更新于 {time}",
-    stat: { open: "今开", high: "最高", low: "最低", volume: "成交量" },
+    stat: { open: "今开", high: "最高", low: "最低", volume: "成交量", amount: "成交额" },
     selectHint: "请选择左侧指数查看 K 线",
   },
   news: {
@@ -149,6 +149,8 @@ export const zhCN = {
     result: "搜索结果",
     recent: "最近搜索",
     perf: { day: "今日", week: "近1周", month: "近1月", month3: "近3月", year1: "近1年" },
+    // 命中过多时仅对前 N 条排序展示的提示（{n} 为上限）
+    truncated: "结果较多，仅对前 {n} 只排序展示",
   },
   position: {
     title: "编辑持仓",
