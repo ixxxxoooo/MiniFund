@@ -65,6 +65,8 @@ type Scheduler struct {
 	setTrayTitle func(string)
 	// newsNotify 桌面通知回调（由 app 装配时注入，封装 Wails 通知服务）；item 为触发通知的最新快讯
 	newsNotify func(title, body string, item model.NewsFlash)
+	// dcaNotify 定投到期桌面通知回调（由 app 装配时注入，封装 Wails 通知服务）
+	dcaNotify func(title, body string)
 	// marketCenterFn 行情中心指数拉取回调（由 app 装配注入 MarketService.GetMarketCenterQuotes，避免包循环依赖）
 	marketCenterFn func() ([]model.MarketIndexQuote, error)
 
@@ -117,6 +119,13 @@ func (s *Scheduler) SetTrayTitleUpdater(fn func(string)) {
 func (s *Scheduler) SetNewsNotifier(fn func(title, body string, item model.NewsFlash)) {
 	s.mu.Lock()
 	s.newsNotify = fn
+	s.mu.Unlock()
+}
+
+// SetDCANotifier 注入定投到期桌面通知回调（装配时调用）。
+func (s *Scheduler) SetDCANotifier(fn func(title, body string)) {
+	s.mu.Lock()
+	s.dcaNotify = fn
 	s.mu.Unlock()
 }
 
@@ -240,6 +249,7 @@ func (s *Scheduler) loop() {
 	lastNews := time.Now()
 	lastMarketCenter := time.Now()
 	lastPhase := phaseAt(time.Now())
+	lastDCADate := "" // 定投到期检查按自然日去重
 
 	for {
 		select {
@@ -261,6 +271,11 @@ func (s *Scheduler) loop() {
 			if now.Sub(lastMarketCenter) >= marketCenterInterval {
 				lastMarketCenter = now
 				go s.runMarketCenterRound()
+			}
+			// 定投到期检查：每自然日一次，独立于监控暂停与交易时段。
+			if today := now.Format("2006-01-02"); today != lastDCADate {
+				lastDCADate = today
+				go s.runDCARound(today)
 			}
 			if s.IsPaused() {
 				continue
@@ -574,6 +589,74 @@ func (s *Scheduler) runNavConfirmRound() {
 		s.app.Event.Emit(EventEstimates, out)
 		logger.Info("当日净值已确认: code=%s nav=%.4f growth=%.2f%%", code, latest.Nav, latest.Growth)
 	}
+}
+
+// runDCARound 定投到期处理：到期计划按需自动入账（金额÷最新净值估算份额），
+// 并发桌面通知提醒，随后推进计划到下一周期。
+func (s *Scheduler) runDCARound(today string) {
+	plans, err := s.store.DueDCAPlans(today)
+	if err != nil {
+		logger.Warn("查询到期定投计划失败: %v", err)
+		return
+	}
+	if len(plans) == 0 {
+		return
+	}
+
+	s.mu.Lock()
+	notify := s.dcaNotify
+	s.mu.Unlock()
+
+	changed := false
+	for _, p := range plans {
+		name := p.Code
+		if rec, _ := s.store.GetFundIndexItem(p.Code); rec != nil && rec.Name != "" {
+			name = rec.Name
+		}
+
+		recorded := false
+		if p.AutoRecord {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			navs := eastmoney.FetchLatestNavs(ctx, []string{p.Code})
+			cancel()
+			rec, ok := navs[p.Code]
+			if ok && rec.Nav > 0 {
+				shares := p.Amount / rec.Nav
+				txn := model.PositionTxn{
+					Code: p.Code, Date: today, Kind: model.TxnKindBuy,
+					Shares: shares, Price: rec.Nav, Amount: p.Amount,
+					Source: model.TxnSourceDCA, Note: "定投自动入账",
+				}
+				if err := s.store.AddTransaction(txn); err != nil {
+					logger.Warn("定投自动入账失败: code=%s err=%v", p.Code, err)
+				} else {
+					recorded = true
+					changed = true
+				}
+			} else {
+				logger.Warn("定投自动入账取净值失败: code=%s", p.Code)
+			}
+		}
+
+		if notify != nil {
+			body := fmt.Sprintf("%s 定投 %.2f 元到期，请手动记一笔", name, p.Amount)
+			if recorded {
+				body = fmt.Sprintf("已为 %s 自动定投买入 %.2f 元", name, p.Amount)
+			}
+			notify("定投提醒", body)
+		}
+
+		if err := s.store.AdvanceDCAPlan(p.ID, p.Freq, p.Day, today); err != nil {
+			logger.Warn("推进定投计划失败: id=%d err=%v", p.ID, err)
+		}
+	}
+
+	// 有自动入账或计划状态变化时广播，让各窗口重载持仓/计划
+	s.app.Event.Emit(EventWatchlistChanged, nil)
+	if changed {
+		s.RefreshNow()
+	}
+	logger.Info("定投到期处理完成: 共 %d 个计划", len(plans))
 }
 
 // runNewsRound 拉取一轮财经快讯：广播最新列表，并对新增条目按设置弹桌面通知。

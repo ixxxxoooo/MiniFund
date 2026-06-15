@@ -21,6 +21,7 @@ import { useMarketStore } from "@/stores/market";
 import { useNewsStore } from "@/stores/news";
 import { useSettingsStore } from "@/stores/settings";
 import { useUIStore, type PageId } from "@/stores/ui";
+import { useWatchlistStore } from "@/stores/watchlist";
 
 const NAV_ITEMS: { id: PageId; label: string; icon: React.ReactNode }[] = [
   { id: "market", label: zhCN.nav.market, icon: <CandlestickChart size={14} /> },
@@ -45,6 +46,7 @@ export function MainWindow() {
   const monitor = useMarketStore((s) => s.monitor);
   const degraded = useMarketStore((s) => s.degraded);
   const loadSettings = useSettingsStore((s) => s.load);
+  const loadWatchlist = useWatchlistStore((s) => s.load);
   const initNews = useNewsStore((s) => s.init);
   const newsUnread = useNewsStore((s) => s.unread);
   const markNewsRead = useNewsStore((s) => s.markRead);
@@ -52,9 +54,11 @@ export function MainWindow() {
   useEffect(() => {
     void loadSettings();
     initMarket();
+    // 启动即加载自选/持仓/已清仓，保证任何起始页的列表都能显示持仓状态
+    void loadWatchlist();
     const unsub = initNews();
     return unsub;
-  }, [loadSettings, initMarket, initNews]);
+  }, [loadSettings, initMarket, initNews, loadWatchlist]);
 
   // 进入快讯页即清除未读红点
   useEffect(() => {

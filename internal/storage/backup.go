@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"time"
 
 	"minifund/internal/model"
 )
@@ -46,13 +47,16 @@ func (s *Store) ListAllDailyProfits() ([]model.DailyProfit, error) {
 	return items, rows.Err()
 }
 
-// ReplaceWatchlistData 在单个事务中整体替换自选/分组/持仓/收益历史（数据导入恢复用）。
-// 分组按原 id 重建，保证「条目→分组」映射不丢失；不触碰基金代码表与各类缓存。
+// ReplaceWatchlistData 在单个事务中整体替换自选/分组/持仓流水/收益历史/定投计划（数据导入恢复用）。
+// 分组按原 id 重建，保证「条目→分组」映射不丢失；持仓由流水重算回写，不触碰基金代码表与各类缓存。
+// 兼容旧版备份：当无流水但有持仓快照时，按持仓回填为一笔买入流水，保证模型一致。
 func (s *Store) ReplaceWatchlistData(
 	groups []model.WatchGroup,
 	items []model.WatchItem,
 	positions []model.Position,
 	profits []model.DailyProfit,
+	transactions []model.PositionTxn,
+	plans []model.DCAPlan,
 ) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -61,7 +65,7 @@ func (s *Store) ReplaceWatchlistData(
 	defer func() { _ = tx.Rollback() }()
 
 	// 清空旧数据
-	for _, table := range []string{"watch_item", "watch_group", "position", "daily_profit"} {
+	for _, table := range []string{"watch_item", "watch_group", "position", "daily_profit", "position_txn", "dca_plan"} {
 		if _, err := tx.Exec("DELETE FROM " + table); err != nil {
 			return fmt.Errorf("清空 %s 失败: %w", table, err)
 		}
@@ -82,17 +86,47 @@ func (s *Store) ReplaceWatchlistData(
 			return fmt.Errorf("写入自选条目失败: %w", err)
 		}
 	}
-	for _, p := range positions {
-		if _, err := tx.Exec(`INSERT OR REPLACE INTO position (code, shares, cost_price, updated_at) VALUES (?, ?, ?, ?)`,
-			p.Code, p.Shares, p.CostPrice, p.UpdatedAt); err != nil {
-			return fmt.Errorf("写入持仓失败: %w", err)
-		}
-	}
 	for _, p := range profits {
 		if _, err := tx.Exec(`INSERT OR REPLACE INTO daily_profit (code, date, nav, growth, profit) VALUES (?, ?, ?, ?, ?)`,
 			p.Code, p.Date, p.Nav, p.Growth, p.Profit); err != nil {
 			return fmt.Errorf("写入收益历史失败: %w", err)
 		}
 	}
+
+	// 旧版备份无流水时，把持仓快照回填为一笔买入流水
+	txns := transactions
+	if len(txns) == 0 {
+		for _, p := range positions {
+			txns = append(txns, model.PositionTxn{
+				Code: p.Code, Date: time.Unix(p.UpdatedAt, 0).Format("2006-01-02"),
+				Kind: model.TxnKindBuy, Shares: p.Shares, Price: p.CostPrice,
+				Amount: p.Shares * p.CostPrice, Source: model.TxnSourceManual,
+				Note: "迁移自原持仓", CreatedAt: p.UpdatedAt,
+			})
+		}
+	}
+	codeSet := map[string]struct{}{}
+	for _, t := range txns {
+		if _, err := tx.Exec(`INSERT INTO position_txn (code, date, kind, shares, price, amount, source, note, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			t.Code, t.Date, t.Kind, t.Shares, t.Price, t.Amount, t.Source, t.Note, t.CreatedAt); err != nil {
+			return fmt.Errorf("写入交易流水失败: %w", err)
+		}
+		codeSet[t.Code] = struct{}{}
+	}
+	for code := range codeSet {
+		if err := recomputePositionTx(tx, code); err != nil {
+			return err
+		}
+	}
+
+	for _, p := range plans {
+		if _, err := tx.Exec(`INSERT INTO dca_plan (code, freq, day, amount, auto_record, enabled, next_run, last_run, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			p.Code, p.Freq, p.Day, p.Amount, boolToInt(p.AutoRecord), boolToInt(p.Enabled), p.NextRun, p.LastRun, p.CreatedAt); err != nil {
+			return fmt.Errorf("写入定投计划失败: %w", err)
+		}
+	}
+
 	return tx.Commit()
 }

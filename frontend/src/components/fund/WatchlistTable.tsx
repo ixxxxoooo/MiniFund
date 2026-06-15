@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { ExternalLink, FolderInput, Trash2, Wallet } from "lucide-react";
 import type { WatchItem } from "@bindings/minifund/internal/model";
 import { WindowService } from "@bindings/minifund/services";
-import { CopyButton, ThemeChips, useFundThemes } from "@/components/fund/fund-list-helpers";
+import { CopyButton, PositionStatusBadge, ThemeChips, useFundThemes } from "@/components/fund/fund-list-helpers";
 import { QuoteText } from "@/components/market/QuoteText";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pager } from "@/components/ui/pager";
@@ -189,6 +189,7 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
                     </div>
                     <div className="flex items-center gap-1">
                       <span className="quote-num text-2xs text-[var(--fg-muted)]">{item.code}</span>
+                      <PositionStatusBadge code={item.code} />
                       <CopyButton value={item.code} name={item.name} />
                     </div>
                   </div>

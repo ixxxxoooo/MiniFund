@@ -50,7 +50,7 @@
 ## 里程碑 M5：v2.0（规划）
 
 - [ ] 24. 收益日历与历史收益曲线（基于 daily_profit）
-- [ ] 25. 持仓交易流水（买入/卖出/分红再投，精确成本）
+- [x] 25. 持仓交易流水（买入/卖出 + 移动加权成本）+ 定投计划/到期提醒/自动入账（分红再投待补）
 - [ ] 26. 板块 → 主题基金映射
 - [x] 27. Windows 移植：跨平台路径/进程/托盘实现 + Windows 构建配置（EXE）
 - [ ] 28. 迷你桌面浮窗、指数估值温度计（蛋卷数据源）、Linux 移植
@@ -58,7 +58,7 @@
 ## 开源工程化（本次交付）✅
 
 - [x] MIT 许可证、README、CONTRIBUTING、CHANGELOG、行为准则、安装指南
-- [x] GitHub Actions：CI（Go/前端检查）+ Release（tag 触发的 macOS DMG / Windows EXE 构建）
+- [x] GitHub Actions：CI（Go/前端检查，仅 workflow_dispatch 手动触发）+ Release（tag 触发的 macOS DMG / Windows EXE 构建）
 - [x] Issue / PR 模板，仓库卫生清理
 
 ## 风险跟踪

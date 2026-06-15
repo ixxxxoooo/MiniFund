@@ -4,6 +4,7 @@
 export {
     BondHolding,
     BreadthBin,
+    DCAPlan,
     FundDetail,
     FundEstimate,
     FundIndexItem,
@@ -24,6 +25,7 @@ export {
     PeriodReturn,
     PortfolioSummary,
     Position,
+    PositionTxn,
     ProfitHistoryPoint,
     RankItem,
     RankPage,

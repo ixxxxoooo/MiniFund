@@ -183,7 +183,7 @@ func TestReplaceWatchlistData(t *testing.T) {
 	positions := []model.Position{{Code: "000001", Shares: 1000, CostPrice: 1.5, UpdatedAt: 1}}
 	profits := []model.DailyProfit{{Code: "000001", Date: "2026-06-12", Nav: 1.6, Growth: 0.5, Profit: 80}}
 
-	if err := s.ReplaceWatchlistData(groups, items, positions, profits); err != nil {
+	if err := s.ReplaceWatchlistData(groups, items, positions, profits, nil, nil); err != nil {
 		t.Fatalf("整体替换失败: %v", err)
 	}
 

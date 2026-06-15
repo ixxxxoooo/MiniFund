@@ -23,10 +23,32 @@ import * as model$0 from "../internal/model/models.js";
 import * as scheduler$0 from "../internal/scheduler/models.js";
 
 /**
- * DeletePosition 删除持仓。
+ * AddTransaction 记一笔交易流水（买入/卖出），自动重算持仓份额与加权成本。
+ * 份额、净值需大于 0；金额留空（≤0）时按 份额 × 净值 自动计算。
+ */
+export function AddTransaction(code: string, date: string, kind: string, shares: number, price: number, amount: number, note: string): $CancellablePromise<void> {
+    return $Call.ByID(3743489454, code, date, kind, shares, price, amount, note);
+}
+
+/**
+ * DeleteDCAPlan 删除定投计划。
+ */
+export function DeleteDCAPlan(id: number): $CancellablePromise<void> {
+    return $Call.ByID(568227051, id);
+}
+
+/**
+ * DeletePosition 删除持仓：清空该基金全部交易流水并移除派生缓存。
  */
 export function DeletePosition(code: string): $CancellablePromise<void> {
     return $Call.ByID(2367940775, code);
+}
+
+/**
+ * DeleteTransaction 删除一笔交易流水并重算持仓。
+ */
+export function DeleteTransaction(id: number): $CancellablePromise<void> {
+    return $Call.ByID(3602422716, id);
 }
 
 /**
@@ -67,12 +89,46 @@ export function GetXray(): $CancellablePromise<model$0.XrayStock[]> {
 }
 
 /**
+ * ListClearedCodes 返回「已清仓」的基金代码（曾持有、当前份额为 0），供各列表展示清仓状态。
+ */
+export function ListClearedCodes(): $CancellablePromise<string[]> {
+    return $Call.ByID(2605793697).then(($result: any) => {
+        return $$createType8($result);
+    });
+}
+
+/**
+ * ListDCAPlans 返回全部定投计划。
+ */
+export function ListDCAPlans(): $CancellablePromise<model$0.DCAPlan[]> {
+    return $Call.ByID(314129507).then(($result: any) => {
+        return $$createType10($result);
+    });
+}
+
+/**
  * ListPositions 返回全部持仓。
  */
 export function ListPositions(): $CancellablePromise<model$0.Position[]> {
     return $Call.ByID(153802093).then(($result: any) => {
-        return $$createType8($result);
+        return $$createType11($result);
     });
+}
+
+/**
+ * ListTransactions 返回某基金的交易流水（按日期升序）。
+ */
+export function ListTransactions(code: string): $CancellablePromise<model$0.PositionTxn[]> {
+    return $Call.ByID(2900775846, code).then(($result: any) => {
+        return $$createType13($result);
+    });
+}
+
+/**
+ * SetDCAPlanEnabled 启用/停用定投计划。
+ */
+export function SetDCAPlanEnabled(id: number, enabled: boolean): $CancellablePromise<void> {
+    return $Call.ByID(1111399109, id, enabled);
 }
 
 /**
@@ -97,7 +153,15 @@ export function SetScheduler(sched: scheduler$0.Scheduler | null): $CancellableP
 }
 
 /**
- * UpsertPosition 录入/更新持仓。
+ * UpsertDCAPlan 新增/更新定投计划（ID>0 为更新），返回写入后的计划 id。
+ */
+export function UpsertDCAPlan(plan: model$0.DCAPlan): $CancellablePromise<number> {
+    return $Call.ByID(106173427, plan);
+}
+
+/**
+ * UpsertPosition 设为基准持仓：清空该基金现有流水，写入一笔基准买入后重算缓存。
+ * 供「直接编辑份额/成本」的手动覆盖入口使用，避免与流水模型冲突。
  */
 export function UpsertPosition(code: string, shares: number, costPrice: number): $CancellablePromise<void> {
     return $Call.ByID(3257881231, code, shares, costPrice);
@@ -112,4 +176,9 @@ const $$createType4 = model$0.PortfolioSummary.createFrom;
 const $$createType5 = $Create.Nullable($$createType4);
 const $$createType6 = model$0.XrayStock.createFrom;
 const $$createType7 = $Create.Array($$createType6);
-const $$createType8 = $Create.Array($$createType0);
+const $$createType8 = $Create.Array($Create.Any);
+const $$createType9 = model$0.DCAPlan.createFrom;
+const $$createType10 = $Create.Array($$createType9);
+const $$createType11 = $Create.Array($$createType0);
+const $$createType12 = model$0.PositionTxn.createFrom;
+const $$createType13 = $Create.Array($$createType12);

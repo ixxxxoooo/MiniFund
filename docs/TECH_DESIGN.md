@@ -123,6 +123,7 @@ stateDiagram-v2
   - `estimateTask`：自选基金估值（Trading 30s 默认，托盘面板打开时 15s；QDII 排除）。每轮估值后调用 `reconcileEstimates`，用权威历史净值（`latestNavCache`，TTL 5 分钟 + 自选集合变化才重拉，批量 `eastmoney.FetchLatestNavs` 并发 ≤ 8）校正 `fundgz` 滞后：「最新净值」改取历史净值最新一条；估算对应交易日（`gztime` 日期）≤ 最新已确认净值日期时清除过期估算（`HasEstimate=false`）。同时把历史净值最新一条的日增长率写入 `FundEstimate.DayGrowth`（`HasDayGrowth=true`），作为自选列表「今日涨幅」在盘后/非交易日的兜底（前端优先实时估算、否则取已公布日涨幅）。
   - `indexTask`：指数行情（Trading 10s，Lunch/盘后按订阅市场降频）
 - `NavConfirm` 任务：每 10 分钟查历史净值接口首条记录，日期为今日则确认净值、发事件、停止该基金查询；同时把该基金估值缓存的最新净值更新为确认值并清除已被取代的盘中估算。
+- 定投到期任务（`runDCARound`）：主循环每**自然日一次**（按日期去重，独立于交易时段/暂停）调用 `store.DueDCAPlans(today)`；到期计划若开启 `auto_record` 则取最新净值（`eastmoney.FetchLatestNavs`）按 金额÷净值 估算份额写入一笔 `dca` 来源买入流水并重算持仓，始终经注入的 `dcaNotify` 回调发桌面通知提醒，随后 `AdvanceDCAPlan` 推进 `next_run`，最后广播 `watchlist:changed` 让各窗口重载。
 - 暴露 `Pause()/Resume()`（托盘菜单"暂停监控"）与 `SetInterval()`（设置页）。
 
 ### 4.2 事件协议（Go → 前端）
@@ -164,9 +165,24 @@ CREATE TABLE watch_item (
   PRIMARY KEY (code, group_id)
 );
 
--- 持仓（v1 每基金一条，可编辑；v2 扩展为交易流水表）
+-- 持仓派生缓存（由 position_txn 流水移动加权重算回写；份额 ≤0 时删除该行）
 CREATE TABLE position (
   code TEXT PRIMARY KEY, shares REAL NOT NULL, cost_price REAL NOT NULL, updated_at INTEGER
+);
+
+-- 持仓交易流水（迁移 v3，份额变动唯一真相源）：kind=buy/sell，source=manual/dca
+CREATE TABLE position_txn (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, date TEXT NOT NULL,
+  kind TEXT NOT NULL, shares REAL NOT NULL, price REAL NOT NULL, amount REAL NOT NULL,
+  source TEXT NOT NULL, note TEXT, created_at INTEGER
+);
+CREATE INDEX idx_position_txn_code ON position_txn(code);
+
+-- 定投计划（迁移 v3）：freq=weekly(day 1..7)/monthly(day 1..28)，auto_record 到期自动入账
+CREATE TABLE dca_plan (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, freq TEXT NOT NULL, day INTEGER NOT NULL,
+  amount REAL NOT NULL, auto_record INTEGER DEFAULT 0, enabled INTEGER DEFAULT 1,
+  next_run TEXT, last_run TEXT, created_at INTEGER
 );
 
 -- 当日收益落库（净值确认后写入，供 v2 收益日历）
@@ -249,12 +265,16 @@ SetPinned(code, groupID, pinned) / Reorder(groupID, codes)
 // BackupService（数据备份/恢复，外部仅原生文件对话框与本地文件读写）
 ExportData() (path string, err error)                    // 弹保存框导出 JSON 备份（自选/分组/持仓/收益历史/设置），用户取消返回空串
 ImportData() (*ImportResult, error)                      // 弹打开框，校验后整体替换自选数据并合并设置，用户取消返回 nil
-// 备份 JSON 结构：{app:"MiniFund", version:1, exportedAt, groups[], items[], positions[], dailyProfit[], settings{}}
-// 导入策略：storage.ReplaceWatchlistData 事务内清空并按原 id 重建分组→条目→持仓→收益历史；设置走 SettingsService.Update；
+// 备份 JSON 结构（v2）：{app:"MiniFund", version:2, exportedAt, groups[], items[], positions[], transactions[], dcaPlans[], dailyProfit[], settings{}}
+// 导入策略：storage.ReplaceWatchlistData 事务内清空并按原 id 重建分组→条目→收益历史→流水(重算持仓)→定投计划；旧版(无 transactions)按 positions 回填一笔买入流水；设置走 SettingsService.Update；
 // 完成后经注入的 onChange 触发调度器刷新 + 广播 watchlist:changed，各窗口重载。
 
 // PortfolioService
-GetPosition(code) / UpsertPosition(code, shares, costPrice) / DeletePosition(code)
+GetPosition(code) / DeletePosition(code)                 // DeletePosition 清空该基金全部流水并移除缓存
+UpsertPosition(code, shares, costPrice)                   // 「设为基准持仓」：清空流水后写一笔基准买入再重算
+ListTransactions(code) / AddTransaction(code, date, kind, shares, price, amount, note) / DeleteTransaction(id) // 交易流水（kind=buy/sell）
+ListClearedCodes() ([]string, error)                     // 已清仓基金代码（曾持有、当前份额为 0），供各列表显示「持有/已清仓」状态徽标
+ListDCAPlans() / UpsertDCAPlan(plan) / DeleteDCAPlan(id) / SetDCAPlanEnabled(id, enabled)                     // 定投计划
 GetSummary() (*PortfolioSummary, error)   // 总市值/当日预估/累计收益
 
 // MarketService

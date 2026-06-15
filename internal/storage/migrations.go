@@ -71,6 +71,39 @@ var migrations = []string{
 		updated_at INTEGER
 	);
 	`,
+	// v3：持仓交易流水（份额变动唯一真相源，position 表退化为派生缓存）与定投计划。
+	// 同时把现有 position 单条记录回填为一笔买入流水，保证流水非空且派生一致。
+	`
+	CREATE TABLE IF NOT EXISTS position_txn (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		code TEXT NOT NULL,
+		date TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		shares REAL NOT NULL,
+		price REAL NOT NULL,
+		amount REAL NOT NULL,
+		source TEXT NOT NULL,
+		note TEXT,
+		created_at INTEGER
+	);
+	CREATE INDEX IF NOT EXISTS idx_position_txn_code ON position_txn(code);
+	CREATE TABLE IF NOT EXISTS dca_plan (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		code TEXT NOT NULL,
+		freq TEXT NOT NULL,
+		day INTEGER NOT NULL,
+		amount REAL NOT NULL,
+		auto_record INTEGER DEFAULT 0,
+		enabled INTEGER DEFAULT 1,
+		next_run TEXT,
+		last_run TEXT,
+		created_at INTEGER
+	);
+	INSERT INTO position_txn (code, date, kind, shares, price, amount, source, note, created_at)
+		SELECT code, date(COALESCE(updated_at, strftime('%s','now')), 'unixepoch', 'localtime'),
+			'buy', shares, cost_price, shares * cost_price, 'manual', '迁移自原持仓', COALESCE(updated_at, strftime('%s','now'))
+		FROM position;
+	`,
 }
 
 // migrate 按 PRAGMA user_version 顺序执行未应用的迁移。

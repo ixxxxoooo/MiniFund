@@ -327,12 +327,56 @@ type WatchItem struct {
 	Type string `json:"type"`
 }
 
-// Position 持仓记录（v1 每基金一条）。
+// Position 持仓记录（派生缓存，由 position_txn 流水重算回写）。
 type Position struct {
 	Code      string  `json:"code"`
-	Shares    float64 `json:"shares"`    // 持有份额
-	CostPrice float64 `json:"costPrice"` // 持仓成本价
+	Shares    float64 `json:"shares"`    // 持有份额（Σ买入 − Σ卖出）
+	CostPrice float64 `json:"costPrice"` // 持仓成本价（移动加权平均）
 	UpdatedAt int64   `json:"updatedAt"`
+}
+
+// 交易流水类型与来源常量。
+const (
+	TxnKindBuy      = "buy"    // 买入/加仓/定投
+	TxnKindSell     = "sell"   // 卖出
+	TxnSourceManual = "manual" // 手动录入
+	TxnSourceDCA    = "dca"    // 定投自动入账
+)
+
+// PositionTxn 持仓交易流水（份额变动的唯一真相来源）。
+type PositionTxn struct {
+	ID        int64   `json:"id"`        // 自增主键
+	Code      string  `json:"code"`      // 基金代码
+	Date      string  `json:"date"`      // 交易日期 yyyy-MM-dd
+	Kind      string  `json:"kind"`      // 类型：buy / sell
+	Shares    float64 `json:"shares"`    // 成交份额
+	Price     float64 `json:"price"`     // 成交净值（单价）
+	Amount    float64 `json:"amount"`    // 成交金额（份额 × 净值，便于展示与定投金额对账）
+	Source    string  `json:"source"`    // 来源：manual / dca
+	Note      string  `json:"note"`      // 备注
+	CreatedAt int64   `json:"createdAt"` // 创建时间（Unix 秒）
+}
+
+// 定投周期常量。
+const (
+	DCAFreqWeekly  = "weekly"  // 每周（day=1..7，周一至周日）
+	DCAFreqMonthly = "monthly" // 每月（day=1..28，每月第几日）
+)
+
+// DCAPlan 定投计划。
+type DCAPlan struct {
+	ID         int64   `json:"id"`         // 自增主键
+	Code       string  `json:"code"`       // 基金代码
+	Freq       string  `json:"freq"`       // 周期：weekly / monthly
+	Day        int     `json:"day"`        // 周期内的日：weekly 取 1..7，monthly 取 1..28
+	Amount     float64 `json:"amount"`     // 每次定投金额（元）
+	AutoRecord bool    `json:"autoRecord"` // 到期是否自动按金额÷最新净值入账（false 仅提醒）
+	Enabled    bool    `json:"enabled"`    // 是否启用
+	NextRun    string  `json:"nextRun"`    // 下次执行日期 yyyy-MM-dd
+	LastRun    string  `json:"lastRun"`    // 上次执行日期 yyyy-MM-dd（空表示从未执行）
+	CreatedAt  int64   `json:"createdAt"`  // 创建时间（Unix 秒）
+	// Name 来自 fund_index 联查，便于前端直接展示（非入库字段）
+	Name string `json:"name"`
 }
 
 // DailyProfit 每日收益落库记录（净值确认后写入，供收益日历与数据备份）。

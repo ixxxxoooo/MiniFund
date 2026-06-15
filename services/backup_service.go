@@ -17,19 +17,22 @@ import (
 const backupAppName = "MiniFund"
 
 // backupVersion 备份格式版本号，向后兼容时递增。
-const backupVersion = 1
+// v2：新增持仓交易流水（transactions）与定投计划（dcaPlans）。
+const backupVersion = 2
 
-// backupData 备份文件结构（JSON）。包含自选分组、自选条目、持仓、收益历史与应用设置；
-// 不含基金代码表、净值/详情缓存等可重建的派生数据。
+// backupData 备份文件结构（JSON）。包含自选分组、自选条目、持仓、交易流水、定投计划、
+// 收益历史与应用设置；不含基金代码表、净值/详情缓存等可重建的派生数据。
 type backupData struct {
-	App         string             `json:"app"`         // 固定为 MiniFund
-	Version     int                `json:"version"`     // 备份格式版本
-	ExportedAt  string             `json:"exportedAt"`  // 导出时间（RFC3339）
-	Groups      []model.WatchGroup `json:"groups"`      // 自选分组
-	Items       []model.WatchItem  `json:"items"`       // 自选条目（保留各自分组）
-	Positions   []model.Position   `json:"positions"`   // 持仓
-	DailyProfit []model.DailyProfit `json:"dailyProfit"` // 每日收益历史
-	Settings    AppSettings        `json:"settings"`    // 应用设置
+	App          string              `json:"app"`          // 固定为 MiniFund
+	Version      int                 `json:"version"`      // 备份格式版本
+	ExportedAt   string              `json:"exportedAt"`   // 导出时间（RFC3339）
+	Groups       []model.WatchGroup  `json:"groups"`       // 自选分组
+	Items        []model.WatchItem   `json:"items"`        // 自选条目（保留各自分组）
+	Positions    []model.Position    `json:"positions"`    // 持仓快照（派生缓存，兼容旧版导入）
+	Transactions []model.PositionTxn `json:"transactions"` // 持仓交易流水（真相源）
+	DCAPlans     []model.DCAPlan     `json:"dcaPlans"`     // 定投计划
+	DailyProfit  []model.DailyProfit `json:"dailyProfit"`  // 每日收益历史
+	Settings     AppSettings         `json:"settings"`     // 应用设置
 }
 
 // ImportResult 数据导入结果（暴露给前端展示）。
@@ -129,7 +132,7 @@ func (s *BackupService) ImportData() (*ImportResult, error) {
 		return nil, fmt.Errorf("备份文件不含任何分组，已取消导入")
 	}
 
-	if err := s.store.ReplaceWatchlistData(data.Groups, data.Items, data.Positions, data.DailyProfit); err != nil {
+	if err := s.store.ReplaceWatchlistData(data.Groups, data.Items, data.Positions, data.DailyProfit, data.Transactions, data.DCAPlans); err != nil {
 		return nil, err
 	}
 	// 合并设置（经 SettingsService 走校验、持久化并触发调度器刷新）
@@ -161,6 +164,14 @@ func (s *BackupService) snapshot() (*backupData, error) {
 	if err != nil {
 		return nil, err
 	}
+	transactions, err := s.store.ListAllTransactions()
+	if err != nil {
+		return nil, err
+	}
+	plans, err := s.store.ListAllDCAPlans()
+	if err != nil {
+		return nil, err
+	}
 	profits, err := s.store.ListAllDailyProfits()
 	if err != nil {
 		return nil, err
@@ -170,13 +181,15 @@ func (s *BackupService) snapshot() (*backupData, error) {
 		return nil, err
 	}
 	return &backupData{
-		App:         backupAppName,
-		Version:     backupVersion,
-		ExportedAt:  time.Now().Format(time.RFC3339),
-		Groups:      groups,
-		Items:       items,
-		Positions:   positions,
-		DailyProfit: profits,
-		Settings:    settings,
+		App:          backupAppName,
+		Version:      backupVersion,
+		ExportedAt:   time.Now().Format(time.RFC3339),
+		Groups:       groups,
+		Items:        items,
+		Positions:    positions,
+		Transactions: transactions,
+		DCAPlans:     plans,
+		DailyProfit:  profits,
+		Settings:     settings,
 	}, nil
 }

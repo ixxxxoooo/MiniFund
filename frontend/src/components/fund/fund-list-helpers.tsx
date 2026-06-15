@@ -184,6 +184,31 @@ export function CopyButton({
   );
 }
 
+/**
+ * 持仓状态徽标：展示在基金代码后面。
+ * 持有（当前份额 > 0）显示绿色「持有」；已清仓（曾买入、当前份额为 0）显示灰色「已清仓」；
+ * 无任何交易记录则不渲染。再次买入后由后端重算自动恢复为「持有」。
+ */
+export function PositionStatusBadge({ code, className }: { code: string; className?: string }) {
+  const held = useWatchlistStore((s) => (s.positions[code]?.shares ?? 0) > 0);
+  const cleared = useWatchlistStore((s) => s.clearedCodes.includes(code));
+  if (!held && !cleared) return null;
+  const label = held ? zhCN.position.statusHeld : zhCN.position.statusCleared;
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded-[var(--radius-sm)] px-1 py-px text-[10px] font-medium leading-tight",
+        held
+          ? "bg-[var(--row-selected)] text-[var(--accent)]"
+          : "bg-[var(--surface-secondary)] text-[var(--fg-muted)]",
+        className
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
 /** 加自选按钮：图标 + 「加自选」文字；已在自选中则展示「已添加」 */
 export function AddButton({ code, onAdd }: { code: string; onAdd: () => void }) {
   const watched = useWatchlistStore((s) => s.items.some((it) => it.code === code));

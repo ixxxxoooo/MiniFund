@@ -97,6 +97,12 @@
   --quote-up-bg: rgba(245, 34, 45, 0.1);
   --quote-down-bg: rgba(0, 168, 80, 0.1);
 
+  /* 持仓买卖标记色（固定语义，不随涨跌配色翻转：买入暖色、卖出蓝色） */
+  --marker-buy: #f5222d;
+  --marker-buy-fg: #ffffff;
+  --marker-sell: #1677ff;
+  --marker-sell-fg: #ffffff;
+
   /* 主题/概念标签分类配色（柔和色票，规避红/绿以免与涨跌混淆；索引由标签名哈希决定） */
   --chip-0-bg: #e8f0fe;
   --chip-0-fg: #1a56db;
@@ -185,6 +191,12 @@
   --quote-down: #2fd47a;
   --quote-up-bg: rgba(255, 107, 107, 0.14);
   --quote-down-bg: rgba(47, 212, 122, 0.14);
+
+  /* 暗色下提亮买卖标记色 */
+  --marker-buy: #ff6b6b;
+  --marker-buy-fg: #1a1a1a;
+  --marker-sell: #4096ff;
+  --marker-sell-fg: #ffffff;
 
   /* 主题/概念标签分类配色（暗色：半透明底 + 提亮文字） */
   --chip-0-bg: rgba(96, 165, 250, 0.20);

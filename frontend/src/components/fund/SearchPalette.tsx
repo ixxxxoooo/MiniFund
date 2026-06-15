@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Plus, Search } from "lucide-react";
 import type { FundIndexItem } from "@bindings/minifund/internal/model";
 import { FundService, WindowService } from "@bindings/minifund/services";
+import { PositionStatusBadge } from "@/components/fund/fund-list-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { zhCN } from "@/i18n/zh-CN";
@@ -158,6 +159,7 @@ export function SearchPalette() {
                 )}
               >
                 <span className="quote-num w-[52px] shrink-0 text-2xs text-[var(--fg-secondary)]">{item.code}</span>
+                <PositionStatusBadge code={item.code} />
                 <span className="min-w-0 flex-1 truncate text-[length:var(--size-font-xs)] text-[var(--fg)]">
                   {item.name}
                 </span>

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { Window } from "@wailsio/runtime";
-import type { BondHolding, FundDetail, Holding, ManagerInfo, NavPage } from "@bindings/minifund/internal/model";
-import { FundService } from "@bindings/minifund/services";
-import { LineChart } from "@/components/charts/LineChart";
+import type { BondHolding, FundDetail, Holding, ManagerInfo, NavPage, PositionTxn } from "@bindings/minifund/internal/model";
+import { FundService, PortfolioService } from "@bindings/minifund/services";
+import { ChartMarker, LineChart } from "@/components/charts/LineChart";
 import { ManagerDialog } from "@/components/fund/ManagerDialog";
 import { ThemeChips, useFundThemes } from "@/components/fund/fund-list-helpers";
 import { TitleBar } from "@/components/layout/TitleBar";
@@ -13,6 +13,7 @@ import { SortableHeader } from "@/components/ui/sortable-header";
 import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
+import { onWatchlistChanged } from "@/lib/wails/events";
 import { OpenExternalURL } from "@/lib/wails/runtime";
 import { formatNav } from "@/lib/format";
 import { useHotkeys } from "@/lib/hotkeys";
@@ -138,6 +139,9 @@ export function DetailWindow({ code }: DetailWindowProps) {
     "meta+w": () => void Window.Close(),
   });
 
+  // 该基金交易流水（用于在走势图上标注买入/卖出点）
+  const [txns, setTxns] = useState<PositionTxn[]>([]);
+
   useEffect(() => {
     void loadSettings();
     initMarket();
@@ -151,6 +155,16 @@ export function DetailWindow({ code }: DetailWindowProps) {
       }
     });
   }, [code, loadSettings, initMarket]);
+
+  // 加载交易流水；任一窗口持仓变更后重新加载，保证走势图标记同步
+  useEffect(() => {
+    const reloadTxns = () =>
+      void call("加载交易流水", () => PortfolioService.ListTransactions(code)).then((list) => {
+        if (list) setTxns(list);
+      });
+    reloadTxns();
+    return onWatchlistChanged(reloadTxns);
+  }, [code]);
 
   // 历史净值无限滚动：累积所有已加载条目，滚动到底自动加载下一页
   const [navItems, setNavItems] = useState<NavItem[]>([]);
@@ -214,6 +228,33 @@ export function DetailWindow({ code }: DetailWindowProps) {
     const slice = days === Infinity ? trend : trend.slice(-days);
     return slice.map((p) => ({ date: p.date, value: p.value }));
   }, [detail, range]);
+
+  // 将交易流水映射为走势图标记：按日期对齐到当日或之前最近的净值点，
+  // 同日同方向（买/卖）合并为一个标记，提示里逐笔列出。
+  const chartMarkers = useMemo<ChartMarker[]>(() => {
+    if (chartPoints.length < 2 || txns.length === 0) return [];
+    const firstDate = chartPoints[0].date;
+    // index → { buy?: ChartMarker, sell?: ChartMarker }
+    const byIndex = new Map<string, ChartMarker>();
+    for (const tx of txns) {
+      if (tx.date < firstDate) continue; // 落在可视区间之前，跳过
+      // 找到日期 ≤ 交易日的最近净值点（处理非交易日/周末）
+      let idx = -1;
+      for (let i = 0; i < chartPoints.length; i++) {
+        if (chartPoints[i].date <= tx.date) idx = i;
+        else break;
+      }
+      if (idx < 0) continue;
+      const kind: "buy" | "sell" = tx.kind === "sell" ? "sell" : "buy";
+      const key = `${idx}-${kind}`;
+      const label = kind === "sell" ? zhCN.position.sell : zhCN.position.buy;
+      const line = `${tx.date} ${label} ${tx.shares.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}份 @${formatNav(tx.price)}`;
+      const existing = byIndex.get(key);
+      if (existing) existing.tip.push(line);
+      else byIndex.set(key, { index: idx, kind, tip: [line] });
+    }
+    return Array.from(byIndex.values());
+  }, [chartPoints, txns]);
 
   const latest = detail?.netWorthTrend?.[detail.netWorthTrend.length - 1];
 
@@ -377,7 +418,19 @@ export function DetailWindow({ code }: DetailWindowProps) {
                 ))}
               </div>
             </div>
-            <LineChart points={chartPoints} height={200} formatValue={formatNav} />
+            <LineChart points={chartPoints} height={200} formatValue={formatNav} markers={chartMarkers} />
+            {chartMarkers.length > 0 && (
+              <div className="mt-1 flex items-center justify-end gap-3 text-2xs text-[var(--fg-muted)]">
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "var(--marker-buy)" }} />
+                  {zhCN.detail.markerBuy}
+                </span>
+                <span className="flex items-center gap-1">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: "var(--marker-sell)" }} />
+                  {zhCN.detail.markerSell}
+                </span>
+              </div>
+            )}
           </section>
 
           <div className="grid min-h-0 flex-1 grid-cols-2 gap-[var(--size-gap)]">

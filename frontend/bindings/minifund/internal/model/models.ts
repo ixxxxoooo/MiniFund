@@ -84,6 +84,113 @@ export class BreadthBin {
 }
 
 /**
+ * DCAPlan 定投计划。
+ */
+export class DCAPlan {
+    /**
+     * 自增主键
+     */
+    "id": number;
+
+    /**
+     * 基金代码
+     */
+    "code": string;
+
+    /**
+     * 周期：weekly / monthly
+     */
+    "freq": string;
+
+    /**
+     * 周期内的日：weekly 取 1..7，monthly 取 1..28
+     */
+    "day": number;
+
+    /**
+     * 每次定投金额（元）
+     */
+    "amount": number;
+
+    /**
+     * 到期是否自动按金额÷最新净值入账（false 仅提醒）
+     */
+    "autoRecord": boolean;
+
+    /**
+     * 是否启用
+     */
+    "enabled": boolean;
+
+    /**
+     * 下次执行日期 yyyy-MM-dd
+     */
+    "nextRun": string;
+
+    /**
+     * 上次执行日期 yyyy-MM-dd（空表示从未执行）
+     */
+    "lastRun": string;
+
+    /**
+     * 创建时间（Unix 秒）
+     */
+    "createdAt": number;
+
+    /**
+     * Name 来自 fund_index 联查，便于前端直接展示（非入库字段）
+     */
+    "name": string;
+
+    /** Creates a new DCAPlan instance. */
+    constructor($$source: Partial<DCAPlan> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("code" in $$source)) {
+            this["code"] = "";
+        }
+        if (!("freq" in $$source)) {
+            this["freq"] = "";
+        }
+        if (!("day" in $$source)) {
+            this["day"] = 0;
+        }
+        if (!("amount" in $$source)) {
+            this["amount"] = 0;
+        }
+        if (!("autoRecord" in $$source)) {
+            this["autoRecord"] = false;
+        }
+        if (!("enabled" in $$source)) {
+            this["enabled"] = false;
+        }
+        if (!("nextRun" in $$source)) {
+            this["nextRun"] = "";
+        }
+        if (!("lastRun" in $$source)) {
+            this["lastRun"] = "";
+        }
+        if (!("createdAt" in $$source)) {
+            this["createdAt"] = 0;
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DCAPlan instance from a string or object.
+     */
+    static createFrom($$source: any = {}): DCAPlan {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new DCAPlan($$parsedSource as Partial<DCAPlan>);
+    }
+}
+
+/**
  * FundDetail 基金详情聚合数据。
  */
 export class FundDetail {
@@ -1509,18 +1616,18 @@ export class PortfolioSummary {
 }
 
 /**
- * Position 持仓记录（v1 每基金一条）。
+ * Position 持仓记录（派生缓存，由 position_txn 流水重算回写）。
  */
 export class Position {
     "code": string;
 
     /**
-     * 持有份额
+     * 持有份额（Σ买入 − Σ卖出）
      */
     "shares": number;
 
     /**
-     * 持仓成本价
+     * 持仓成本价（移动加权平均）
      */
     "costPrice": number;
     "updatedAt": number;
@@ -1549,6 +1656,105 @@ export class Position {
     static createFrom($$source: any = {}): Position {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new Position($$parsedSource as Partial<Position>);
+    }
+}
+
+/**
+ * PositionTxn 持仓交易流水（份额变动的唯一真相来源）。
+ */
+export class PositionTxn {
+    /**
+     * 自增主键
+     */
+    "id": number;
+
+    /**
+     * 基金代码
+     */
+    "code": string;
+
+    /**
+     * 交易日期 yyyy-MM-dd
+     */
+    "date": string;
+
+    /**
+     * 类型：buy / sell
+     */
+    "kind": string;
+
+    /**
+     * 成交份额
+     */
+    "shares": number;
+
+    /**
+     * 成交净值（单价）
+     */
+    "price": number;
+
+    /**
+     * 成交金额（份额 × 净值，便于展示与定投金额对账）
+     */
+    "amount": number;
+
+    /**
+     * 来源：manual / dca
+     */
+    "source": string;
+
+    /**
+     * 备注
+     */
+    "note": string;
+
+    /**
+     * 创建时间（Unix 秒）
+     */
+    "createdAt": number;
+
+    /** Creates a new PositionTxn instance. */
+    constructor($$source: Partial<PositionTxn> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("code" in $$source)) {
+            this["code"] = "";
+        }
+        if (!("date" in $$source)) {
+            this["date"] = "";
+        }
+        if (!("kind" in $$source)) {
+            this["kind"] = "";
+        }
+        if (!("shares" in $$source)) {
+            this["shares"] = 0;
+        }
+        if (!("price" in $$source)) {
+            this["price"] = 0;
+        }
+        if (!("amount" in $$source)) {
+            this["amount"] = 0;
+        }
+        if (!("source" in $$source)) {
+            this["source"] = "";
+        }
+        if (!("note" in $$source)) {
+            this["note"] = "";
+        }
+        if (!("createdAt" in $$source)) {
+            this["createdAt"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PositionTxn instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PositionTxn {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PositionTxn($$parsedSource as Partial<PositionTxn>);
     }
 }
 

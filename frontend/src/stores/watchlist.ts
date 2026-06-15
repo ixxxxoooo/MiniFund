@@ -1,9 +1,10 @@
 import { create } from "zustand";
-import type {
-  PortfolioSummary,
-  Position,
-  WatchGroup,
-  WatchItem,
+import {
+  DCAPlan,
+  type PortfolioSummary,
+  type Position,
+  type WatchGroup,
+  type WatchItem,
 } from "@bindings/minifund/internal/model";
 import { PortfolioService, WatchlistService } from "@bindings/minifund/services";
 import { zhCN } from "@/i18n/zh-CN";
@@ -31,6 +32,8 @@ interface WatchlistStore {
   items: WatchItem[];
   /** 持仓：code → Position */
   positions: Record<string, Position>;
+  /** 已清仓基金代码（曾持有、当前份额为 0），用于各列表展示「已清仓」状态 */
+  clearedCodes: string[];
   summary: PortfolioSummary | null;
   loaded: boolean;
 
@@ -50,6 +53,16 @@ interface WatchlistStore {
   deleteGroup: (id: number) => Promise<void>;
   savePosition: (code: string, shares: number, costPrice: number) => Promise<void>;
   deletePosition: (code: string) => Promise<void>;
+  /** 记一笔交易流水（买入/卖出），份额由后端重算，返回是否成功 */
+  addTransaction: (code: string, date: string, kind: string, shares: number, price: number, note: string) => Promise<boolean>;
+  /** 删除一笔交易流水 */
+  deleteTransaction: (id: number) => Promise<boolean>;
+  /** 新增/更新定投计划，返回是否成功 */
+  upsertDCAPlan: (plan: DCAPlan) => Promise<boolean>;
+  /** 删除定投计划 */
+  deleteDCAPlan: (id: number) => Promise<boolean>;
+  /** 启用/停用定投计划 */
+  setDCAPlanEnabled: (id: number, enabled: boolean) => Promise<boolean>;
 }
 
 /** 持仓数组转 map */
@@ -64,6 +77,7 @@ export const useWatchlistStore = create<WatchlistStore>()((set, get) => ({
   activeGroupId: null,
   items: [],
   positions: {},
+  clearedCodes: [],
   summary: null,
   loaded: false,
 
@@ -78,6 +92,9 @@ export const useWatchlistStore = create<WatchlistStore>()((set, get) => ({
       get().reloadItems(),
       call("加载持仓", () => PortfolioService.ListPositions()).then((list) => {
         if (list) set({ positions: toPositionMap(list) });
+      }),
+      call("加载已清仓基金", () => PortfolioService.ListClearedCodes()).then((list) => {
+        if (list) set({ clearedCodes: list });
       }),
       get().refreshSummary(),
     ]);
@@ -166,5 +183,34 @@ export const useWatchlistStore = create<WatchlistStore>()((set, get) => ({
       if (list) set({ positions: toPositionMap(list) });
       await get().refreshSummary();
     }
+  },
+
+  // 以下写操作均触发后端广播 watchlist:changed，由 market store 监听重载持仓与汇总，
+  // 故此处只需返回成功标记，供弹窗刷新本地的流水/计划列表。
+  addTransaction: async (code, date, kind, shares, price, note) => {
+    const ok = await call("记一笔交易", () =>
+      PortfolioService.AddTransaction(code, date, kind, shares, price, 0, note)
+    );
+    return ok !== null;
+  },
+
+  deleteTransaction: async (id) => {
+    const ok = await call("删除交易流水", () => PortfolioService.DeleteTransaction(id));
+    return ok !== null;
+  },
+
+  upsertDCAPlan: async (plan) => {
+    const ok = await call("保存定投计划", () => PortfolioService.UpsertDCAPlan(plan));
+    return ok !== null;
+  },
+
+  deleteDCAPlan: async (id) => {
+    const ok = await call("删除定投计划", () => PortfolioService.DeleteDCAPlan(id));
+    return ok !== null;
+  },
+
+  setDCAPlanEnabled: async (id, enabled) => {
+    const ok = await call("更新定投状态", () => PortfolioService.SetDCAPlanEnabled(id, enabled));
+    return ok !== null;
   },
 }));

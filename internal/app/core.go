@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"minifund/internal/datasource"
 	"minifund/internal/datasource/sina"
@@ -107,6 +108,18 @@ func (c *core) startup(wailsApp *application.App) {
 			logger.Warn("发送桌面通知失败: %v", err)
 		}
 	})
+	// 定投到期桌面通知：调度器到期时回调，复用 Wails 通知服务
+	c.Scheduler.SetDCANotifier(func(title, body string) {
+		if c.NotifySvc == nil {
+			return
+		}
+		if err := c.NotifySvc.SendNotification(notifications.NotificationOptions{
+			ID: fmt.Sprintf("dca-%d", time.Now().UnixNano()), Title: title, Body: body,
+		}); err != nil {
+			logger.Warn("发送定投通知失败: %v", err)
+		}
+	})
+
 	// 点击通知：打开对应的新闻详情弹窗（优先用 Data 载荷，回退到 id 缓存）
 	c.NotifySvc.OnNotificationResponse(func(result notifications.NotificationResult) {
 		if result.Error != nil {

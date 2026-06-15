@@ -7,6 +7,16 @@ export interface LinePoint {
   value: number;
 }
 
+/** 折线图上的买卖标记（位置对齐到对应净值点） */
+export interface ChartMarker {
+  /** 对应 points 的下标 */
+  index: number;
+  /** 买入 / 卖出 */
+  kind: "buy" | "sell";
+  /** 悬停提示（多行） */
+  tip: string[];
+}
+
 interface LineChartProps {
   points: LinePoint[];
   /** 图表高度（px） */
@@ -15,7 +25,12 @@ interface LineChartProps {
   formatValue?: (v: number) => string;
   /** X 轴 / tooltip 标签格式化（默认原样展示） */
   formatLabel?: (d: string) => string;
+  /** 买卖标记（如持仓交易点） */
+  markers?: ChartMarker[];
 }
+
+/** 信息条高度补偿：叠加层相对容器定位，需抵消折线 svg 上方的高低信息条 */
+const INFO_BAR_OFFSET = 16;
 
 /** 默认坐标标签格式化：YYYY-MM-DD 压缩为 MM-DD，其余原样返回。 */
 function defaultFormatLabel(d: string): string {
@@ -27,7 +42,7 @@ function defaultFormatLabel(d: string): string {
  * 轻量 SVG 折线图：净值走势展示。
  * 不引入图表库，颜色全部来自主题 token；悬停显示十字线、定位点与浮窗（时间 + 数值），底部带时间刻度。
  */
-export function LineChart({ points, height = 220, formatValue, formatLabel }: LineChartProps) {
+export function LineChart({ points, height = 220, formatValue, formatLabel, markers }: LineChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const width = 640; // viewBox 逻辑宽度，实际渲染随容器伸缩
@@ -135,6 +150,29 @@ export function LineChart({ points, height = 220, formatValue, formatLabel }: Li
             </>
           )}
         </svg>
+
+        {/* 买卖标记叠加层：用 HTML 定位避免 SVG 横向拉伸导致图形变形 */}
+        {markers?.map((m, i) => {
+          if (m.index < 0 || m.index >= points.length) return null;
+          const leftPct = (xAt(m.index) / width) * 100;
+          const top = yAt(points[m.index].value) + INFO_BAR_OFFSET;
+          const isBuy = m.kind === "buy";
+          return (
+            <div
+              key={`${m.kind}-${m.index}-${i}`}
+              className="quote-num pointer-events-auto absolute z-[5] flex h-[15px] w-[15px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full text-[9px] font-bold shadow-[var(--shadow-sm)]"
+              style={{
+                left: `${leftPct}%`,
+                top,
+                background: isBuy ? "var(--marker-buy)" : "var(--marker-sell)",
+                color: isBuy ? "var(--marker-buy-fg)" : "var(--marker-sell-fg)",
+              }}
+              title={m.tip.join("\n")}
+            >
+              {isBuy ? "买" : "卖"}
+            </div>
+          );
+        })}
 
         {/* 悬停浮窗：紧贴定位点显示时间 + 净值 */}
         {hoverIndex != null && (

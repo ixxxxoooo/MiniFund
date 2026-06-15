@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	"minifund/internal/model"
 	"minifund/internal/scheduler"
@@ -60,21 +61,112 @@ func (s *PortfolioService) GetPosition(code string) (*model.Position, error) {
 	return s.store.GetPosition(code)
 }
 
-// UpsertPosition 录入/更新持仓。
+// UpsertPosition 设为基准持仓：清空该基金现有流水，写入一笔基准买入后重算缓存。
+// 供「直接编辑份额/成本」的手动覆盖入口使用，避免与流水模型冲突。
 func (s *PortfolioService) UpsertPosition(code string, shares, costPrice float64) error {
 	if shares <= 0 || costPrice <= 0 {
 		return fmt.Errorf("份额与成本价必须大于 0")
 	}
-	if err := s.store.UpsertPosition(code, shares, costPrice); err != nil {
+	if err := s.store.SetBaselinePosition(code, shares, costPrice); err != nil {
 		return err
 	}
 	s.notifyChange()
 	return nil
 }
 
-// DeletePosition 删除持仓。
+// DeletePosition 删除持仓：清空该基金全部交易流水并移除派生缓存。
 func (s *PortfolioService) DeletePosition(code string) error {
+	if err := s.store.ClearTransactions(code); err != nil {
+		return err
+	}
 	if err := s.store.DeletePosition(code); err != nil {
+		return err
+	}
+	s.notifyChange()
+	return nil
+}
+
+// ListTransactions 返回某基金的交易流水（按日期升序）。
+func (s *PortfolioService) ListTransactions(code string) ([]model.PositionTxn, error) {
+	return s.store.ListTransactions(code)
+}
+
+// ListClearedCodes 返回「已清仓」的基金代码（曾持有、当前份额为 0），供各列表展示清仓状态。
+func (s *PortfolioService) ListClearedCodes() ([]string, error) {
+	return s.store.ListClearedCodes()
+}
+
+// AddTransaction 记一笔交易流水（买入/卖出），自动重算持仓份额与加权成本。
+// 份额、净值需大于 0；金额留空（≤0）时按 份额 × 净值 自动计算。
+func (s *PortfolioService) AddTransaction(code, date, kind string, shares, price, amount float64, note string) error {
+	if kind != model.TxnKindBuy && kind != model.TxnKindSell {
+		return fmt.Errorf("交易类型只能是买入或卖出")
+	}
+	if shares <= 0 || price <= 0 {
+		return fmt.Errorf("份额与净值必须大于 0")
+	}
+	if date == "" {
+		date = time.Now().Format("2006-01-02")
+	}
+	if amount <= 0 {
+		amount = shares * price
+	}
+	t := model.PositionTxn{
+		Code: code, Date: date, Kind: kind, Shares: shares, Price: price,
+		Amount: amount, Source: model.TxnSourceManual, Note: note,
+	}
+	if err := s.store.AddTransaction(t); err != nil {
+		return err
+	}
+	s.notifyChange()
+	return nil
+}
+
+// DeleteTransaction 删除一笔交易流水并重算持仓。
+func (s *PortfolioService) DeleteTransaction(id int64) error {
+	if err := s.store.DeleteTransaction(id); err != nil {
+		return err
+	}
+	s.notifyChange()
+	return nil
+}
+
+// ListDCAPlans 返回全部定投计划。
+func (s *PortfolioService) ListDCAPlans() ([]model.DCAPlan, error) {
+	return s.store.ListDCAPlans()
+}
+
+// UpsertDCAPlan 新增/更新定投计划（ID>0 为更新），返回写入后的计划 id。
+func (s *PortfolioService) UpsertDCAPlan(plan model.DCAPlan) (int64, error) {
+	if plan.Code == "" {
+		return 0, fmt.Errorf("请选择定投基金")
+	}
+	if plan.Freq != model.DCAFreqWeekly && plan.Freq != model.DCAFreqMonthly {
+		return 0, fmt.Errorf("定投周期只能是每周或每月")
+	}
+	if plan.Amount <= 0 {
+		return 0, fmt.Errorf("定投金额必须大于 0")
+	}
+	id, err := s.store.UpsertDCAPlan(plan)
+	if err != nil {
+		return 0, err
+	}
+	s.notifyChange()
+	return id, nil
+}
+
+// DeleteDCAPlan 删除定投计划。
+func (s *PortfolioService) DeleteDCAPlan(id int64) error {
+	if err := s.store.DeleteDCAPlan(id); err != nil {
+		return err
+	}
+	s.notifyChange()
+	return nil
+}
+
+// SetDCAPlanEnabled 启用/停用定投计划。
+func (s *PortfolioService) SetDCAPlanEnabled(id int64, enabled bool) error {
+	if err := s.store.SetDCAPlanEnabled(id, enabled); err != nil {
 		return err
 	}
 	s.notifyChange()

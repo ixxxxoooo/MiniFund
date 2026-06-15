@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { RankItem, RankPage } from "@bindings/minifund/internal/model";
 import { FundService, WindowService } from "@bindings/minifund/services";
 import { QuoteText } from "@/components/market/QuoteText";
-import { AddButton, CopyButton, ThemeChips, useFundThemes } from "@/components/fund/fund-list-helpers";
+import { AddButton, CopyButton, PositionStatusBadge, ThemeChips, useFundThemes } from "@/components/fund/fund-list-helpers";
 import { ColumnToggle } from "@/components/ui/column-toggle";
 import { Pager } from "@/components/ui/pager";
 import { SortableHeader } from "@/components/ui/sortable-header";
@@ -218,6 +218,7 @@ export function RankingPage() {
                       </div>
                       <div className="flex items-center gap-1">
                         <span className="quote-num text-2xs text-[var(--fg-muted)]">{item.code}</span>
+                        <PositionStatusBadge code={item.code} />
                         <CopyButton value={item.code} name={item.name} />
                       </div>
                     </div>

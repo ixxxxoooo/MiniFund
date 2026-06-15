@@ -4,6 +4,7 @@ import type { FundDetail, FundIndexItem, ProfitHistoryPoint, XrayStock } from "@
 import { FundService, PortfolioService } from "@bindings/minifund/services";
 import { BarChart } from "@/components/charts/BarChart";
 import { COMPARE_COLORS, MultiLineChart, type CompareSeries } from "@/components/charts/MultiLineChart";
+import { PositionStatusBadge } from "@/components/fund/fund-list-helpers";
 import { QuoteText } from "@/components/market/QuoteText";
 import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
@@ -521,6 +522,7 @@ function CompareView() {
                         )}
                       >
                         <span className="truncate">{it.name}</span>
+                        <PositionStatusBadge code={it.code} className="ml-2" />
                         <span className="quote-num ml-2 shrink-0 text-[var(--fg-muted)]">{it.code}</span>
                       </button>
                     );
