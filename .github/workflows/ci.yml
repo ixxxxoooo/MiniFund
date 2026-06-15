@@ -1,11 +1,9 @@
 name: CI
 
-# 持续集成：每次推送到 main 或提交 PR 时运行 Go 与前端的检查。
+# 持续集成：仅在 GitHub Actions 页面手动点击「Run workflow」时运行 Go 与前端检查；
+# 不再随 push / PR 自动触发，避免每次推送都消耗额度。
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 # 取消同一分支上正在进行的旧任务，节省额度。
 concurrency:
