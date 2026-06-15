@@ -57,7 +57,7 @@ func newCore() (*core, error) {
 		FundSvc:      services.NewFundService(store),
 		WatchlistSvc: services.NewWatchlistService(store),
 		PortfolioSvc: services.NewPortfolioService(store),
-		MarketSvc:    services.NewMarketService(),
+		MarketSvc:    services.NewMarketService(store),
 		WindowSvc:    services.NewWindowService(settingsSvc),
 		NewsSvc:      services.NewNewsService(),
 		AISvc:        services.NewAIService(settingsSvc),

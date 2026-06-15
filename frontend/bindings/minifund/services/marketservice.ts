@@ -27,11 +27,13 @@ export function GetEstimates(): $CancellablePromise<model$0.FundEstimate[]> {
 }
 
 /**
- * GetIndexKline 按指数 secid 与周期（day/week/month）拉取 K 线（60s 内存缓存）。
- * 主源腾讯（A股/港股可取完整历史）；美股/北证 50 腾讯仅返回最新一根，自动回退东财 push2his。
+ * GetIndexKline 按指数 secid 与周期（day/week/month）拉取 K 线。
+ * limit 为请求的最近 K 线根数（钳制到 [60,1000]），前端缩放/向左滚动时逐步增大以动态加载更多历史。
+ * 取源成功后与 SQLite 长期缓存按日期并集合并落库（上限 1000 根），取源失败则回退缓存（离线兜底）。
+ * 主源腾讯（A股/港股可取完整历史）；美股/北证 50 走新浪；韩国 KOSPI 等回退东财 push2his。
  */
-export function GetIndexKline(secid: string, period: string): $CancellablePromise<model$0.Kline[]> {
-    return $Call.ByID(470939390, secid, period).then(($result: any) => {
+export function GetIndexKline(secid: string, period: string, limit: number): $CancellablePromise<model$0.Kline[]> {
+    return $Call.ByID(470939390, secid, period, limit).then(($result: any) => {
         return $$createType3($result);
     });
 }

@@ -4,6 +4,8 @@
 >
 > 技术栈：Wails v3（alpha）+ Go 1.26 + React 18 + TypeScript + Vite + Tailwind CSS + zustand。
 > 工程结构与编码风格对齐 MiniDB 项目。
+>
+> 图表约定：默认自研 SVG（净值折线、买卖点等），颜色全部走主题 token。**例外**：行情中心 K 线图（缩放/拖拽/动态加载交互复杂）引入 `klinecharts`（v9）经 `components/charts/KlineChart.tsx` 封装，样式仍由 `globals.css` token 映射（`buildStyles` 读取计算值），随明暗主题/涨跌色方案/摸鱼模式实时切换。
 
 ## 1. 总体架构
 
@@ -198,6 +200,13 @@ CREATE TABLE detail_cache (code TEXT PRIMARY KEY, payload TEXT, fetched_at INTEG
 -- 基金所属主题/概念缓存（迁移 v2；themes 为 []FundTheme 的 JSON，30 天 TTL）
 CREATE TABLE fund_theme (code TEXT PRIMARY KEY, themes TEXT, updated_at INTEGER);
 
+-- 行情中心指数 K 线长期缓存（迁移 v4；payload 为 []Kline 的 JSON，按日期升序、上限 1000 根）
+-- 历史 K 线不可变可长期保留；重开瞬时渲染，取源失败时离线兜底；max_date 记录最新一根日期便于增量刷新
+CREATE TABLE kline_cache (
+  secid TEXT NOT NULL, period TEXT NOT NULL, payload TEXT NOT NULL,
+  max_date TEXT, fetched_at INTEGER, PRIMARY KEY (secid, period)
+);
+
 -- 设置（KV）：key="app" 存整份 AppSettings JSON；key="news_last_id" 存最近一条已推送快讯 id（重启后避免重复通知）
 CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT);
 
@@ -280,7 +289,8 @@ GetSummary() (*PortfolioSummary, error)   // 总市值/当日预估/累计收益
 // MarketService
 GetIndexQuotes() / SetWatchedIndexes(symbols) / GetSectorList(kind string)
 GetMarketCenterQuotes() ([]MarketIndexQuote, error)        // 行情中心指数清单批量实时（腾讯主源，东财 ulist.np 兜底，5s 缓存）
-GetIndexKline(secid, period string) ([]Kline, error)        // 指数 K 线（腾讯主源；美股/北证 50 回退东财 push2his；period: day/week/month，60s 缓存）
+GetIndexKline(secid, period string, limit int) ([]Kline, error) // 指数 K 线（腾讯主源；美股/北证 50 走新浪；韩国等回退东财 push2his；period: day/week/month）
+// limit 钳制 [60,1000]，前端缩放/向左滚动逐步增大以动态加载更多历史；取源成功与 kline_cache 按日期并集合并落库（上限 1000），失败回退缓存（离线兜底）；60s 内存缓存（key 含 limit）
 
 // NewsService
 GetFlashNews() ([]NewsFlash, error)         // 最近一轮快讯快照（来自调度器缓存，后续靠 news:flash 事件推送）
@@ -318,7 +328,7 @@ OpenDetailWindow(code) / OpenNewsWindow(id, payload) / ShowMainWindow() / HideMa
 | `watchlist` | 分组与自选列表 + 实时估值合并视图 | Go SQLite |
 | `portfolio` | 持仓与盈亏汇总 | Go SQLite |
 | `market` | 指数、板块、监控状态（phase） | 否（事件驱动） |
-| `marketCenter` | 行情中心指数清单 + 选中指数 K 线（`market:center` 事件每 30s 推送清单 payload，K 线按需拉取） | 否（事件驱动 + 按需） |
+| `marketCenter` | 行情中心指数清单 + 选中指数 K 线（`market:center` 事件每 30s 推送清单 payload；K 线初始预加载 500 根，向左滚动经 `loadMoreKline` 逐步升至 1000 根动态加载更多历史） | 否（事件驱动 + 按需） |
 | `ui` | 面板开关、选中项、金额隐藏开关（含主窗口当前页，默认「行情中心」） | localStorage（部分） |
 | `columns` | 各表格（排行/主题基金/搜索）列显隐配置 | localStorage |
 | `searchHistory` | 搜索关键字历史（最近 10 条，去重置顶；支持单条删除/清空） | localStorage |

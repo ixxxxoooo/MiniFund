@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { MarketIndexQuote } from "@bindings/minifund/internal/model";
-import { CandleChart } from "@/components/charts/CandleChart";
+import { KlineChart } from "@/components/charts/KlineChart";
 import { QuoteText } from "@/components/market/QuoteText";
 import { Spinner } from "@/components/ui/spinner";
 import { useMarketCenterStore, type KlinePeriod } from "@/stores/marketCenter";
@@ -55,11 +55,13 @@ export function MarketCenterPage() {
   const selected = useMarketCenterStore((s) => s.selected);
   const period = useMarketCenterStore((s) => s.period);
   const kline = useMarketCenterStore((s) => s.kline);
+  const klineMore = useMarketCenterStore((s) => s.klineMore);
   const loadingKline = useMarketCenterStore((s) => s.loadingKline);
   const klineError = useMarketCenterStore((s) => s.klineError);
   const init = useMarketCenterStore((s) => s.init);
   const select = useMarketCenterStore((s) => s.select);
   const setPeriod = useMarketCenterStore((s) => s.setPeriod);
+  const loadMoreKline = useMarketCenterStore((s) => s.loadMoreKline);
   const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
 
   useEffect(() => {
@@ -233,7 +235,13 @@ export function MarketCenterPage() {
               {klineError}
             </div>
           ) : (
-            <CandleChart data={kline} height={Math.max(240, chartH - 40)} />
+            <KlineChart
+              data={kline}
+              more={klineMore}
+              resetKey={`${selected ?? ""}|${period}`}
+              height={Math.max(240, chartH - 40)}
+              onLoadMore={loadMoreKline}
+            />
           )}
         </div>
       </div>

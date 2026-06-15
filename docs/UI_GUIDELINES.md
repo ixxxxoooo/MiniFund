@@ -148,6 +148,7 @@
 - 饼图（资产配置）：从 `--accent`/`--info`/`--warning`/`--fg-muted` 取色。
 - 提示框（tooltip）：背景 `--surface-elevated`、阴影 `--shadow-md`、圆角 `--radius-menu`。
 - 坐标轴文字 `--fg-muted`、字号 11px；横轴只显示首尾与关键刻度。
+- K 线图（行情中心，唯一引入图表库的例外）：用 `klinecharts`（v9），样式经 `KlineChart.tsx` 的 `buildStyles` **读取 token 计算值**映射（涨跌 `--quote-up/--quote-down`、平盘 `--fg-secondary`、网格/轴线 `--border-color`、轴文字 `--fg-muted`、MA 线 `--accent/--warning/--info`、tooltip 背景 `--surface-elevated`），随明暗主题/涨跌色方案/摸鱼模式实时重应用；**不得硬编码色值**。
 
 ## 7. 可访问性与多主题验证
 

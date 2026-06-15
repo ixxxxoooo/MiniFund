@@ -104,6 +104,18 @@ var migrations = []string{
 			'buy', shares, cost_price, shares * cost_price, 'manual', '迁移自原持仓', COALESCE(updated_at, strftime('%s','now'))
 		FROM position;
 	`,
+	// v4：行情中心指数 K 线长期缓存（按 secid+period 存整段 JSON，重开瞬时渲染并可离线兜底）。
+	// payload 为 []model.Kline 的 JSON，按日期升序、上限 1000 根；max_date 记录最新一根日期便于增量刷新。
+	`
+	CREATE TABLE IF NOT EXISTS kline_cache (
+		secid TEXT NOT NULL,
+		period TEXT NOT NULL,
+		payload TEXT NOT NULL,
+		max_date TEXT,
+		fetched_at INTEGER,
+		PRIMARY KEY (secid, period)
+	);
+	`,
 }
 
 // migrate 按 PRAGMA user_version 顺序执行未应用的迁移。
