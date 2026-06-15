@@ -13,7 +13,7 @@ import { SortableHeader } from "@/components/ui/sortable-header";
 import { Tooltip } from "@/components/ui/tooltip";
 import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
-import { onWatchlistChanged } from "@/lib/wails/events";
+import { onNavConfirmed, onWatchlistChanged } from "@/lib/wails/events";
 import { OpenExternalURL } from "@/lib/wails/runtime";
 import { formatNav } from "@/lib/format";
 import { useHotkeys } from "@/lib/hotkeys";
@@ -166,6 +166,16 @@ export function DetailWindow({ code }: DetailWindowProps) {
     return onWatchlistChanged(reloadTxns);
   }, [code]);
 
+  // 本基金净值确认后刷新详情快照（走势图 / 阶段涨幅），避免一次性快照过期
+  useEffect(() => {
+    return onNavConfirmed((data) => {
+      if (data.code !== code) return;
+      void call("刷新基金详情", () => FundService.GetFundDetail(code)).then((d) => {
+        if (d) setDetail(d);
+      });
+    });
+  }, [code]);
+
   // 历史净值无限滚动：累积所有已加载条目，滚动到底自动加载下一页
   const [navItems, setNavItems] = useState<NavItem[]>([]);
   const [navTotal, setNavTotal] = useState(0);
@@ -256,7 +266,14 @@ export function DetailWindow({ code }: DetailWindowProps) {
     return Array.from(byIndex.values());
   }, [chartPoints, txns]);
 
-  const latest = detail?.netWorthTrend?.[detail.netWorthTrend.length - 1];
+  // 最新（已确认）净值：优先取实时行情 store 的已公布数据（navDate/prevNav/dayGrowth），
+  // 避免详情快照在窗口打开后不再刷新、导致新净值确认后涨跌幅仍是旧值（与外面列表不一致）；
+  // store 无该基金（如非自选基金）时回退到详情快照。
+  const latestSnap = detail?.netWorthTrend?.[detail.netWorthTrend.length - 1];
+  const liveDay = est?.hasDayGrowth ? est : null;
+  const latestDate = liveDay ? liveDay.navDate : latestSnap?.date;
+  const latestNav = liveDay ? liveDay.prevNav : latestSnap?.value;
+  const latestGrowth = liveDay ? liveDay.dayGrowth : latestSnap?.growth;
 
   // 历史净值本地排序（作用于已累积的全部条目）
   const navSort = useLocalSort(navItems, {
@@ -356,17 +373,17 @@ export function DetailWindow({ code }: DetailWindowProps) {
             </div>
             {/* 右侧：最新净值与盘中估算并排展示 */}
             <div className="flex shrink-0 items-stretch gap-3">
-              {latest && (
+              {latestDate != null && latestNav != null && latestGrowth != null && (
                 // 最新净值：左侧上日期下净值，右侧放大百分比（去掉「最新净值」标签文字）
                 <div className="flex items-center gap-3 rounded-[var(--radius-panel)] bg-[var(--surface-secondary)] px-3 py-1.5">
                   <div className="flex flex-col items-start leading-tight">
-                    <span className="quote-num text-2xs text-[var(--fg-muted)]">{latest.date}</span>
+                    <span className="quote-num text-2xs text-[var(--fg-muted)]">{latestDate}</span>
                     <span className="quote-num text-[length:var(--size-font-base)] font-bold text-[var(--fg)]">
-                      {formatNav(latest.value)}
+                      {formatNav(latestNav)}
                     </span>
                   </div>
                   <QuoteText
-                    value={latest.growth}
+                    value={latestGrowth}
                     neutral={stealth}
                     className="text-[length:var(--size-font-lg)] font-bold leading-none"
                   />

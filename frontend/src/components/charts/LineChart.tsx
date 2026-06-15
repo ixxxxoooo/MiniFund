@@ -151,25 +151,58 @@ export function LineChart({ points, height = 220, formatValue, formatLabel, mark
           )}
         </svg>
 
-        {/* 买卖标记叠加层：用 HTML 定位避免 SVG 横向拉伸导致图形变形 */}
+        {/* 买卖标记叠加层（参考支付宝）：线上只放小圆点精确锚定净值点，
+            「买/卖」文字做成错开的小标签（买在下、卖在上），用细引线相连，文字不压在点上。 */}
         {markers?.map((m, i) => {
           if (m.index < 0 || m.index >= points.length) return null;
           const leftPct = (xAt(m.index) / width) * 100;
-          const top = yAt(points[m.index].value) + INFO_BAR_OFFSET;
+          const dotTop = yAt(points[m.index].value) + INFO_BAR_OFFSET;
           const isBuy = m.kind === "buy";
+          const bg = isBuy ? "var(--marker-buy)" : "var(--marker-sell)";
+          const fg = isBuy ? "var(--marker-buy-fg)" : "var(--marker-sell-fg)";
+          // 买标签在点下方、卖标签在点上方，避免文字遮住净值点
+          const dir = isBuy ? 1 : -1;
+          const leadLen = 9; // 引线长度（px）
           return (
             <div
               key={`${m.kind}-${m.index}-${i}`}
-              className="quote-num pointer-events-auto absolute z-[5] flex h-[15px] w-[15px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full text-[9px] font-bold shadow-[var(--shadow-sm)]"
-              style={{
-                left: `${leftPct}%`,
-                top,
-                background: isBuy ? "var(--marker-buy)" : "var(--marker-sell)",
-                color: isBuy ? "var(--marker-buy-fg)" : "var(--marker-sell-fg)",
-              }}
+              className="pointer-events-auto absolute z-[5]"
+              style={{ left: `${leftPct}%`, top: dotTop }}
               title={m.tip.join("\n")}
             >
-              {isBuy ? "买" : "卖"}
+              {/* 连接净值点与标签的细引线 */}
+              <span
+                className="absolute left-0 -translate-x-1/2"
+                style={{
+                  top: dir > 0 ? 0 : -leadLen,
+                  width: 1,
+                  height: leadLen,
+                  background: bg,
+                  opacity: 0.55,
+                }}
+              />
+              {/* 净值点上的小圆点：精确锚定，带描边便于从曲线区分 */}
+              <span
+                className="absolute left-0 top-0 -translate-x-1/2 -translate-y-1/2 rounded-full"
+                style={{
+                  width: 6,
+                  height: 6,
+                  background: bg,
+                  boxShadow: "0 0 0 1.5px var(--surface-elevated)",
+                }}
+              />
+              {/* 买/卖 小标签：与点错开，不再压在点上 */}
+              <span
+                className="absolute left-0 flex h-[14px] min-w-[14px] items-center justify-center rounded-[var(--radius-sm)] px-[3px] text-[9px] font-bold leading-none shadow-[var(--shadow-sm)]"
+                style={{
+                  top: dir > 0 ? leadLen : -leadLen,
+                  transform: `translate(-50%, ${dir > 0 ? "0" : "-100%"})`,
+                  background: bg,
+                  color: fg,
+                }}
+              >
+                {isBuy ? "买" : "卖"}
+              </span>
             </div>
           );
         })}

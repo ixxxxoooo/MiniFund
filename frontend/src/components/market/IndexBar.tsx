@@ -22,8 +22,9 @@ export function IndexBar() {
   const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
 
   return (
-    // 标题栏空间有限：展示全部已选指数，超出部分横向滚动（隐藏滚动条），避免被裁剪后「看不到」
-    <div className="titlebar-no-drag scroll-none flex min-w-0 items-center justify-end gap-[var(--size-padding)] overflow-x-auto">
+    // 标题栏空间有限：指数从左侧（搜索框右边）依次排布，放不下的尾部直接裁掉隐藏。
+    // 注意必须用 justify-start：WebKit(WKWebView) 下 justify-end + overflow 会让溢出内容从左侧漏出、遮挡搜索框。
+    <div className="titlebar-no-drag flex min-w-0 flex-1 items-center justify-start gap-[var(--size-padding)] overflow-hidden">
       {indexes.map((q) => (
         <div key={q.symbol} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-2xs">
           <span className="text-[var(--fg-secondary)]">{q.name}</span>

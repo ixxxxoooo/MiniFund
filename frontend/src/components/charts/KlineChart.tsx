@@ -157,6 +157,8 @@ export function KlineChart({ data, more, resetKey, height, onLoadMore }: KlineCh
       chart.createIndicator({ name: "MA", calcParams: [5, 10, 20] }, true, { id: "candle_pane" });
       chart.createIndicator("VOL", false, { id: "vol_pane" });
       chart.setStyles(buildStyles(stealth));
+      // 收窄最新 K 线到右侧价格轴的默认预留间距（库默认偏大，会显示一段空白）。
+      chart.setOffsetRightDistance(4);
       chart.loadMore(() => {
         if (loadingMoreRef.current) return;
         loadingMoreRef.current = true;

@@ -84,14 +84,28 @@ export function MainWindow() {
   return (
     <div className="flex h-full flex-col bg-[var(--surface)]">
       <TitleBar>
-        <div className="flex w-full items-center justify-between gap-[var(--size-padding)]">
-          {/* 应用名称（搜索入口已收敛到侧边栏「搜索」页） */}
+        <div className="flex w-full items-center gap-[var(--size-padding)]">
+          {/* 应用名称 */}
           <span className="flex shrink-0 items-center gap-1.5 text-[length:var(--size-font-sm)] font-semibold text-[var(--fg)]">
             <CandlestickChart size={14} className="text-[var(--accent)]" />
             {zhCN.app.name}
           </span>
-          {/* 指数行情条占据剩余宽度并可收缩，内部横向滚动展示全部已选指数 */}
-          <div className="flex min-w-0 flex-1 justify-end">
+          {/* 顶部搜索框：点击唤起搜索面板（⌘K）；titlebar-no-drag 保证在拖拽区内可点击 */}
+          <button
+            onClick={() => setSearchOpen(true)}
+            aria-label={zhCN.main.searchPlaceholder}
+            className="titlebar-no-drag flex h-[26px] w-[240px] shrink-0 items-center gap-2 rounded-[var(--radius-btn)] border border-[var(--border-subtle)] bg-[var(--surface-secondary)] px-2.5 text-[var(--fg-muted)] transition-colors hover:border-[var(--border-color)] hover:bg-[var(--row-hover)]"
+          >
+            <Search size={13} className="shrink-0" />
+            <span className="min-w-0 flex-1 truncate text-left text-[length:var(--size-font-xs)]">
+              {zhCN.main.searchPlaceholder}
+            </span>
+            <kbd className="quote-num shrink-0 rounded-[var(--radius-sm)] border border-[var(--border-subtle)] bg-[var(--surface)] px-1 py-px text-2xs leading-none text-[var(--fg-muted)]">
+              ⌘K
+            </kbd>
+          </button>
+          {/* 指数行情条占据剩余宽度并可收缩，从搜索框右侧开始排布，放不下的尾部裁掉隐藏 */}
+          <div className="flex min-w-0 flex-1">
             <IndexBar />
           </div>
         </div>
