@@ -15,6 +15,7 @@ import { formatNav } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { useColumnsStore } from "@/stores/columns";
 import { useSearchHistoryStore } from "@/stores/searchHistory";
+import { useUIStore } from "@/stores/ui";
 import { useSettingsStore } from "@/stores/settings";
 import { useWatchlistStore } from "@/stores/watchlist";
 
@@ -154,10 +155,16 @@ export function SearchPage({ visible }: { visible: boolean }) {
     return () => window.clearTimeout(id);
   }, [input]);
 
-  // 切到本页时自动聚焦输入框（常驻挂载，不能用 autoFocus）
+  // 切到本页 / 顶部搜索框 / ⌘K / 空状态按钮触发时，聚焦输入框并选中已有文字，便于直接覆盖输入。
+  // 常驻挂载不能用 autoFocus；focusNonce 每次自增可在「已在本页」时再次触发聚焦。
+  const focusNonce = useUIStore((s) => s.searchFocusNonce);
   useEffect(() => {
-    if (visible) inputRef.current?.focus();
-  }, [visible]);
+    if (!visible) return;
+    const el = inputRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [visible, focusNonce]);
 
   return (
     <div

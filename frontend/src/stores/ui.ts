@@ -9,11 +9,15 @@ interface UIStore {
   page: PageId;
   /** 隐藏金额（隐私），持久化到 localStorage */
   hideAmounts: boolean;
-  /** 搜索面板是否打开 */
-  searchOpen: boolean;
+  /**
+   * 搜索聚焦信号：每次自增触发搜索页输入框重新聚焦并选中已有文字。
+   * 用于「顶部搜索框 / ⌘K / 空状态按钮」统一跳到搜索页并直接输入（即便已在搜索页也能重新聚焦）。
+   */
+  searchFocusNonce: number;
   setPage: (page: PageId) => void;
   toggleHideAmounts: () => void;
-  setSearchOpen: (open: boolean) => void;
+  /** 切到「基金搜索」页并聚焦输入框（统一搜索入口） */
+  focusSearch: () => void;
 }
 
 export const useUIStore = create<UIStore>()(
@@ -21,10 +25,10 @@ export const useUIStore = create<UIStore>()(
     (set) => ({
       page: "market",
       hideAmounts: false,
-      searchOpen: false,
+      searchFocusNonce: 0,
       setPage: (page) => set({ page }),
       toggleHideAmounts: () => set((s) => ({ hideAmounts: !s.hideAmounts })),
-      setSearchOpen: (open) => set({ searchOpen: open }),
+      focusSearch: () => set((s) => ({ page: "search", searchFocusNonce: s.searchFocusNonce + 1 })),
     }),
     {
       name: "minifund-ui",

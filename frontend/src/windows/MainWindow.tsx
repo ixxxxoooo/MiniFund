@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { AlertTriangle, BarChart3, CandlestickChart, LayoutGrid, LineChart, ListOrdered, Newspaper, Pause, RefreshCw, Search, Settings } from "lucide-react";
 import { TitleBar } from "@/components/layout/TitleBar";
 import { IndexBar } from "@/components/market/IndexBar";
-import { SearchPalette } from "@/components/fund/SearchPalette";
 import { Tooltip } from "@/components/ui/tooltip";
 import { MarketCenterPage } from "@/pages/MarketCenterPage";
 import { WatchlistPage } from "@/pages/WatchlistPage";
@@ -40,7 +39,7 @@ const NAV_ITEMS: { id: PageId; label: string; icon: React.ReactNode }[] = [
 export function MainWindow() {
   const page = useUIStore((s) => s.page);
   const setPage = useUIStore((s) => s.setPage);
-  const setSearchOpen = useUIStore((s) => s.setSearchOpen);
+  const focusSearch = useUIStore((s) => s.focusSearch);
   const initMarket = useMarketStore((s) => s.init);
   const refreshNow = useMarketStore((s) => s.refreshNow);
   const monitor = useMarketStore((s) => s.monitor);
@@ -67,7 +66,7 @@ export function MainWindow() {
 
   // 全局快捷键：⌘K 搜索、⌘R 刷新、⌘1-5 切页、⌘W 隐藏主窗口（与系统行为一致）
   useHotkeys({
-    "meta+k": () => setSearchOpen(true),
+    "meta+k": () => focusSearch(),
     "meta+r": () => refreshNow(),
     "meta+w": () => void call("隐藏主窗口", () => WindowService.HideMainWindow()),
     ...Object.fromEntries(
@@ -92,7 +91,7 @@ export function MainWindow() {
           </span>
           {/* 顶部搜索框：点击唤起搜索面板（⌘K）；titlebar-no-drag 保证在拖拽区内可点击 */}
           <button
-            onClick={() => setSearchOpen(true)}
+            onClick={() => focusSearch()}
             aria-label={zhCN.main.searchPlaceholder}
             className="titlebar-no-drag flex h-[26px] w-[240px] shrink-0 items-center gap-2 rounded-[var(--radius-btn)] border border-[var(--border-subtle)] bg-[var(--surface-secondary)] px-2.5 text-[var(--fg-muted)] transition-colors hover:border-[var(--border-color)] hover:bg-[var(--row-hover)]"
           >
@@ -178,8 +177,6 @@ export function MainWindow() {
         </div>
         <span>{zhCN.app.dataDisclaimer}</span>
       </footer>
-
-      <SearchPalette />
     </div>
   );
 }

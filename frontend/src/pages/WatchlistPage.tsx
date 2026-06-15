@@ -24,7 +24,7 @@ export function WatchlistPage() {
   const setActiveGroup = useWatchlistStore((s) => s.setActiveGroup);
   const createGroup = useWatchlistStore((s) => s.createGroup);
   const deleteGroup = useWatchlistStore((s) => s.deleteGroup);
-  const setSearchOpen = useUIStore((s) => s.setSearchOpen);
+  const focusSearch = useUIStore((s) => s.focusSearch);
 
   const [editing, setEditing] = useState<WatchItem | null>(null);
   const [addingGroup, setAddingGroup] = useState(false);
@@ -115,7 +115,7 @@ export function WatchlistPage() {
           <div className="text-[length:var(--size-font-sm)] text-[var(--fg-secondary)]">
             {zhCN.main.watchlistEmpty}
           </div>
-          <Button size="sm" onClick={() => setSearchOpen(true)}>
+          <Button size="sm" onClick={() => focusSearch()}>
             <Search size={13} className="mr-1" />
             {zhCN.main.watchlistEmptyAction}
           </Button>
