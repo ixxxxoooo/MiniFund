@@ -421,6 +421,8 @@ export const zhCN = {
     empty: "暂无自选基金",
     refresh: "刷新",
     allGroups: "全部",
+    sortGrowth: "涨幅",
+    sortProfit: "金额",
   },
   common: {
     confirm: "确认",

@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { RefreshCw, Settings } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowDown, ArrowUp, Home, RefreshCw, Settings } from "lucide-react";
 import { Window } from "@wailsio/runtime";
 import { WindowService } from "@bindings/minifund/services";
 import { BreadthChart } from "@/components/charts/BreadthChart";
@@ -10,6 +10,7 @@ import { zhCN } from "@/i18n/zh-CN";
 import { call } from "@/lib/wails/call";
 import { onTrayPanelShown } from "@/lib/wails/events";
 import { formatMoney, formatPercent } from "@/lib/format";
+import { computePositionMetrics } from "@/lib/portfolio";
 import { useHotkeys } from "@/lib/hotkeys";
 import { cn } from "@/lib/utils";
 import { useMarketStore } from "@/stores/market";
@@ -18,7 +19,7 @@ import { useUIStore } from "@/stores/ui";
 import { useWatchlistStore } from "@/stores/watchlist";
 
 /**
- * 托盘监控面板：点击托盘图标弹出的无边框置顶小窗（320x480）。
+ * 托盘监控面板：点击托盘图标弹出的无边框置顶小窗（360x600）。
  * 与主窗口订阅同一事件流；自选/持仓变更与面板弹出时重新加载，保证数据同步。
  */
 export function TrayPanel() {
@@ -65,8 +66,46 @@ export function TrayPanel() {
       : (zhCN.monitor[monitor.phase as keyof typeof zhCN.monitor] ?? monitor.phase)
     : "";
 
+  // 列表排序：按涨幅 / 今日增长金额，默认涨幅降序；点击同一项可在降序↔升序间切换。无数据的行恒排末尾。
+  const [sortKey, setSortKey] = useState<"growth" | "profit">("growth");
+  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
+  const toggleSort = (key: "growth" | "profit") => {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  // 当前展示的涨跌幅（与列表渲染口径一致）：盘中估算 → 已公布日涨幅 → 无
+  const growthOf = (code: string): number | null => {
+    const est = estimates[code];
+    if (est?.hasEstimate) return est.estimateGrowth;
+    if (est?.hasDayGrowth) return est.dayGrowth;
+    return null;
+  };
+  // 今日收益金额：与自选监控表同口径（computePositionMetrics，含盘后/休市用日涨幅兜底）
+  const profitOf = (code: string): number | null =>
+    computePositionMetrics(estimates[code], positions[code]).todayProfit;
+
+  const sortedItems = useMemo(() => {
+    const factor = sortDir === "asc" ? 1 : -1;
+    const valueOf = sortKey === "growth" ? growthOf : profitOf;
+    return [...items].sort((a, b) => {
+      const va = valueOf(a.code);
+      const vb = valueOf(b.code);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1; // 无数据排末尾
+      if (vb == null) return -1;
+      return (va - vb) * factor;
+    });
+    // growthOf/profitOf 依赖 estimates、positions，已显式列入依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, estimates, positions, sortKey, sortDir]);
+
   return (
-    <div className="flex h-full flex-col gap-[var(--size-gap)] bg-[var(--surface)] p-[var(--size-padding)]">
+    <div className="flex h-full flex-col gap-[var(--size-gap-sm)] bg-[var(--surface)] p-[var(--size-padding-sm)]">
       {/* 头部：标题 + 监控状态 */}
       <div className="flex items-center justify-between gap-2">
         <span className="whitespace-nowrap text-[length:var(--size-font-xs)] font-semibold text-[var(--fg)]">
@@ -76,7 +115,7 @@ export function TrayPanel() {
       </div>
 
       {/* 当日盈亏汇总 + 指数速览 + 涨跌分布 */}
-      <div className="shrink-0 rounded-[var(--radius-panel)] bg-[var(--surface-secondary)] p-[var(--size-padding)]">
+      <div className="shrink-0 rounded-[var(--radius-panel)] bg-[var(--surface-secondary)] p-[var(--size-padding-sm)]">
         <div className="whitespace-nowrap text-2xs text-[var(--fg-muted)]">{zhCN.tray.todayProfit}</div>
         <div className="mt-1 flex items-baseline gap-2 overflow-hidden">
           <span
@@ -119,37 +158,72 @@ export function TrayPanel() {
         )}
       </div>
 
-      {/* 分组切换：容器加纵向内边距，避免 overflow-x-auto 把选中胶囊的上下圆角裁切 */}
-      {groups.length > 1 && (
-        <div className="scroll-none flex shrink-0 items-center gap-1 overflow-x-auto py-0.5">
-          {groups.map((g) => (
-            <button
-              key={g.id}
-              onClick={() => void setActiveGroup(g.id)}
-              className={cn(
-                "shrink-0 whitespace-nowrap rounded-[var(--radius-btn)] px-2 py-0.5 text-2xs outline-none focus:outline-none focus-visible:outline-none",
-                g.id === activeGroupId
-                  ? "bg-[var(--row-selected)] font-medium text-[var(--accent)]"
-                  : "text-[var(--fg-secondary)] hover:bg-[var(--row-hover)]"
-              )}
-            >
-              {g.name}
-            </button>
-          ))}
+      {/* 分组切换（左，可横向滚动）+ 排序（右）：合并到同一行，节省垂直空间 */}
+      {(groups.length > 1 || items.length > 0) && (
+        <div className="flex shrink-0 items-center gap-2">
+          {groups.length > 1 ? (
+            // 容器加纵向内边距，避免 overflow-x-auto 把选中胶囊的上下圆角裁切
+            <div className="scroll-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-0.5">
+              {groups.map((g) => (
+                <button
+                  key={g.id}
+                  onClick={() => void setActiveGroup(g.id)}
+                  className={cn(
+                    "shrink-0 whitespace-nowrap rounded-[var(--radius-btn)] px-2 py-0.5 text-2xs outline-none focus:outline-none focus-visible:outline-none",
+                    g.id === activeGroupId
+                      ? "bg-[var(--row-selected)] font-medium text-[var(--accent)]"
+                      : "text-[var(--fg-secondary)] hover:bg-[var(--row-hover)]"
+                  )}
+                >
+                  {g.name}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="min-w-0 flex-1" />
+          )}
+
+          {/* 排序：按涨幅 / 今日金额，默认涨幅降序；点击同项切换升降序 */}
+          {items.length > 0 && (
+            <div className="flex shrink-0 items-center gap-1">
+              {([
+                { key: "growth", label: zhCN.tray.sortGrowth },
+                { key: "profit", label: zhCN.tray.sortProfit },
+              ] as const).map((opt) => {
+                const active = sortKey === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => toggleSort(opt.key)}
+                    className={cn(
+                      "flex items-center gap-0.5 rounded-[var(--radius-btn)] px-1.5 py-0.5 text-2xs",
+                      active
+                        ? "bg-[var(--row-selected)] font-medium text-[var(--accent)]"
+                        : "text-[var(--fg-secondary)] hover:bg-[var(--row-hover)]"
+                    )}
+                  >
+                    {opt.label}
+                    {active &&
+                      (sortDir === "desc" ? <ArrowDown size={10} /> : <ArrowUp size={10} />)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
       {/* 自选估值列表 */}
       <div className="scroll-always flex min-h-0 flex-1 flex-col overflow-y-auto rounded-[var(--radius-panel)] border border-[var(--border-subtle)]">
-        {items.length === 0 ? (
+        {sortedItems.length === 0 ? (
           <div className="flex flex-1 items-center justify-center text-2xs text-[var(--fg-muted)]">
             {zhCN.tray.empty}
           </div>
         ) : (
-          items.map((item) => {
+          sortedItems.map((item) => {
             const est = estimates[item.code];
-            const pos = positions[item.code];
-            const profit = pos && est?.hasEstimate ? pos.shares * (est.estimate - est.prevNav) : null;
+            // 今日收益金额：与自选监控表同口径（含盘后/休市兜底），有持仓才显示
+            const todayProfit = computePositionMetrics(est, positions[item.code]).todayProfit;
             return (
               <div
                 key={item.code}
@@ -161,10 +235,13 @@ export function TrayPanel() {
                     <span className="truncate text-2xs text-[var(--fg)]">{item.name || item.code}</span>
                     <CopyButton value={item.code} name={item.name} />
                   </div>
-                  {profit != null && (
-                    <span className="quote-num whitespace-nowrap text-2xs text-[var(--fg-muted)]">
-                      {formatMoney(profit, hidden)}
-                    </span>
+                  {todayProfit != null && (
+                    <QuoteText
+                      value={todayProfit}
+                      text={formatMoney(todayProfit, hidden)}
+                      neutral={stealth}
+                      className="quote-num whitespace-nowrap text-2xs"
+                    />
                   )}
                 </div>
                 {/* 涨跌幅优先级（与主窗口自选表一致）：
@@ -192,12 +269,15 @@ export function TrayPanel() {
 
       {/* 底部操作区 */}
       <div className="flex shrink-0 items-center justify-between">
-        <button
-          className="whitespace-nowrap rounded-[var(--radius-btn)] px-2 py-1 text-[length:var(--size-font-2xs)] text-[var(--accent)] hover:bg-[var(--sidebar-hover)]"
-          onClick={() => void call("打开主窗口", () => WindowService.ShowMainWindow())}
-        >
-          {zhCN.tray.openMain}
-        </button>
+        <Tooltip content={zhCN.tray.openMain}>
+          <button
+            aria-label={zhCN.tray.openMain}
+            className="rounded-[var(--radius-btn)] p-1.5 text-[var(--accent)] hover:bg-[var(--sidebar-hover)]"
+            onClick={() => void call("打开主窗口", () => WindowService.ShowMainWindow())}
+          >
+            <Home size={13} />
+          </button>
+        </Tooltip>
         <div className="flex items-center gap-1">
           <Tooltip content={zhCN.tray.refresh}>
             <button
