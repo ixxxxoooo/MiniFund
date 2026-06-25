@@ -221,6 +221,7 @@ export const zhCN = {
     loadFailed: "加载基金详情失败",
     latestNav: "最新净值",
     estimate: "盘中估算",
+    confirmed: "已确认净值",
     rate: "申购费率",
     maxDrawdown: "历史最大回撤",
     openHomepage: "天天基金主页",

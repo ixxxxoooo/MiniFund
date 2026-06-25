@@ -282,14 +282,20 @@ export function DetailWindow({ code }: DetailWindowProps) {
     return Array.from(byIndex.values());
   }, [chartPoints, txns]);
 
-  // 最新（已确认）净值：优先取实时行情 store 的已公布数据（navDate/prevNav/dayGrowth），
-  // 避免详情快照在窗口打开后不再刷新、导致新净值确认后涨跌幅仍是旧值（与外面列表不一致）；
-  // store 无该基金（如非自选基金）时回退到详情快照。
+  // 顶部「最新净值」卡片的净值/涨幅/日期，口径与自选列表涨幅列完全一致：
+  //   - 盘中（hasEstimate）：估算净值 + 估算涨跌 + 估算时间，与列表「估算涨跌」一致；
+  //   - 盘后/已确认（hasDayGrowth）：已确认净值 + 日涨幅 + 净值日期，与列表「日涨幅」一致；
+  //   - store 无该基金（非自选）或无行情：回退详情快照（netWorthTrend 末点）。
+  // 此前盘中用 hasDayGrowth 取「已确认日涨幅」（实为昨日或更早），导致与列表（估算涨跌）不一致。
   const latestSnap = detail?.netWorthTrend?.[detail.netWorthTrend.length - 1];
-  const liveDay = est?.hasDayGrowth ? est : null;
-  const latestDate = liveDay ? liveDay.navDate : latestSnap?.date;
-  const latestNav = liveDay ? liveDay.prevNav : latestSnap?.value;
-  const latestGrowth = liveDay ? liveDay.dayGrowth : latestSnap?.growth;
+  const liveEst = est?.hasEstimate ? est : null;
+  const liveDay = !liveEst && est?.hasDayGrowth ? est : null;
+  const latestDate = liveEst ? liveEst.estimateTime?.slice(0, 10) : liveDay ? liveDay.navDate : latestSnap?.date;
+  const latestNav = liveEst ? liveEst.estimate : liveDay ? liveDay.prevNav : latestSnap?.value;
+  const latestGrowth = liveEst ? liveEst.estimateGrowth : liveDay ? liveDay.dayGrowth : latestSnap?.growth;
+  // 右侧辅助卡片：左卡走估算时，若同时有已确认净值/日涨幅，则并排展示「已确认」作对照；
+  // 左卡走已确认时则无需重复。避免盘中左卡已显示估算时双卡信息重复。
+  const confirmedCard = liveEst && est?.hasDayGrowth ? est : null;
 
   // 历史净值本地排序（作用于已累积的全部条目）
   const navSort = useLocalSort(navItems, {
@@ -405,17 +411,17 @@ export function DetailWindow({ code }: DetailWindowProps) {
                   />
                 </div>
               )}
-              {est?.hasEstimate && (
+              {confirmedCard && (
                 <div className="flex flex-col items-end justify-center gap-0.5 rounded-[var(--radius-panel)] border border-dashed border-[var(--border-color)] bg-[var(--surface-secondary)] px-3 py-1">
                   <span className="text-2xs text-[var(--fg-muted)]">
-                    {zhCN.detail.estimate} {est.estimateTime?.slice(-5)}
+                    {zhCN.detail.confirmed} {confirmedCard.navDate}
                   </span>
                   <div className="flex items-baseline gap-2">
                     <span className="quote-num text-[length:var(--size-font-sm)] font-bold leading-none text-[var(--fg)]">
-                      {formatNav(est.estimate)}
+                      {formatNav(confirmedCard.prevNav)}
                     </span>
                     <QuoteText
-                      value={est.estimateGrowth}
+                      value={confirmedCard.dayGrowth}
                       neutral={stealth}
                       className="text-[length:var(--size-font-base)] font-bold leading-none"
                     />
