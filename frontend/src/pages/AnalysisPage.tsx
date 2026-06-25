@@ -358,8 +358,21 @@ function CompareView() {
     void load();
   }, [load]);
 
-  // 补全已选基金详情（含从持久化恢复的选择）
+  // 补全已选基金详情（含从持久化恢复的选择）；同时清理已移除基金的详情，避免 FundDetail
+  // （含完整净值走势数组，可达数百点）长期驻留内存、切批次后持续增长。
   useEffect(() => {
+    const selectedSet = new Set(selected);
+    setDetails((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const code of Object.keys(next)) {
+        if (!selectedSet.has(code)) {
+          delete next[code];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
     selected.forEach((code) => {
       if (details[code]) return;
       void call("加载对比基金", () => FundService.GetFundDetail(code)).then((d) => {

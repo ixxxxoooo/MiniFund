@@ -35,9 +35,19 @@ function applyFlash(state: NewsStore, list: NewsFlash[]): Partial<NewsStore> {
     return { flash: list, flashLoaded: true, lastReadId: list[0].id, unread: 0 };
   }
   let unread = 0;
+  let hit = false;
   for (const n of list) {
-    if (n.id === state.lastReadId) break;
+    if (n.id === state.lastReadId) {
+      hit = true;
+      break;
+    }
     unread++;
+  }
+  // 游标失效保护：若 lastReadId 已被列表淘汰（后端只保留最近 N 条），循环跑完也不命中，
+  // 此时 unread 会等于整页长度，红点数字持续偏大。
+  // 处理：视为「更早的都已读过」，把游标前移到列表最早一条，红点保持当前批次的合理计数。
+  if (!hit) {
+    return { flash: list, flashLoaded: true, lastReadId: list[list.length - 1].id, unread };
   }
   return { flash: list, flashLoaded: true, unread };
 }

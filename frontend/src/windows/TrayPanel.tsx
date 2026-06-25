@@ -43,14 +43,18 @@ export function TrayPanel() {
 
   useEffect(() => {
     void loadSettings();
-    initMarket();
+    const uninitMarket = initMarket();
     void load();
     void loadBreadth();
     // 面板每次弹出：重新加载自选与涨跌分布（监控估值靠事件流持续推送）
-    return onTrayPanelShown(() => {
+    const unsubShown = onTrayPanelShown(() => {
       void load();
       void loadBreadth();
     });
+    return () => {
+      uninitMarket();
+      unsubShown();
+    };
   }, [loadSettings, initMarket, load, loadBreadth]);
 
   // Esc 隐藏面板（失焦时系统会自动隐藏，快捷键作为补充）
@@ -121,7 +125,8 @@ export function TrayPanel() {
           <span
             className={cn(
               "quote-num whitespace-nowrap text-xl font-semibold",
-              stealth
+              // 隐藏金额（含摸鱼模式）时颜色一并中性化：仅隐藏数字会通过红绿背景色泄露涨跌方向，达不到脱敏目的。
+              hidden
                 ? "text-[var(--quote-flat)]"
                 : todayProfit > 0
                   ? "text-[var(--quote-up)]"
