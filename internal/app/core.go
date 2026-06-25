@@ -100,6 +100,16 @@ func (c *core) startup(wailsApp *application.App) {
 		payload := buildNewsWindowPayload(item)
 		c.newsMu.Lock()
 		c.newsPayloads[item.ID] = payload
+		// 容量上限兜底：常驻应用长期累积会内存泄漏，超限删除最早写入的一批。
+		// （正常路径下，通知点击打开窗口后会立即删除对应 id，此处仅作兜底）
+		if len(c.newsPayloads) > 200 {
+			for k := range c.newsPayloads {
+				delete(c.newsPayloads, k)
+				if len(c.newsPayloads) <= 150 {
+					break
+				}
+			}
+		}
 		c.newsMu.Unlock()
 		if err := c.NotifySvc.SendNotification(notifications.NotificationOptions{
 			ID: item.ID, Title: title, Body: body,
@@ -132,6 +142,11 @@ func (c *core) startup(wailsApp *application.App) {
 			c.newsMu.Lock()
 			payload = c.newsPayloads[id]
 			c.newsMu.Unlock()
+		} else {
+			// 载荷直接来自通知 Data，map 里的缓存已无用，及时删除避免累积
+			c.newsMu.Lock()
+			delete(c.newsPayloads, id)
+			c.newsMu.Unlock()
 		}
 		if id == "" || payload == "" {
 			return
@@ -140,7 +155,12 @@ func (c *core) startup(wailsApp *application.App) {
 		application.InvokeAsync(func() {
 			if err := c.WindowSvc.OpenNewsWindow(id, payload); err != nil {
 				logger.Warn("点击通知打开新闻窗口失败: %v", err)
+				return
 			}
+			// 已成功打开窗口并使用 payload，删除缓存避免长期累积
+			c.newsMu.Lock()
+			delete(c.newsPayloads, id)
+			c.newsMu.Unlock()
 		})
 	})
 	// 启动时请求一次通知授权（macOS 需用户允许；失败不影响主流程）
