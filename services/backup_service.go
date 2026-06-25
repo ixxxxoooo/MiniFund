@@ -150,29 +150,9 @@ func (s *BackupService) ImportData() (*ImportResult, error) {
 	}, nil
 }
 
-// snapshot 收集当前全部可备份数据。
+// snapshot 收集当前全部可备份数据（以只读事务读取，保证快照一致）。
 func (s *BackupService) snapshot() (*backupData, error) {
-	groups, err := s.store.ListGroups()
-	if err != nil {
-		return nil, err
-	}
-	items, err := s.store.ListAllRawItems()
-	if err != nil {
-		return nil, err
-	}
-	positions, err := s.store.ListPositions()
-	if err != nil {
-		return nil, err
-	}
-	transactions, err := s.store.ListAllTransactions()
-	if err != nil {
-		return nil, err
-	}
-	plans, err := s.store.ListAllDCAPlans()
-	if err != nil {
-		return nil, err
-	}
-	profits, err := s.store.ListAllDailyProfits()
+	snap, err := s.store.SnapshotData()
 	if err != nil {
 		return nil, err
 	}
@@ -184,12 +164,12 @@ func (s *BackupService) snapshot() (*backupData, error) {
 		App:          backupAppName,
 		Version:      backupVersion,
 		ExportedAt:   time.Now().Format(time.RFC3339),
-		Groups:       groups,
-		Items:        items,
-		Positions:    positions,
-		Transactions: transactions,
-		DCAPlans:     plans,
-		DailyProfit:  profits,
+		Groups:       snap.Groups,
+		Items:        snap.Items,
+		Positions:    snap.Positions,
+		Transactions: snap.Transactions,
+		DCAPlans:     snap.DCAPlans,
+		DailyProfit:  snap.DailyProfit,
 		Settings:     settings,
 	}, nil
 }

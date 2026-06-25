@@ -149,6 +149,16 @@ func nextRunDate(freq string, day int, from time.Time) string {
 	}
 }
 
+// NextRunDate 计划执行后推进下一次执行日：从今日次日起按周期推算（与 AdvanceDCAPlan 同口径）。
+// 供调度器在调用 RecordDCA 时预先算出 next 参数（入账与推进合并事务）。
+func NextRunDate(freq string, day int, today string) string {
+	base, err := time.ParseInLocation("2006-01-02", today, time.Local)
+	if err != nil {
+		base = time.Now()
+	}
+	return nextRunDate(freq, day, base.AddDate(0, 0, 1))
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1

@@ -141,6 +141,50 @@ func (s *Store) ClearTransactions(code string) error {
 	return nil
 }
 
+// DeletePositionWithTxns 删除持仓及其全部交易流水（单事务原子操作）。
+// 避免分两步删除时第二步失败导致「流水已清空却残留持仓缓存」的不一致状态。
+func (s *Store) DeletePositionWithTxns(code string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开启删除持仓事务失败: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec("DELETE FROM position_txn WHERE code = ?", code); err != nil {
+		return fmt.Errorf("清空交易流水失败: %w", err)
+	}
+	if _, err := tx.Exec("DELETE FROM position WHERE code = ?", code); err != nil {
+		return fmt.Errorf("删除持仓失败: %w", err)
+	}
+	return tx.Commit()
+}
+
+// RecordDCA 定投自动入账：在同一事务内写入一笔买入流水、重算持仓并推进定投计划。
+// 任一步失败则整体回滚，保证「入账」与「推进 next_run」原子完成，杜绝入账成功但推进失败导致次日重复买入。
+// next 为推进后的下一次执行日期（由调用方按周期推算，见 nextRunDate）。
+func (s *Store) RecordDCA(txn model.PositionTxn, planID int64, next string) error {
+	if txn.CreatedAt == 0 {
+		txn.CreatedAt = time.Now().Unix()
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开启定投入账事务失败: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.Exec(`INSERT INTO position_txn (code, date, kind, shares, price, amount, source, note, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		txn.Code, txn.Date, txn.Kind, txn.Shares, txn.Price, txn.Amount, txn.Source, txn.Note, txn.CreatedAt); err != nil {
+		return fmt.Errorf("写入定投流水失败: %w", err)
+	}
+	if err := recomputePositionTx(tx, txn.Code); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("UPDATE dca_plan SET last_run = ?, next_run = ? WHERE id = ?", txn.Date, next, planID); err != nil {
+		return fmt.Errorf("推进定投计划失败: %w", err)
+	}
+	return tx.Commit()
+}
+
 // RecomputeAllPositions 重算全部基金的持仓派生缓存（数据导入后调用）。
 func (s *Store) RecomputeAllPositions() error {
 	tx, err := s.db.Begin()

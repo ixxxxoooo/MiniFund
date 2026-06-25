@@ -74,12 +74,9 @@ func (s *PortfolioService) UpsertPosition(code string, shares, costPrice float64
 	return nil
 }
 
-// DeletePosition 删除持仓：清空该基金全部交易流水并移除派生缓存。
+// DeletePosition 删除持仓：在单事务内清空该基金全部交易流水并移除派生缓存，保证原子一致。
 func (s *PortfolioService) DeletePosition(code string) error {
-	if err := s.store.ClearTransactions(code); err != nil {
-		return err
-	}
-	if err := s.store.DeletePosition(code); err != nil {
+	if err := s.store.DeletePositionWithTxns(code); err != nil {
 		return err
 	}
 	s.notifyChange()
