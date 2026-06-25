@@ -28,11 +28,15 @@ const NAV_PAGE_SIZE = 20;
 
 type NavItem = NonNullable<NavPage["items"]>[number];
 
-/** 将规模原始字符串（元）格式化为亿元 */
+/** 将规模原始字符串（元）格式化为易读金额（亿/万两档）。
+ *  与 lib/format.ts 的通用 formatScale 口径一致，保证详情窗口与排行/分析页对同一基金规模读数相同。
+ *  仅在无有效数据时返回空串（用于条件渲染隐藏该标签）。 */
 function formatScale(raw: string): string {
   const v = parseFloat(raw);
   if (!Number.isFinite(v) || v <= 0) return "";
-  return (v / 1e8).toFixed(2) + zhCN.detail.tags.scaleUnit;
+  if (v >= 1e8) return `${(v / 1e8).toFixed(2)}亿`;
+  if (v >= 1e4) return `${(v / 1e4).toFixed(2)}万`;
+  return v.toFixed(0);
 }
 
 /** 将单日限额原始字符串（元）格式化为易读金额（万/亿元） */
@@ -547,8 +551,8 @@ export function DetailWindow({ code }: DetailWindowProps) {
                       {navSort.sorted.map((r) => (
                         <tr key={r.date} className="hover:bg-[var(--row-hover)]">
                           <td className="data-grid-cell">{r.date}</td>
-                          <td className="data-grid-cell text-right">{formatNav(r.nav)}</td>
-                          <td className="data-grid-cell text-right">{formatNav(r.accNav)}</td>
+                          <td className="data-grid-cell text-right"><span className="quote-num">{formatNav(r.nav)}</span></td>
+                          <td className="data-grid-cell text-right"><span className="quote-num">{formatNav(r.accNav)}</span></td>
                           <td className="data-grid-cell text-right">
                             <QuoteText value={r.growth} neutral={stealth} />
                           </td>

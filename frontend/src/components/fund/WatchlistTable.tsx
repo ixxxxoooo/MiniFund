@@ -205,12 +205,12 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
                 </td>
                 <td className="data-grid-cell text-right">
                   <div className="flex flex-col items-end py-0.5">
-                    <span>{est ? formatNav(est.prevNav) : zhCN.watchlist.noEstimate}</span>
-                    <span className="text-2xs text-[var(--fg-muted)]">{est?.navDate ?? ""}</span>
+                    <span className="quote-num">{est ? formatNav(est.prevNav) : zhCN.watchlist.noEstimate}</span>
+                    <span className="quote-num text-2xs text-[var(--fg-muted)]">{est?.navDate ?? ""}</span>
                   </div>
                 </td>
                 <td className="data-grid-cell text-right">
-                  {est?.hasEstimate ? formatNav(est.estimate) : zhCN.watchlist.noEstimate}
+                  <span className="quote-num">{est?.hasEstimate ? formatNav(est.estimate) : zhCN.watchlist.noEstimate}</span>
                 </td>
                 <td className="data-grid-cell text-right">
                   {todayProfit != null ? (
@@ -220,7 +220,7 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
                   )}
                 </td>
                 <td className="data-grid-cell text-right">
-                  {marketValue != null ? formatMoney(marketValue, hidden) : zhCN.watchlist.noEstimate}
+                  <span className="quote-num">{marketValue != null ? formatMoney(marketValue, hidden) : zhCN.watchlist.noEstimate}</span>
                 </td>
                 <td className="data-grid-cell text-right">
                   {marketShare != null ? (
@@ -249,7 +249,7 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
                 <td className="data-grid-cell text-right">
                   {pos && costValue != null ? (
                     <div className="flex flex-col items-end py-0.5">
-                      <span>{formatMoney(costValue, hidden)}</span>
+                      <span className="quote-num">{formatMoney(costValue, hidden)}</span>
                       <span className="quote-num text-2xs text-[var(--fg-muted)]">{formatNav(pos.costPrice)}</span>
                     </div>
                   ) : (

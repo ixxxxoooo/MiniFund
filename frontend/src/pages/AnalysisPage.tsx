@@ -116,6 +116,7 @@ function ProfitHistoryView() {
             points={points.map((p) => ({ label: p.date, value: p.profit }))}
             height={220}
             formatValue={(v) => formatMoney(v, hidden)}
+            stealth={stealth}
           />
         </div>
       )}
@@ -324,7 +325,7 @@ function buildMetrics(stealth: boolean): { label: string; cell: (d: FundDetail) 
     { label: "基金经理", cell: (d) => d.managers?.[0]?.name || "—" },
     { label: "基金公司", cell: (d) => d.company || "—" },
     { label: "申购费率", cell: (d) => formatRate(d.rate) },
-    { label: "规模", cell: (d) => formatScale(Number(d.scale)) },
+    { label: "规模", cell: (d) => <span className="quote-num">{formatScale(Number(d.scale))}</span> },
     { label: "成立日期", cell: (d) => d.estabDate || "—" },
   ];
 }
@@ -721,7 +722,7 @@ function CompareView() {
             </div>
             <div className="rounded-[var(--radius-panel)] border border-[var(--border-subtle)] p-[var(--size-padding)]">
               {series.length >= 1 ? (
-                <MultiLineChart series={series} height={300} />
+                <MultiLineChart series={series} height={300} stealth={stealth} />
               ) : (
                 <div className="flex items-center justify-center text-[length:var(--size-font-xs)] text-[var(--fg-muted)]" style={{ height: 300 }}>
                   {zhCN.analysis.compareEmpty}

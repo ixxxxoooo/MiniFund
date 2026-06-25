@@ -14,6 +14,8 @@ interface BarChartProps {
   formatValue?: (v: number) => string;
   /** X 轴 / tooltip 标签格式化（默认压缩 YYYY-MM-DD 为 MM-DD） */
   formatLabel?: (d: string) => string;
+  /** 摸鱼模式：柱体与悬停数值统一中性色，不按正负涨跌着色、不泄露方向 */
+  stealth?: boolean;
 }
 
 /** 默认坐标标签格式化：YYYY-MM-DD 压缩为 MM-DD。 */
@@ -25,7 +27,7 @@ function defaultFormatLabel(d: string): string {
 /**
  * 正负柱状图：用于每日收益历史。正值用上涨色、负值用下跌色（跟随涨跌配色方案）。
  */
-export function BarChart({ points, height = 180, formatValue, formatLabel }: BarChartProps) {
+export function BarChart({ points, height = 180, formatValue, formatLabel, stealth = false }: BarChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const width = 640;
@@ -64,6 +66,9 @@ export function BarChart({ points, height = 180, formatValue, formatLabel }: Bar
 
   const fmt = formatValue ?? ((v: number) => v.toFixed(2));
   const fmtLabel = formatLabel ?? defaultFormatLabel;
+  // 涨跌色：摸鱼模式下统一中性，柱体与数值都不按正负着色、不泄露方向。
+  const barColor = (v: number) =>
+    stealth ? "var(--fg-muted)" : v >= 0 ? "var(--quote-up)" : "var(--quote-down)";
 
   const tickCount = Math.min(5, points.length);
   const ticks = Array.from({ length: tickCount }, (_, i) =>
@@ -110,7 +115,7 @@ export function BarChart({ points, height = 180, formatValue, formatLabel }: Bar
                 y={y}
                 width={barW}
                 height={Math.max(h, 0.5)}
-                fill={p.value >= 0 ? "var(--quote-up)" : "var(--quote-down)"}
+                fill={barColor(p.value)}
                 opacity={hoverIndex == null || hoverIndex === i ? 1 : 0.45}
               />
             );
@@ -131,9 +136,8 @@ export function BarChart({ points, height = 180, formatValue, formatLabel }: Bar
           >
             <div className="text-[var(--fg-secondary)]">{fmtLabel(points[hoverIndex].label)}</div>
             <div
-              className={`quote-num font-semibold ${
-                points[hoverIndex].value >= 0 ? "text-[var(--quote-up)]" : "text-[var(--quote-down)]"
-              }`}
+              className="quote-num font-semibold"
+              style={{ color: barColor(points[hoverIndex].value) }}
             >
               {fmt(points[hoverIndex].value)}
             </div>

@@ -24,9 +24,9 @@ function Card({ label, children, extra }: { label: string; children: React.React
   );
 }
 
-/** 金额涨跌配色类（摸鱼模式中性色） */
-function moneyColor(value: number, stealth: boolean): string {
-  if (stealth) return "text-[var(--quote-flat)]";
+/** 金额涨跌配色类（摸鱼模式或隐藏金额时中性色，避免红绿色泄露涨跌方向） */
+function moneyColor(value: number, stealth: boolean, hidden: boolean): string {
+  if (stealth || hidden) return "text-[var(--quote-flat)]";
   if (value > 0) return "text-[var(--quote-up)]";
   if (value < 0) return "text-[var(--quote-down)]";
   return "text-[var(--quote-flat)]";
@@ -66,7 +66,7 @@ export function ProfitCards() {
           </Tooltip>
         }
       >
-        <span className={cn(moneyColor(summary.todayProfit, stealth))}>
+        <span className={cn(moneyColor(summary.todayProfit, stealth, hidden))}>
           {formatMoney(summary.todayProfit, hidden)}
         </span>
         <QuoteText
@@ -80,7 +80,7 @@ export function ProfitCards() {
         <span className="text-[var(--fg)]">{formatMoney(summary.marketValue, hidden)}</span>
       </Card>
       <Card label={zhCN.summary.totalProfit}>
-        <span className={cn(moneyColor(summary.totalProfit, stealth))}>
+        <span className={cn(moneyColor(summary.totalProfit, stealth, hidden))}>
           {formatMoney(summary.totalProfit, hidden)}
         </span>
         <QuoteText

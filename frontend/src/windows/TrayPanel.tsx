@@ -158,7 +158,7 @@ export function TrayPanel() {
         {/* 大盘涨跌分布 */}
         {breadth && (
           <div className="mt-2 border-t border-[var(--border-subtle)] pt-2">
-            <BreadthChart breadth={breadth} compact />
+            <BreadthChart breadth={breadth} compact stealth={stealth} />
           </div>
         )}
       </div>

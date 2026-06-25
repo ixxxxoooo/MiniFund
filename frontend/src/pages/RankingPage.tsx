@@ -53,7 +53,7 @@ const RANK_COLUMNS: RankCol[] = [
       </span>
     ),
   },
-  { key: "accNav", label: cols.accNav, width: 84, text: (r) => formatNav(r.accNav) },
+  { key: "accNav", label: cols.accNav, width: 84, text: (r) => <span className="quote-num">{formatNav(r.accNav)}</span> },
   { key: "rzdf", label: cols.day, width: 80, sortKey: "rzdf", quote: (r) => r.dayGrowth },
   { key: "zzf", label: cols.week, width: 80, sortKey: "zzf", quote: (r) => r.weekGrowth },
   { key: "1yzf", label: cols.m1, width: 80, sortKey: "1yzf", quote: (r) => r.monthGrowth },
@@ -64,7 +64,7 @@ const RANK_COLUMNS: RankCol[] = [
   { key: "3nzf", label: cols.y3, width: 80, sortKey: "3nzf", quote: (r) => r.year3 },
   { key: "jnzf", label: cols.ytd, width: 80, sortKey: "jnzf", quote: (r) => r.ytd },
   { key: "since", label: cols.since, width: 84, quote: (r) => r.sinceStart },
-  { key: "scale", label: cols.scale, width: 104, text: (r) => formatScale(r.scale) },
+  { key: "scale", label: cols.scale, width: 104, text: (r) => <span className="quote-num">{formatScale(r.scale)}</span> },
 ];
 
 /** 默认隐藏的列（累计净值 / 近2年 / 近3年，避免列过多） */

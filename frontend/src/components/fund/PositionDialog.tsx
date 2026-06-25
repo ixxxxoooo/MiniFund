@@ -11,6 +11,8 @@ import { formatMoney, formatNav } from "@/lib/format";
 import { computePositionMetrics } from "@/lib/portfolio";
 import { call } from "@/lib/wails/call";
 import { useMarketStore } from "@/stores/market";
+import { useSettingsStore } from "@/stores/settings";
+import { useUIStore } from "@/stores/ui";
 import { useWatchlistStore } from "@/stores/watchlist";
 
 interface PositionDialogProps {
@@ -44,6 +46,10 @@ export function PositionDialog({ item, onClose }: PositionDialogProps) {
   const deleteDCAPlan = useWatchlistStore((s) => s.deleteDCAPlan);
   const setDCAPlanEnabled = useWatchlistStore((s) => s.setDCAPlanEnabled);
   const estimate = useMarketStore((s) => (item ? s.estimates[item.code] : undefined));
+  // 隐藏金额/摸鱼模式：持仓概览的金额与收益需响应全局隐私开关，不能明文暴露
+  const hideAmounts = useUIStore((s) => s.hideAmounts);
+  const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
+  const hidden = hideAmounts || stealth;
 
   const [txns, setTxns] = useState<PositionTxn[]>([]);
   const [plans, setPlans] = useState<DCAPlan[]>([]);
@@ -212,14 +218,15 @@ export function PositionDialog({ item, onClose }: PositionDialogProps) {
             <div className="grid grid-cols-3 gap-2 rounded-[var(--radius-sm)] border border-[var(--border-color)] bg-[var(--surface)] p-3">
               <Stat label={t.totalShares} value={existing.shares.toLocaleString("zh-CN", { maximumFractionDigits: 2 })} />
               <Stat label={t.avgCost} value={formatNav(existing.costPrice)} />
-              <Stat label={t.costValue} value={formatMoney(metrics.costValue ?? existing.shares * existing.costPrice)} />
-              <Stat label={t.marketValue} value={metrics.marketValue != null ? formatMoney(metrics.marketValue) : "—"} />
+              <Stat label={t.costValue} value={formatMoney(metrics.costValue ?? existing.shares * existing.costPrice, hidden)} />
+              <Stat label={t.marketValue} value={metrics.marketValue != null ? formatMoney(metrics.marketValue, hidden) : "—"} />
               <div className="flex flex-col gap-0.5">
                 <span className="text-2xs text-[var(--fg-muted)]">{t.totalProfit}</span>
                 {metrics.totalProfit != null ? (
                   <QuoteText
                     value={metrics.totalProfit}
-                    text={`${formatMoney(metrics.totalProfit)}${metrics.totalPercent != null ? ` (${metrics.totalPercent >= 0 ? "+" : ""}${metrics.totalPercent.toFixed(2)}%)` : ""}`}
+                    neutral={stealth}
+                    text={`${formatMoney(metrics.totalProfit, hidden)}${metrics.totalPercent != null ? ` (${metrics.totalPercent >= 0 ? "+" : ""}${metrics.totalPercent.toFixed(2)}%)` : ""}`}
                     className="text-[length:var(--size-font-sm)]"
                   />
                 ) : (

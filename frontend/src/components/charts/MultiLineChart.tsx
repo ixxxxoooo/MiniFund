@@ -12,6 +12,8 @@ export interface CompareSeries {
 interface MultiLineChartProps {
   series: CompareSeries[];
   height?: number;
+  /** 摸鱼模式：悬停数值去掉正负号前缀，避免在数值层面额外泄露涨跌方向（曲线形态本身无法脱敏） */
+  stealth?: boolean;
 }
 
 /** 对比曲线备选颜色（第一条用主题强调色） */
@@ -21,7 +23,7 @@ export const COMPARE_COLORS = ["var(--accent)", "#e0a836", "#9d6ce8", "#36b3a8",
  * 多序列归一化对比折线图：每条序列转为相对首日的收益率（%）曲线叠加展示。
  * 用于基金对比，X 轴按全部序列日期并集对齐。
  */
-export function MultiLineChart({ series, height = 260 }: MultiLineChartProps) {
+export function MultiLineChart({ series, height = 260, stealth = false }: MultiLineChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const width = 640;
@@ -182,7 +184,7 @@ export function MultiLineChart({ series, height = 260 }: MultiLineChartProps) {
                   <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: l.color }} />
                   <span className="max-w-[120px] truncate text-[var(--fg-secondary)]">{l.name}</span>
                   <span className="quote-num ml-auto font-semibold text-[var(--fg)]">
-                    {v != null ? `${v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "--"}
+                    {v != null ? `${!stealth && v >= 0 ? "+" : ""}${v.toFixed(2)}%` : "--"}
                   </span>
                 </div>
               );

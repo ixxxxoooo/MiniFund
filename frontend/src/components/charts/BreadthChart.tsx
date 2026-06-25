@@ -6,6 +6,8 @@ interface BreadthChartProps {
   breadth: MarketBreadth;
   /** 紧凑模式（托盘面板）：更矮的柱体与更小的标签 */
   compact?: boolean;
+  /** 摸鱼模式：柱体与家数统一中性色，避免在托盘等摸鱼主场景泄露大盘涨跌方向 */
+  stealth?: boolean;
 }
 
 /** 档位聚合定义：业界涨跌分布图惯例的 11 档（跌停 → 涨停） */
@@ -27,7 +29,7 @@ const BUCKETS: { label: string; levels: number[]; dir: "down" | "flat" | "up" }[
  * 大盘涨跌分布图：按涨跌幅档位统计的家数柱状图（参考东财/同花顺涨跌分布）。
  * 下跌档用下跌色、上涨档用上涨色，颜色跟随涨跌配色方案。
  */
-export function BreadthChart({ breadth, compact = false }: BreadthChartProps) {
+export function BreadthChart({ breadth, compact = false, stealth = false }: BreadthChartProps) {
   const buckets = useMemo(() => {
     const byLevel = new Map(breadth.bins.map((b) => [b.level, b.count]));
     const rows = BUCKETS.map((b) => ({
@@ -42,6 +44,16 @@ export function BreadthChart({ breadth, compact = false }: BreadthChartProps) {
   // 预留柱顶家数文字高度，柱体按剩余空间换算像素高度，保证数字不溢出容器
   const labelH = compact ? 11 : 14;
 
+  // 涨跌色：摸鱼模式下统一中性，不泄露大盘涨跌方向（规范第5条）。
+  const dirColor = (dir: "up" | "down" | "flat") =>
+    stealth
+      ? "var(--fg-muted)"
+      : dir === "up"
+        ? "var(--quote-up)"
+        : dir === "down"
+          ? "var(--quote-down)"
+          : "var(--fg-muted)";
+
   return (
     <div className="flex w-full flex-col gap-1">
       {/* 汇总行：上涨 / 平 / 下跌家数 */}
@@ -51,9 +63,9 @@ export function BreadthChart({ breadth, compact = false }: BreadthChartProps) {
           compact ? "text-2xs" : "text-[length:var(--size-font-xs)]"
         )}
       >
-        <span className="text-[var(--quote-down)]">跌 {breadth.downCount}</span>
+        <span style={{ color: dirColor("down") }}>跌 {breadth.downCount}</span>
         <span className="text-[var(--fg-muted)]">平 {breadth.flatCount}</span>
-        <span className="text-[var(--quote-up)]">涨 {breadth.upCount}</span>
+        <span style={{ color: dirColor("up") }}>涨 {breadth.upCount}</span>
       </div>
       {/* 分布柱体（家数常显在柱顶，便于核对数据） */}
       <div className="flex items-end gap-[3px]" style={{ height: barArea }}>
@@ -62,9 +74,9 @@ export function BreadthChart({ breadth, compact = false }: BreadthChartProps) {
             <span
               className={cn(
                 "quote-num pointer-events-none mb-0.5 leading-none",
-                compact ? "text-[9px]" : "text-2xs",
-                b.dir === "up" ? "text-[var(--quote-up)]" : b.dir === "down" ? "text-[var(--quote-down)]" : "text-[var(--fg-muted)]"
+                compact ? "text-[9px]" : "text-2xs"
               )}
+              style={{ color: dirColor(b.dir) }}
             >
               {b.count}
             </span>
@@ -72,8 +84,7 @@ export function BreadthChart({ breadth, compact = false }: BreadthChartProps) {
               className="w-full rounded-t-[2px]"
               style={{
                 height: Math.max(b.ratio * (barArea - labelH), 2),
-                background:
-                  b.dir === "up" ? "var(--quote-up)" : b.dir === "down" ? "var(--quote-down)" : "var(--fg-muted)",
+                background: dirColor(b.dir),
                 opacity: b.dir === "flat" ? 0.5 : 0.9,
               }}
             />
