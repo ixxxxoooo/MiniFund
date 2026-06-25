@@ -248,13 +248,14 @@ type RankPage struct {
 }
 
 // FundPerf 基金阶段收益（用于搜索结果行内异步补全展示）。
-// 今日来自 fundgz 估算涨跌（gszzl），单位净值/净值日期同样取自 fundgz；
+// 今日优先取 fundgz 估算涨跌（gszzl），fundgz 无估算的（如 QDII）用已公布最新净值日涨幅兜底；
+// 单位净值/净值日期同样取自 fundgz（无则用兜底净值）；
 // 其余周期均来自移动端 FundMNPeriodIncrease（同一接口，无需额外请求）。
 type FundPerf struct {
 	Code        string  `json:"code"`        // 基金代码
-	Nav         float64 `json:"nav"`         // 单位净值（fundgz dwjz）
+	Nav         float64 `json:"nav"`         // 单位净值（fundgz dwjz，或兜底净值）
 	NavDate     string  `json:"navDate"`     // 净值日期（fundgz jzrq）
-	DayGrowth   float64 `json:"dayGrowth"`   // 今日（估算涨跌，%）
+	DayGrowth   float64 `json:"dayGrowth"`   // 今日（估算涨跌优先，无则已公布日涨幅，%）
 	WeekGrowth  float64 `json:"weekGrowth"`  // 近1周（%）
 	MonthGrowth float64 `json:"monthGrowth"` // 近1月（%）
 	Month3      float64 `json:"month3"`      // 近3月（%）
@@ -276,8 +277,8 @@ type SectorItem struct {
 	ChangePercent float64 `json:"changePercent"` // 今日涨跌幅（%，f3）
 	Week          float64 `json:"week"`          // 近1周涨跌幅（%，ztjj st=W）
 	Month         float64 `json:"month"`         // 近1月涨跌幅（%，ztjj st=M）
-	Month3        float64 `json:"month3"`        // 近3月涨跌幅（%，f24=60日）
-	Ytd           float64 `json:"ytd"`           // 今年来涨跌幅（%，f25=年初至今）
+	Month3        float64 `json:"month3"`        // 近3月涨跌幅（%，ztjj st=Q）
+	Ytd           float64 `json:"ytd"`           // 今年来涨跌幅（%，ztjj st=ON）
 	UpCount       int     `json:"upCount"`       // 上涨家数
 	DownCount     int     `json:"downCount"`     // 下跌家数
 	LeadStock     string  `json:"leadStock"`     // 领涨股名称

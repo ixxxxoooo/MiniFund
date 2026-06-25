@@ -397,6 +397,11 @@ func (s *Scheduler) runEstimateRound() {
 	if len(otc) > 0 {
 		s.reconcileEstimates(ctx, estimates, otc)
 	}
+	// 场内 ETF：实时涨跌幅即当日涨跌幅，补 DayGrowth 供持仓汇总计算当日收益。
+	// 否则 GetSummary 的 HasDayGrowth 分支永不命中，ETF 收盘后当日收益会归 0。
+	if len(exchange) > 0 {
+		s.reconcileETFs(estimates, exchange)
+	}
 	s.mu.Lock()
 	s.lastEstimates = estimates
 	s.mu.Unlock()
@@ -445,6 +450,27 @@ func (s *Scheduler) reconcileEstimates(ctx context.Context, estimates []model.Fu
 			e.HasEstimate = false
 			e.Estimate = 0
 			e.EstimateGrowth = 0
+		}
+	}
+}
+
+// reconcileETFs 校正场内 ETF 估值：ETF 没有像场外那样的「净值确认」流程，
+// 收盘价即当日最终价，故不清除 HasEstimate；但需补 DayGrowth（用实时涨跌幅），
+// 否则持仓汇总（GetSummary）的 HasDayGrowth 分支不命中，ETF 收盘后当日收益会归 0。
+func (s *Scheduler) reconcileETFs(estimates []model.FundEstimate, exchange []string) {
+	set := make(map[string]bool, len(exchange))
+	for _, c := range exchange {
+		set[c] = true
+	}
+	for i := range estimates {
+		e := &estimates[i]
+		if !set[e.Code] {
+			continue
+		}
+		// ETF 的 EstimateGrowth 即当日涨跌幅（含开盘至今），收盘后仍有效。
+		if e.HasEstimate && e.EstimateGrowth != 0 {
+			e.DayGrowth = e.EstimateGrowth
+			e.HasDayGrowth = true
 		}
 	}
 }

@@ -66,12 +66,19 @@ func parseFundQuotes(body string, symbolToCode map[string]string) ([]model.FundE
 		if price <= 0 {
 			continue
 		}
-		// PrevNav（昨收）应由独立字段提供；简易行情无该字段时用 price-change 反推，
-		// 但 change 为空（停牌/集合竞价/异常）时 price-change=price 会把昨收冒充为现价，
-		// 导致前端涨跌计算失真。change 缺失时不填 PrevNav，交由下游「PrevNav<=0 跳过」守卫处理。
+		// PrevNav（昨收）反推：优先用 price-change（腾讯 f[4] 为涨跌点）。
+		// 平开时 change=0、prevNav=price 正确；但 change 字段缺失（停牌/集合竞价/异常返回空串）
+		// 时 ParseFloat 也得 0，无法与真实平开区分。此时用涨跌幅 percent 反推兜底：
+		// prevNav = price / (1 + percent/100)。两者都为 0 视为真实平开，prevNav=price。
+		// 保证 PrevNav>0，避免被下游「PrevNav<=0 跳过」守卫误判为无行情而整只跳过持仓汇总。
 		var prevNav float64
-		if change != 0 {
+		switch {
+		case change != 0:
 			prevNav = price - change
+		case percent != 0:
+			prevNav = price / (1 + percent/100)
+		default:
+			prevNav = price
 		}
 		out = append(out, model.FundEstimate{
 			Code:           code,

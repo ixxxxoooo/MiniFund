@@ -291,6 +291,36 @@ func (s *FundService) GetFundPerformance(codes []string) (map[string]model.FundP
 		logger.Warn("批量拉取今日估算失败: %v", err)
 	}
 
+	// QDII 等 fundgz 无盘中估算的基金，HasDay 仍为空，搜索页「今日」列会恒为「—」。
+	// 用已公布的最新历史净值日涨幅兜底（与自选表/详情页的 HasDayGrowth 口径对齐），
+	// 使同一只基金在搜索页与其它页面「今日」展示一致。
+	var needDay []string
+	for c, p := range perfs {
+		if !p.HasDay {
+			needDay = append(needDay, c)
+		}
+	}
+	if len(needDay) > 0 {
+		ctx2, cancel2 := context.WithTimeout(context.Background(), 12*time.Second)
+		navs := eastmoney.FetchLatestNavs(ctx2, needDay)
+		cancel2()
+		for _, c := range needDay {
+			rec, ok := navs[c]
+			if !ok || rec.Growth == 0 {
+				continue
+			}
+			if p, ok := perfs[c]; ok {
+				p.DayGrowth = rec.Growth
+				p.HasDay = true
+				if !p.HasNav && rec.Nav > 0 {
+					p.Nav = rec.Nav
+					p.NavDate = rec.Date
+					p.HasNav = true
+				}
+			}
+		}
+	}
+
 	for c, p := range perfs {
 		// 仅缓存有效结果（阶段收益/今日/净值任一取到即可），避免网络抖动失败时把
 		// 空/残缺 FundPerf 缓存 3 分钟，导致期间搜索结果始终显示空收益。

@@ -595,7 +595,8 @@ export class FundIndexPage {
 
 /**
  * FundPerf 基金阶段收益（用于搜索结果行内异步补全展示）。
- * 今日来自 fundgz 估算涨跌（gszzl），单位净值/净值日期同样取自 fundgz；
+ * 今日优先取 fundgz 估算涨跌（gszzl），fundgz 无估算的（如 QDII）用已公布最新净值日涨幅兜底；
+ * 单位净值/净值日期同样取自 fundgz（无则用兜底净值）；
  * 其余周期均来自移动端 FundMNPeriodIncrease（同一接口，无需额外请求）。
  */
 export class FundPerf {
@@ -605,7 +606,7 @@ export class FundPerf {
     "code": string;
 
     /**
-     * 单位净值（fundgz dwjz）
+     * 单位净值（fundgz dwjz，或兜底净值）
      */
     "nav": number;
 
@@ -615,7 +616,7 @@ export class FundPerf {
     "navDate": string;
 
     /**
-     * 今日（估算涨跌，%）
+     * 今日（估算涨跌优先，无则已公布日涨幅，%）
      */
     "dayGrowth": number;
 
@@ -2010,12 +2011,12 @@ export class SectorItem {
     "month": number;
 
     /**
-     * 近3月涨跌幅（%，f24=60日）
+     * 近3月涨跌幅（%，ztjj st=Q）
      */
     "month3": number;
 
     /**
-     * 今年来涨跌幅（%，f25=年初至今）
+     * 今年来涨跌幅（%，ztjj st=ON）
      */
     "ytd": number;
 
