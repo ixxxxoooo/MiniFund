@@ -292,7 +292,12 @@ func (s *FundService) GetFundPerformance(codes []string) (map[string]model.FundP
 	}
 
 	for c, p := range perfs {
-		s.perfCache.set("perf:"+c, *p)
+		// 仅缓存有效结果（阶段收益/今日/净值任一取到即可），避免网络抖动失败时把
+		// 空/残缺 FundPerf 缓存 3 分钟，导致期间搜索结果始终显示空收益。
+		// 本次调用的结果仍照常返回（残缺项前端按字段缺失渲染）。
+		if p.HasPeriod || p.HasDay || p.HasNav {
+			s.perfCache.set("perf:"+c, *p)
+		}
 		result[c] = *p
 	}
 	return result, nil

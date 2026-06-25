@@ -38,7 +38,7 @@ export function DeleteDCAPlan(id: number): $CancellablePromise<void> {
 }
 
 /**
- * DeletePosition 删除持仓：清空该基金全部交易流水并移除派生缓存。
+ * DeletePosition 删除持仓：在单事务内清空该基金全部交易流水并移除派生缓存，保证原子一致。
  */
 export function DeletePosition(code: string): $CancellablePromise<void> {
     return $Call.ByID(2367940775, code);

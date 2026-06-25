@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -101,6 +102,9 @@ func (s *SettingsService) Update(next AppSettings) error {
 	if next.RefreshIntervalSec < 15 {
 		next.RefreshIntervalSec = 15
 	}
+	if next.RefreshIntervalSec > 300 {
+		next.RefreshIntervalSec = 300
+	}
 	if next.CloseAction != "quit" {
 		next.CloseAction = "hide"
 	}
@@ -109,6 +113,15 @@ func (s *SettingsService) Update(next AppSettings) error {
 	}
 	if next.NewsPollSec < 30 {
 		next.NewsPollSec = 30
+	}
+	if next.NewsPollSec > 600 {
+		next.NewsPollSec = 600
+	}
+	// 启用 AI 解读时强制校验配置完整性，避免前端保存后调用直接打到上游返回令人困惑的 401/连接错误。
+	if next.AIEnabled {
+		if strings.TrimSpace(next.AIBaseURL) == "" || strings.TrimSpace(next.AIKey) == "" || strings.TrimSpace(next.AIModel) == "" {
+			return fmt.Errorf("启用 AI 解读需填写服务地址、API 密钥与模型名称")
+		}
 	}
 	data, err := json.Marshal(next)
 	if err != nil {

@@ -173,7 +173,7 @@ func (s *Store) RemoveItem(code string, groupID int64) error {
 	return nil
 }
 
-// MoveItem 将自选从源分组移动到目标分组（保留 created_at；目标分组已存在则合并；排到目标分组末尾）。
+// MoveItem 将自选从源分组移动到目标分组（保留 created_at；目标分组已存在则更新 sort/pinned 合并；排到目标分组末尾）。
 func (s *Store) MoveItem(code string, fromGroupID, toGroupID int64) error {
 	if fromGroupID == toGroupID {
 		return nil
@@ -184,7 +184,12 @@ func (s *Store) MoveItem(code string, fromGroupID, toGroupID int64) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.Exec(`INSERT OR IGNORE INTO watch_item (code, group_id, sort, pinned, created_at)
+	// 先删除目标分组中已存在的同 code 条目，再从源分组复制过来（含新的末尾 sort），
+	// 保证「移到目标分组末尾」且 sort/pinned 更新，而非 INSERT OR IGNORE 时保留旧 sort/pinned。
+	if _, err := tx.Exec("DELETE FROM watch_item WHERE code = ? AND group_id = ?", code, toGroupID); err != nil {
+		return fmt.Errorf("清理目标分组旧条目失败: %w", err)
+	}
+	if _, err := tx.Exec(`INSERT INTO watch_item (code, group_id, sort, pinned, created_at)
 		SELECT code, ?, (SELECT COALESCE(MAX(sort),0)+1 FROM watch_item WHERE group_id = ?), pinned, created_at
 		FROM watch_item WHERE code = ? AND group_id = ?`,
 		toGroupID, toGroupID, code, fromGroupID); err != nil {
