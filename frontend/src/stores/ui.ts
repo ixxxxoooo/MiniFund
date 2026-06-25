@@ -23,7 +23,8 @@ interface UIStore {
 export const useUIStore = create<UIStore>()(
   persist(
     (set) => ({
-      page: "market",
+      // 默认进入搜索页：用户最常见的操作是先搜基金再加自选，搜索作为第一入口。
+      page: "search",
       hideAmounts: false,
       searchFocusNonce: 0,
       setPage: (page) => set({ page }),
