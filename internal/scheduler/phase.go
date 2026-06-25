@@ -52,6 +52,11 @@ func nextChangeHint(p Phase, t time.Time) string {
 		if IsTradingDay(t) && t.Hour() < 9 {
 			return "09:30 开盘"
 		}
+		// 交易日 15:00-16:00 虽为 Idle（收盘后净值尚未确认），但 16:00 即进入净值确认，
+		// 提示「下一交易日开盘」会误导用户，单独给出净值确认提示。
+		if IsTradingDay(t) && t.Hour() >= 15 && t.Hour() < 16 {
+			return "16:00 净值确认"
+		}
 		return "下一交易日 09:30 开盘"
 	}
 }

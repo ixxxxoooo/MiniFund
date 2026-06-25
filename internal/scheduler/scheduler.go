@@ -77,6 +77,7 @@ type Scheduler struct {
 	lastIndexes   []model.IndexQuote
 	confirmed     map[string]bool // 当日已确认净值的基金
 	confirmedDate string          // confirmed 对应的日期
+	estimateDown  bool            // 估值源当前是否处于降级态（避免反复广播）
 
 	// 权威最新净值缓存（用于校正 fundgz 滞后的估值，按 TTL + 自选集合变化节流刷新）
 	latestNavs   map[string]model.NavRecord
@@ -379,8 +380,18 @@ func (s *Scheduler) runEstimateRound() {
 			logger.Warn("场内行情轮询失败: %v", err)
 		}
 	}
+	// 自选非空却拉不到任何估值：估值源整体不可用，广播降级提示（前端展示「数据延迟」徽标）。
+	// 连续多轮失败时只在首次广播（estimateDown 去抖），恢复时再广播一次。
 	if len(estimates) == 0 {
+		if !s.estimateDown {
+			s.estimateDown = true
+			s.EmitDegraded("estimate", true)
+		}
 		return
+	}
+	if s.estimateDown {
+		s.estimateDown = false
+		s.EmitDegraded("estimate", false)
 	}
 	// 用权威历史净值校正场外基金估值（fundgz 在净值公布后会滞后）。
 	if len(otc) > 0 {
@@ -404,6 +415,13 @@ func (s *Scheduler) reconcileEstimates(ctx context.Context, estimates []model.Fu
 	if len(navs) == 0 {
 		return
 	}
+	// 批量查询基金类型，QDII 基金的 fundgz 估算与历史净值日期因海外时差本就不同步，
+	// 用「估算交易日 ≤ 已确认净值日期」判定会误清当前交易日有效的估算，故 QDII 跳过清除逻辑。
+	types, _ := s.store.FundTypes(otc)
+	isQDII := func(code string) bool {
+		t, ok := types[code]
+		return ok && strings.Contains(t, "QDII")
+	}
 	for i := range estimates {
 		e := &estimates[i]
 		rec, ok := navs[e.Code]
@@ -422,7 +440,8 @@ func (s *Scheduler) reconcileEstimates(ctx context.Context, estimates []model.Fu
 		if len(e.EstimateTime) >= 10 {
 			target = e.EstimateTime[:10]
 		}
-		if e.HasEstimate && target != "" && rec.Date >= target {
+		// QDII 基金跳过清除：其历史净值与估算日期因海外时差不同步，清除会误删当前有效估算。
+		if !isQDII(e.Code) && e.HasEstimate && target != "" && rec.Date >= target {
 			e.HasEstimate = false
 			e.Estimate = 0
 			e.EstimateGrowth = 0
@@ -509,6 +528,10 @@ func (s *Scheduler) runMarketCenterRound() {
 
 // runNavConfirmRound 净值确认：逐只查询当日真实净值，确认后落库收益并广播。
 func (s *Scheduler) runNavConfirmRound() {
+	// 节假日（含日历过期退化的非交易日）当日净值不会公布，整轮跳过，避免无效请求循环。
+	if !IsTradingDay(time.Now()) {
+		return
+	}
 	today := time.Now().Format("2006-01-02")
 	s.mu.Lock()
 	if s.confirmedDate != today {
@@ -522,11 +545,17 @@ func (s *Scheduler) runNavConfirmRound() {
 		logger.Warn("读取自选代码失败: %v", err)
 		return
 	}
+	// 本轮已尝试过但落库失败的基金，本轮内不再重复请求历史净值，
+	// 避免 DB 持续故障（如锁超时）时反复打到东财。下一轮（10 分钟后）仍会重试。
+	skipped := make(map[string]bool, len(codes))
 	for _, code := range codes {
 		s.mu.Lock()
 		done := s.confirmed[code]
 		s.mu.Unlock()
 		if done {
+			continue
+		}
+		if skipped[code] {
 			continue
 		}
 		// 已落库的也跳过（应用重启后恢复状态）
@@ -548,13 +577,17 @@ func (s *Scheduler) runNavConfirmRound() {
 			continue // 当日净值尚未公布
 		}
 
-		// 计算当日真实收益（有持仓时）
+		// 计算当日真实收益（有持仓时）：与单日涨幅 latest.Growth 同源，
+		// 避免用历史第二根净值在周末/长假后变成「多日累计涨跌」而高估当日收益。
+		// 收益 ≈ 昨日市值 × 涨幅 = (份额 × 今日净值) × 涨幅 / (1 + 涨幅)，
+		// 简化为 份额 × 今日净值 × 涨幅 / 100（涨幅已为百分比，误差可忽略，与 daily_profit 口径一致）。
 		var profit float64
-		if pos, _ := s.store.GetPosition(code); pos != nil && len(page.Items) > 1 {
-			profit = pos.Shares * (latest.Nav - page.Items[1].Nav)
+		if pos, _ := s.store.GetPosition(code); pos != nil {
+			profit = pos.Shares * latest.Nav * latest.Growth / 100
 		}
 		if err := s.store.SaveDailyProfit(code, today, latest.Nav, latest.Growth, profit); err != nil {
 			logger.Warn("净值确认落库失败: code=%s err=%v", code, err)
+			skipped[code] = true // 本轮跳过，避免反复打接口；下一轮仍会重试
 			continue
 		}
 		s.mu.Lock()
@@ -627,7 +660,9 @@ func (s *Scheduler) runDCARound(today string) {
 					Shares: shares, Price: rec.Nav, Amount: p.Amount,
 					Source: model.TxnSourceDCA, Note: "定投自动入账",
 				}
-				if err := s.store.AddTransaction(txn); err != nil {
+				// 入账与推进合并为单事务：任一失败整体回滚，杜绝入账成功但推进失败导致次日重复买入。
+				next := storage.NextRunDate(p.Freq, p.Day, today)
+				if err := s.store.RecordDCA(txn, p.ID, next); err != nil {
 					logger.Warn("定投自动入账失败: code=%s err=%v", p.Code, err)
 				} else {
 					recorded = true
@@ -646,8 +681,11 @@ func (s *Scheduler) runDCARound(today string) {
 			notify("定投提醒", body)
 		}
 
-		if err := s.store.AdvanceDCAPlan(p.ID, p.Freq, p.Day, today); err != nil {
-			logger.Warn("推进定投计划失败: id=%d err=%v", p.ID, err)
+		// 非自动入账（仅提醒）的计划单独推进；自动入账已在 RecordDCA 事务内一并推进。
+		if !p.AutoRecord {
+			if err := s.store.AdvanceDCAPlan(p.ID, p.Freq, p.Day, today); err != nil {
+				logger.Warn("推进定投计划失败: id=%d err=%v", p.ID, err)
+			}
 		}
 	}
 
@@ -690,11 +728,15 @@ func (s *Scheduler) runNewsRound() {
 	prevID := s.lastFlashID
 	firstRun := !s.newsInit
 	s.newsInit = true
-	// list 按时间倒序，遇到上次最新 id 即停止，之前的均为新增
+	// list 按时间倒序，遇到上次最新 id 即停止，之前的均为新增。
+	// 游标失效保护：若 prevID 已被挤出列表（低峰期条目变少/重排/重启后过期），
+	// 循环不会 break，此时不应把整页都当新增弹通知，仅广播列表并更新游标。
 	var fresh []model.NewsFlash
+	hit := false
 	if prevID != "" {
 		for _, n := range list {
 			if n.ID == prevID {
+				hit = true
 				break
 			}
 			fresh = append(fresh, n)
@@ -712,8 +754,8 @@ func (s *Scheduler) runNewsRound() {
 		logger.Warn("持久化快讯游标失败: %v", err)
 	}
 
-	// 桌面通知：仅在非首轮、存在新增、通知开启且回调就绪时
-	if !firstRun && len(fresh) > 0 && notify != nil && s.settings.NewsNotifyEnabled() {
+	// 桌面通知：仅在非首轮、游标确实命中（避免误把整页当新增）、存在新增、通知开启且回调就绪时
+	if !firstRun && hit && len(fresh) > 0 && notify != nil && s.settings.NewsNotifyEnabled() {
 		latest := fresh[0]
 		body := latest.Title
 		if len(fresh) > 1 {
