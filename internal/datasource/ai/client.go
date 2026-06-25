@@ -157,29 +157,69 @@ func ChatStream(ctx context.Context, cfg Config, system, user string, onDelta fu
 	}
 
 	reader := bufio.NewReader(resp.Body)
+	// SSE 协议：一个事件可跨多行 data:，以空行分隔；同一事件的 data 行需用 "\n" 拼接后再解析。
+	// 此前逐行解析对主流实现（每 chunk 单行 data）工作正常，但对严格遵循多行 data 的网关会丢增量。
+	var dataBuf strings.Builder
+	var done bool
+	var streamErr error
+	flush := func() {
+		payload := dataBuf.String()
+		dataBuf.Reset()
+		if payload == "" {
+			return
+		}
+		if payload == "[DONE]" {
+			done = true
+			return
+		}
+		var chunk streamChunk
+		if json.Unmarshal([]byte(payload), &chunk) == nil {
+			if chunk.Error != nil && chunk.Error.Message != "" {
+				streamErr = fmt.Errorf("AI 服务返回错误: %s", chunk.Error.Message)
+				return
+			}
+			if len(chunk.Choices) > 0 {
+				if delta := chunk.Choices[0].Delta.Content; delta != "" {
+					onDelta(delta)
+				}
+			}
+		}
+	}
 	for {
 		line, err := reader.ReadString('\n')
 		if len(line) > 0 {
 			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "data:") {
-				payload := strings.TrimSpace(line[len("data:"):])
-				if payload == "[DONE]" {
+			switch {
+			case line == "":
+				// 空行：事件边界，触发缓冲的 data 解析。
+				flush()
+				if done {
 					return nil
 				}
-				var chunk streamChunk
-				if json.Unmarshal([]byte(payload), &chunk) == nil {
-					if chunk.Error != nil && chunk.Error.Message != "" {
-						return fmt.Errorf("AI 服务返回错误: %s", chunk.Error.Message)
-					}
-					if len(chunk.Choices) > 0 {
-						if delta := chunk.Choices[0].Delta.Content; delta != "" {
-							onDelta(delta)
-						}
-					}
+				if streamErr != nil {
+					return streamErr
 				}
+			case strings.HasPrefix(line, "data:"):
+				payload := strings.TrimSpace(line[len("data:"):])
+				if dataBuf.Len() > 0 {
+					dataBuf.WriteByte('\n')
+				}
+				dataBuf.WriteString(payload)
+			default:
+				// 忽略 event:/id:/comment 等非 data 行
 			}
 		}
 		if err != nil {
+			// 流结束前若仍有未触发空行的缓冲 data，补一次解析。
+			if dataBuf.Len() > 0 {
+				flush()
+				if done {
+					return nil
+				}
+				if streamErr != nil {
+					return streamErr
+				}
+			}
 			if err == io.EOF {
 				return nil
 			}

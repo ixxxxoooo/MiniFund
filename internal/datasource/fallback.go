@@ -78,9 +78,13 @@ func (f *FallbackIndexSource) markPrimary(ok bool) {
 		}
 	} else {
 		f.primaryFails++
-		// 退避：30s → 60s → 120s 封顶
-		backoff := 30 * time.Second << min(f.primaryFails-1, 2)
-		f.primaryRetry = time.Now().Add(backoff)
+		// 退避：30s → 60s → 120s 封顶。查表写法语义清晰，避免 Duration 左移在改基数时溢出的隐患。
+		backoffs := []time.Duration{30 * time.Second, 60 * time.Second, 120 * time.Second}
+		idx := f.primaryFails - 1
+		if idx > 2 {
+			idx = 2
+		}
+		f.primaryRetry = time.Now().Add(backoffs[idx])
 		if !f.degradedState {
 			f.degradedState = true
 			changed = true

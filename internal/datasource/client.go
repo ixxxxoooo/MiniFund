@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
@@ -55,6 +56,15 @@ func fetchWith(ctx context.Context, client *http.Client, url, referer string) (s
 			return body, nil
 		}
 		lastErr = err
+		// 首次失败后短暂退避再重试：对反爬断连/限频场景，立即重试大概率再次失败，
+		// 退避 300ms 给上游喘息窗口，降低被进一步风控的概率。
+		if attempt == 0 {
+			select {
+			case <-time.After(300 * time.Millisecond):
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
 	}
 	return "", lastErr
 }
@@ -109,12 +119,18 @@ func FetchGBKText(ctx context.Context, url, referer string) (string, error) {
 var jsonpPattern = regexp.MustCompile(`(?s)^\s*[\w$.]+\s*\((.*)\)\s*;?\s*$`)
 
 // StripJSONP 去掉 JSONP 回调包装，返回内部 JSON 字符串。
+// 容错：若响应本就是裸 JSON（无回调包装，以 '{' 开头），直接返回原文本，
+// 避免 fundgz 等接口偶发返回裸 JSON 时解析整体失败。
 func StripJSONP(body string) (string, error) {
 	m := jsonpPattern.FindStringSubmatch(body)
-	if m == nil {
-		return "", fmt.Errorf("响应不是合法的 JSONP 格式")
+	if m != nil {
+		return m[1], nil
 	}
-	return m[1], nil
+	trimmed := strings.TrimSpace(body)
+	if strings.HasPrefix(trimmed, "{") {
+		return trimmed, nil
+	}
+	return "", fmt.Errorf("响应不是合法的 JSONP 格式")
 }
 
 // ExtractJSVar 从 JS 脚本中提取 `var name = <json>;` 形式的变量值（贪婪到行尾分号）。

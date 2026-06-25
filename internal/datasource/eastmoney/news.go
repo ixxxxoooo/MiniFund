@@ -72,11 +72,21 @@ func FetchFlashNews(ctx context.Context, pageSize int) ([]model.NewsFlash, error
 			Stocks:    stocks,
 		})
 	}
-	// 按发布时间倒序（最新在前）。showTime 为 "yyyy-MM-dd HH:mm:ss"，字典序即时间序。
+	// 按发布时间倒序（最新在前）。showTime 约定为 "yyyy-MM-dd HH:mm:ss"，
+	// 但解析为 time.Time 再排序更稳健，避免接口偶发混入「刚刚/X分钟前」等相对时间时字典序错乱。
 	sort.SliceStable(out, func(i, j int) bool {
-		return out[i].Time > out[j].Time
+		return parseShowTime(out[i].Time).After(parseShowTime(out[j].Time))
 	})
 	return out, nil
+}
+
+// parseShowTime 解析快讯发布时间，解析失败返回零值（排序时排在最末尾）。
+func parseShowTime(s string) time.Time {
+	t, err := time.ParseInLocation("2006-01-02 15:04:05", s, time.Local)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }
 
 // rollItemPattern 提取滚动资讯列表中的文章链接：<a href="//finance|fund.eastmoney.com/a/{id}.html">标题</a>。

@@ -187,9 +187,39 @@ var (
 	bondContentRe = regexp.MustCompile(`(?s)content:"((?:\\.|[^"\\])*)"`)
 	bondTbodyRe   = regexp.MustCompile(`(?s)<tbody>(.*?)</tbody>`)
 	bondRowRe     = regexp.MustCompile(`(?s)<tr>(.*?)</tr>`)
-	bondCellRe    = regexp.MustCompile(`(?s)<td[^>]*>(.*?)</td>`)
+	bondCellRe    = regexp.MustCompile(`(?s)<t[dh][^>]*>(.*?)</t[dh]>`)
 	htmlTagRe     = regexp.MustCompile(`<[^>]+>`)
 )
+
+// bondColumnIndices 按表头文本定位「债券代码/债券名称/占净值比例」的列下标，
+// 容错东财调整列顺序（如插入市值列）导致硬编码下标错位。定位失败时回退默认 [1,2,3]。
+func bondColumnIndices(content string) (code, name, pct int) {
+	code, name, pct = 1, 2, 3 // 默认：序号(0)/代码(1)/名称(2)/比例(3)
+	// 表头位于 <thead> 的 <tr> 内（zqcc 表格首块即最新报告期）。
+	headRe := regexp.MustCompile(`(?s)<thead[^>]*>(.*?)</thead>`)
+	head := headRe.FindStringSubmatch(content)
+	if len(head) < 2 {
+		return
+	}
+	thRe := regexp.MustCompile(`(?s)<th[^>]*>(.*?)</th>`)
+	cells := thRe.FindAllStringSubmatch(head[1], -1)
+	codeFound, nameFound, pctFound := false, false, false
+	for i, c := range cells {
+		txt := stripHTML(c[1])
+		switch {
+		case !codeFound && (strings.Contains(txt, "债券代码") || strings.Contains(txt, "代码")):
+			code = i
+			codeFound = true
+		case !nameFound && (strings.Contains(txt, "债券名称") || strings.Contains(txt, "简称") || strings.Contains(txt, "名称")):
+			name = i
+			nameFound = true
+		case !pctFound && (strings.Contains(txt, "占净值") || strings.Contains(txt, "比例")):
+			pct = i
+			pctFound = true
+		}
+	}
+	return
+}
 
 // stripHTML 去除标签并修剪空白。
 func stripHTML(s string) string {
@@ -209,6 +239,8 @@ func parseBondHoldings(body string) []model.BondHolding {
 		return nil
 	}
 	content := unescapeJS(cm[1])
+	// 按表头定位列下标，容错东财调整列顺序
+	codeIdx, nameIdx, pctIdx := bondColumnIndices(content)
 	tb := bondTbodyRe.FindStringSubmatch(content) // 首个 tbody 即最新报告期
 	if len(tb) < 2 {
 		return nil
@@ -216,12 +248,15 @@ func parseBondHoldings(body string) []model.BondHolding {
 	out := make([]model.BondHolding, 0, 10)
 	for _, row := range bondRowRe.FindAllStringSubmatch(tb[1], -1) {
 		cells := bondCellRe.FindAllStringSubmatch(row[1], -1)
-		if len(cells) < 4 {
+		if len(cells) <= codeIdx || len(cells) <= nameIdx {
 			continue
 		}
-		code := stripHTML(cells[1][1])
-		name := stripHTML(cells[2][1])
-		pct, _ := strconv.ParseFloat(strings.TrimSuffix(strings.TrimSpace(stripHTML(cells[3][1])), "%"), 64)
+		code := stripHTML(cells[codeIdx][1])
+		name := stripHTML(cells[nameIdx][1])
+		var pct float64
+		if len(cells) > pctIdx {
+			pct, _ = strconv.ParseFloat(strings.TrimSuffix(strings.TrimSpace(stripHTML(cells[pctIdx][1])), "%"), 64)
+		}
 		if code == "" && name == "" {
 			continue
 		}

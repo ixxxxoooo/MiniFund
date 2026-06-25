@@ -66,10 +66,17 @@ func parseFundQuotes(body string, symbolToCode map[string]string) ([]model.FundE
 		if price <= 0 {
 			continue
 		}
+		// PrevNav（昨收）应由独立字段提供；简易行情无该字段时用 price-change 反推，
+		// 但 change 为空（停牌/集合竞价/异常）时 price-change=price 会把昨收冒充为现价，
+		// 导致前端涨跌计算失真。change 缺失时不填 PrevNav，交由下游「PrevNav<=0 跳过」守卫处理。
+		var prevNav float64
+		if change != 0 {
+			prevNav = price - change
+		}
 		out = append(out, model.FundEstimate{
 			Code:           code,
 			Name:           f[1],
-			PrevNav:        price - change,
+			PrevNav:        prevNav,
 			NavDate:        now.Format("2006-01-02"),
 			Estimate:       price,
 			EstimateGrowth: percent,
