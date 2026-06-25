@@ -52,11 +52,14 @@ export function MainWindow() {
 
   useEffect(() => {
     void loadSettings();
-    initMarket();
+    const uninitMarket = initMarket();
     // 启动即加载自选/持仓/已清仓，保证任何起始页的列表都能显示持仓状态
     void loadWatchlist();
     const unsub = initNews();
-    return unsub;
+    return () => {
+      uninitMarket();
+      unsub();
+    };
   }, [loadSettings, initMarket, initNews, loadWatchlist]);
 
   // 进入快讯页即清除未读红点

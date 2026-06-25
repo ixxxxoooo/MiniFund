@@ -24,8 +24,8 @@ interface MarketCenterStore {
   loadingKline: boolean;
   /** K 线加载错误 */
   klineError: string | null;
-  /** 初始化：拉取列表 + 订阅指数事件驱动刷新（仅首次生效） */
-  init: () => void;
+  /** 初始化：拉取列表 + 订阅指数事件驱动刷新（仅首次生效）；返回取消订阅函数 */
+  init: () => () => void;
   /** 拉取指数实时报价列表（窗口初始化用） */
   loadQuotes: () => Promise<void>;
   /** 应用一批指数报价（初始化拉取与事件推送共用：更新列表 + 首次默认选中） */
@@ -58,14 +58,19 @@ export const useMarketCenterStore = create<MarketCenterStore>()((set, get) => ({
   klineError: null,
 
   init: () => {
-    if (initialized) return;
+    if (initialized) return () => {};
     initialized = true;
     void get().loadQuotes();
     // 调度器每 30s 主动拉取并广播行情中心指数（全天候，覆盖美股/韩国盘外时段）；
     // 前端直接消费推送 payload，不自行 setInterval 轮询 binding（遵守架构约定）。
-    onMarketCenter((list) => {
+    const unsub = onMarketCenter((list) => {
       if (list && list.length > 0) get().applyQuotes(list);
     });
+    // 返回取消函数：卸载时退订并释放守卫，允许后续重新初始化。
+    return () => {
+      unsub();
+      initialized = false;
+    };
   },
 
   loadQuotes: async () => {

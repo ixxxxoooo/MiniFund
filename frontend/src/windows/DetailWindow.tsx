@@ -144,7 +144,6 @@ export function DetailWindow({ code }: DetailWindowProps) {
 
   useEffect(() => {
     void loadSettings();
-    initMarket();
     void call("加载基金详情", () => FundService.GetFundDetail(code)).then((d) => {
       if (d) {
         setDetail(d);
@@ -154,7 +153,12 @@ export function DetailWindow({ code }: DetailWindowProps) {
         setFailed(true);
       }
     });
-  }, [code, loadSettings, initMarket]);
+  }, [code, loadSettings]);
+
+  // 行情事件订阅独立于基金 code：整个窗口生命周期订阅一次，卸载时统一取消。
+  useEffect(() => {
+    return initMarket();
+  }, [initMarket]);
 
   // 加载交易流水；任一窗口持仓变更后重新加载，保证走势图标记同步
   useEffect(() => {
@@ -180,24 +184,30 @@ export function DetailWindow({ code }: DetailWindowProps) {
   const [navItems, setNavItems] = useState<NavItem[]>([]);
   const [navTotal, setNavTotal] = useState(0);
   const [navLoading, setNavLoading] = useState(false);
+  // navLoaded：是否已完成至少一次加载（区分「未加载」与「加载后为空」，避免 total=0 时反复触发空加载）
+  const [navLoaded, setNavLoaded] = useState(false);
   const navPageRef = useRef(0); // 已加载到的页码
   const navLoadingRef = useRef(false);
+  const codeRef = useRef(code); // 跟踪当前基金 code，用于 loadMoreNav 请求返回后防竞态
 
   // 切换基金时重置并加载第一页
   useEffect(() => {
     let cancelled = false;
+    codeRef.current = code;
     setNavItems([]);
     setNavTotal(0);
+    setNavLoaded(false);
     navPageRef.current = 0;
     navLoadingRef.current = true;
     setNavLoading(true);
     void call("加载历史净值", () => FundService.GetNavHistory(code, 1, NAV_PAGE_SIZE)).then((page) => {
-      if (cancelled) return;
+      if (cancelled || codeRef.current !== code) return;
       if (page) {
         setNavItems(page.items ?? []);
         setNavTotal(page.total);
         navPageRef.current = 1;
       }
+      setNavLoaded(true);
       navLoadingRef.current = false;
       setNavLoading(false);
     });
@@ -206,16 +216,18 @@ export function DetailWindow({ code }: DetailWindowProps) {
     };
   }, [code]);
 
-  const navHasMore = navTotal === 0 || navItems.length < navTotal;
+  const navHasMore = !navLoaded || (navTotal > 0 && navItems.length < navTotal);
 
   const loadMoreNav = useCallback(async () => {
     if (navLoadingRef.current) return;
     if (navTotal > 0 && navItems.length >= navTotal) return;
     navLoadingRef.current = true;
     setNavLoading(true);
+    const currentCode = code; // 捕获发起时的 code，请求返回后比对 codeRef 防止切换基金时混入旧数据
     const next = navPageRef.current + 1;
-    const page = await call("加载历史净值", () => FundService.GetNavHistory(code, next, NAV_PAGE_SIZE));
-    if (page) {
+    const page = await call("加载历史净值", () => FundService.GetNavHistory(currentCode, next, NAV_PAGE_SIZE));
+    // 切换基金期间返回的旧请求结果丢弃，避免追加到新基金列表
+    if (page && codeRef.current === currentCode) {
       setNavItems((prev) => [...prev, ...(page.items ?? [])]);
       setNavTotal(page.total);
       navPageRef.current = next;

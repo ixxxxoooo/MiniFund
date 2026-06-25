@@ -2,6 +2,7 @@ import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { DCAPlan, type PositionTxn, type WatchItem } from "@bindings/minifund/internal/model";
 import { PortfolioService } from "@bindings/minifund/services";
 import { Button } from "@/components/ui/button";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { QuoteText } from "@/components/market/QuoteText";
@@ -68,6 +69,9 @@ export function PositionDialog({ item, onClose }: PositionDialogProps) {
   const [planAuto, setPlanAuto] = useState(false);
   const [planError, setPlanError] = useState("");
 
+  // 待删除的交易流水 id（应用内确认弹窗，替代 Wails WebView 不支持的 window.confirm）
+  const [deleteTxnId, setDeleteTxnId] = useState<number | null>(null);
+
   const code = item?.code ?? "";
   const existing = item ? positions[code] : undefined;
   const metrics = computePositionMetrics(estimate, existing);
@@ -115,9 +119,8 @@ export function PositionDialog({ item, onClose }: PositionDialogProps) {
     }
   };
 
-  const handleDeleteTxn = async (id: number) => {
-    if (!window.confirm(t.confirmDeleteTxn)) return;
-    if (await deleteTransaction(id)) await reload();
+  const handleDeleteTxn = (id: number) => {
+    setDeleteTxnId(id);
   };
 
   const handleSaveBaseline = async () => {
@@ -483,6 +486,19 @@ export function PositionDialog({ item, onClose }: PositionDialogProps) {
           </div>
         </section>
       </DialogContent>
+      <ConfirmDialog
+        open={deleteTxnId != null}
+        title={t.confirmDeleteTxn}
+        message={t.confirmDeleteTxn}
+        confirmLabel="删除"
+        danger
+        onConfirm={async () => {
+          const id = deleteTxnId;
+          setDeleteTxnId(null);
+          if (id != null && (await deleteTransaction(id))) await reload();
+        }}
+        onCancel={() => setDeleteTxnId(null)}
+      />
     </Dialog>
   );
 }

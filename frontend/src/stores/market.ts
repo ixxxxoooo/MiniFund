@@ -19,7 +19,7 @@ interface MarketStore {
   /** 数据源是否降级 */
   degraded: boolean;
   /** 初始化：拉取缓存快照并订阅事件（每个窗口调用一次） */
-  init: () => void;
+  init: () => () => void;
   /** 拉取大盘涨跌分布（指数轮询同频调用代价低，组件按需定时调用） */
   loadBreadth: () => Promise<void>;
   /** 手动触发一轮拉取 */
@@ -44,7 +44,7 @@ export const useMarketStore = create<MarketStore>()((set) => ({
   degraded: false,
 
   init: () => {
-    if (initialized) return;
+    if (initialized) return () => {};
     initialized = true;
 
     // 初始快照（调度器缓存，避免等待下一轮推送）
@@ -58,23 +58,31 @@ export const useMarketStore = create<MarketStore>()((set) => ({
       if (state) set({ monitor: state });
     });
 
-    // 事件订阅：周期数据全部由 Go 推送
-    onEstimates((list) => {
-      set({ estimates: toEstimateMap(list), estimatesUpdatedAt: Date.now() });
-      // 估值刷新后联动持仓盈亏汇总
-      void useWatchlistStore.getState().refreshSummary();
-    });
-    onIndexes((list) => set({ indexes: list }));
-    onMonitorState((state) => set({ monitor: state }));
-    onDegraded((payload) => set({ degraded: payload.degraded }));
-    onNavConfirmed(() => {
-      // 净值确认后刷新汇总（真实收益落库）
-      void useWatchlistStore.getState().refreshSummary();
-    });
-    // 自选/持仓在任一窗口变更后，本窗口重新加载列表与汇总
-    onWatchlistChanged(() => {
-      void useWatchlistStore.getState().load();
-    });
+    // 事件订阅：周期数据全部由 Go 推送。收集各订阅的取消函数，便于组件卸载时统一清理。
+    const unsubs = [
+      onEstimates((list) => {
+        set({ estimates: toEstimateMap(list), estimatesUpdatedAt: Date.now() });
+        // 估值刷新后联动持仓盈亏汇总
+        void useWatchlistStore.getState().refreshSummary();
+      }),
+      onIndexes((list) => set({ indexes: list })),
+      onMonitorState((state) => set({ monitor: state })),
+      onDegraded((payload) => set({ degraded: payload.degraded })),
+      onNavConfirmed(() => {
+        // 净值确认后刷新汇总（真实收益落库）
+        void useWatchlistStore.getState().refreshSummary();
+      }),
+      // 自选/持仓在任一窗口变更后，本窗口重新加载列表与汇总
+      onWatchlistChanged(() => {
+        void useWatchlistStore.getState().load();
+      }),
+    ];
+
+    // 返回聚合取消函数：卸载时统一退订并释放守卫，允许后续重新初始化（窗口重挂载）。
+    return () => {
+      unsubs.forEach((u) => u());
+      initialized = false;
+    };
   },
 
   loadBreadth: async () => {

@@ -65,7 +65,7 @@ export function MarketCenterPage() {
   const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
 
   useEffect(() => {
-    init();
+    return init();
   }, [init]);
 
   // K 线区高度随容器自适应（窗口缩放时图表跟随，保证蜡烛清晰、占满空间）。

@@ -32,17 +32,46 @@ function readTokens(names: string[]): Record<string, string> {
   return out;
 }
 
+/**
+ * 将日期字符串解析为毫秒时间戳。
+ * 兼容两种主格式：纯日期 "YYYY-MM-DD" 与带时分 "YYYY-MM-DD HH:mm"（或含秒）。
+ * 解析失败返回 NaN，调用方据此过滤，避免 klinecharts 收到 NaN 时间戳导致该根丢失或整图错位。
+ */
+function parseKlineDate(date: string): number {
+  const s = date.trim();
+  if (!s) return NaN;
+  // 带空格的日期时间（腾讯/新浪等返回 "YYYY-MM-DD HH:mm[:ss]"）：空格替换为 T 得到 ISO 格式
+  if (s.includes(" ")) {
+    return Date.parse(s.replace(" ", "T"));
+  }
+  // 纯日期 "YYYY-MM-DD"：补 T00:00:00，兼容本地时区解析
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    return Date.parse(`${s}T00:00:00`);
+  }
+  // 其余格式兜底直接尝试解析
+  return Date.parse(s);
+}
+
 /** 将领域模型 Kline 转换为 klinecharts 数据（日期字符串转毫秒时间戳，成交额映射 turnover）。 */
 function toKLineData(list: Kline[]): KLineData[] {
-  return list.map((k) => ({
-    timestamp: new Date(`${k.date.replace(" ", "T")}${k.date.length <= 10 ? "T00:00:00" : ""}`).getTime(),
-    open: k.open,
-    high: k.high,
-    low: k.low,
-    close: k.close,
-    volume: k.volume,
-    turnover: k.amount,
-  }));
+  const out: KLineData[] = [];
+  for (const k of list) {
+    const timestamp = parseKlineDate(k.date);
+    if (!Number.isFinite(timestamp)) {
+      // 脏数据（非标准日期串）跳过该根，避免 NaN 时间戳破坏整图
+      continue;
+    }
+    out.push({
+      timestamp,
+      open: k.open,
+      high: k.high,
+      low: k.low,
+      close: k.close,
+      volume: k.volume,
+      turnover: k.amount,
+    });
+  }
+  return out;
 }
 
 /**
