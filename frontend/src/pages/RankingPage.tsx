@@ -3,6 +3,7 @@ import type { RankItem, RankPage } from "@bindings/minifund/internal/model";
 import { FundService, WindowService } from "@bindings/minifund/services";
 import { QuoteText } from "@/components/market/QuoteText";
 import { AddButton, CopyButton, PositionStatusBadge, ThemeChips, useFundThemes } from "@/components/fund/fund-list-helpers";
+import { FundNameCell } from "@/components/fund/FundNameCell";
 import { ColumnToggle } from "@/components/ui/column-toggle";
 import { Pager } from "@/components/ui/pager";
 import { SortableHeader } from "@/components/ui/sortable-header";
@@ -209,7 +210,7 @@ export function RankingPage() {
                     {(pageIndex - 1) * RANK_PAGE_SIZE + i + 1}
                   </td>
                   <td className="data-grid-cell">
-                    <div className="flex flex-col gap-0.5 py-0.5">
+                    <FundNameCell code={item.code} name={item.name}>
                       <div className="flex items-center gap-2">
                         <span className="min-w-0 truncate text-[length:var(--size-font-xs)] text-[var(--fg)]">
                           {item.name}
@@ -221,7 +222,7 @@ export function RankingPage() {
                         <PositionStatusBadge code={item.code} />
                         <CopyButton value={item.code} name={item.name} />
                       </div>
-                    </div>
+                    </FundNameCell>
                   </td>
                   {visibleCols.map((c) => (
                     <td key={c.key} className="data-grid-cell text-right">

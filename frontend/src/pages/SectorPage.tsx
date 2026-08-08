@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Plus, RefreshCw } from "lucide-re
 import type { RankPage, SectorItem, ThemeDetail } from "@bindings/minifund/internal/model";
 import { MarketService, WindowService } from "@bindings/minifund/services";
 import { CopyButton, PositionStatusBadge } from "@/components/fund/fund-list-helpers";
+import { FundNameCell } from "@/components/fund/FundNameCell";
 import { QuoteText } from "@/components/market/QuoteText";
 import { ColumnToggle } from "@/components/ui/column-toggle";
 import { SortableHeader } from "@/components/ui/sortable-header";
@@ -484,14 +485,14 @@ function ThemeFundsView({
                   onDoubleClick={() => void call("打开详情窗口", () => WindowService.OpenDetailWindow(item.code))}
                 >
                   <td className="data-grid-cell">
-                    <div className="flex flex-col py-0.5">
+                    <FundNameCell code={item.code} name={item.name}>
                       <span className="truncate text-[length:var(--size-font-xs)] text-[var(--fg)]">{item.name}</span>
                       <div className="flex items-center gap-1">
                         <span className="quote-num text-2xs text-[var(--fg-muted)]">{item.code}</span>
                         <PositionStatusBadge code={item.code} />
                         <CopyButton value={item.code} name={item.name} />
                       </div>
-                    </div>
+                    </FundNameCell>
                   </td>
                   <td className="data-grid-cell text-right">{formatNav(item.nav)}</td>
                   {visibleCols.map((c) => (

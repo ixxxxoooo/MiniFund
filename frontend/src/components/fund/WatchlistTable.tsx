@@ -4,6 +4,7 @@ import { ExternalLink, FolderInput, Trash2, Wallet } from "lucide-react";
 import type { WatchItem } from "@bindings/minifund/internal/model";
 import { WindowService } from "@bindings/minifund/services";
 import { CopyButton, PositionStatusBadge, ThemeChips, useFundThemes } from "@/components/fund/fund-list-helpers";
+import { FundNameCell } from "@/components/fund/FundNameCell";
 import { QuoteText } from "@/components/market/QuoteText";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Pager } from "@/components/ui/pager";
@@ -180,7 +181,7 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
                 onDoubleClick={() => void call("打开详情窗口", () => WindowService.OpenDetailWindow(item.code))}
               >
                 <td className="data-grid-cell">
-                  <div className="flex flex-col gap-0.5 py-0.5">
+                  <FundNameCell code={item.code} name={item.name || est?.name || item.code}>
                     <div className="flex items-center gap-2">
                       <span className="min-w-0 truncate text-[length:var(--size-font-xs)] text-[var(--fg)]">
                         {item.name || est?.name || item.code}
@@ -192,7 +193,7 @@ export function WatchlistTable({ onEditPosition }: WatchlistTableProps) {
                       <PositionStatusBadge code={item.code} />
                       <CopyButton value={item.code} name={item.name} />
                     </div>
-                  </div>
+                  </FundNameCell>
                 </td>
                 <td className="data-grid-cell text-right">
                   {est?.hasEstimate ? (

@@ -14,24 +14,26 @@ function priceColorClass(changePercent: number, stealth: boolean): string {
 }
 
 /**
- * 指数行情条：展示在主窗口标题栏中间，数据来自 market store（事件驱动）。
- * 注：大盘涨跌分布仅在托盘监控面板中展示，标题栏不再附带。
+ * 指数行情条：展示在主窗口标题栏右侧，数据来自 market store（事件驱动）。
+ * 靠右展示，选多时向左扩展；空白区域保持可拖拽。
+ * 使用 direction:rtl + overflow-hidden 规避 WebKit justify-end+overflow 的已知 bug。
+ * @author ygw
  */
 export function IndexBar() {
   const indexes = useMarketStore((s) => s.indexes);
   const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
 
   return (
-    // 标题栏空间有限：指数从左侧（搜索框右边）依次排布，放不下的尾部直接裁掉隐藏。
-    // 注意必须用 justify-start：WebKit(WKWebView) 下 justify-end + overflow 会让溢出内容从左侧漏出、遮挡搜索框。
-    <div className="titlebar-no-drag flex min-w-0 flex-1 items-center justify-start gap-[var(--size-padding)] overflow-hidden">
-      {indexes.map((q) => (
-        <div key={q.symbol} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-2xs">
-          <span className="text-[var(--fg-secondary)]">{q.name}</span>
-          <span className={cn("quote-num", priceColorClass(q.changePercent, stealth))}>{q.price.toFixed(2)}</span>
-          <QuoteText value={q.changePercent} neutral={stealth} />
-        </div>
-      ))}
+    <div className="flex min-w-0 flex-1 items-center overflow-hidden" style={{ direction: "rtl" }}>
+      <div className="flex shrink-0 items-center gap-[var(--size-padding)]" style={{ direction: "ltr" }}>
+        {indexes.map((q) => (
+          <div key={q.symbol} className="titlebar-no-drag flex shrink-0 items-center gap-1.5 whitespace-nowrap text-2xs">
+            <span className="text-[var(--fg-secondary)]">{q.name}</span>
+            <span className={cn("quote-num", priceColorClass(q.changePercent, stealth))}>{q.price.toFixed(2)}</span>
+            <QuoteText value={q.changePercent} neutral={stealth} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
