@@ -177,6 +177,33 @@ func (s *Store) FundTypes(codes []string) (map[string]string, error) {
 	return out, rows.Err()
 }
 
+// FundNames 批量查询基金名称（code → name），用于兜底估值条目展示。
+func (s *Store) FundNames(codes []string) (map[string]string, error) {
+	out := make(map[string]string, len(codes))
+	if len(codes) == 0 {
+		return out, nil
+	}
+	placeholders := strings.Repeat("?,", len(codes))
+	placeholders = placeholders[:len(placeholders)-1]
+	args := make([]any, len(codes))
+	for i, c := range codes {
+		args[i] = c
+	}
+	rows, err := s.db.Query("SELECT code, name FROM fund_index WHERE code IN ("+placeholders+")", args...)
+	if err != nil {
+		return nil, fmt.Errorf("查询基金名称失败: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var code, name string
+		if err := rows.Scan(&code, &name); err != nil {
+			return nil, fmt.Errorf("读取基金名称失败: %w", err)
+		}
+		out[code] = name
+	}
+	return out, rows.Err()
+}
+
 // GetFundIndexItem 按代码取基金基础信息。
 func (s *Store) GetFundIndexItem(code string) (*model.FundIndexItem, error) {
 	var it model.FundIndexItem

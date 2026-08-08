@@ -248,7 +248,8 @@ func (s *PortfolioService) GetXray() ([]model.XrayStock, error) {
 				a = &agg{name: h.StockName}
 				stocks[h.StockCode] = a
 			}
-			a.weight += w * h.Percent
+				// Holding.Percent 以百分数表示（例如 5.2），组合权重统一转换为比例后再聚合。
+				a.weight += w * h.Percent / 100
 			a.funds = append(a.funds, model.XrayFundRef{Code: detail.Code, Name: detail.Name, Percent: h.Percent})
 		}
 	}

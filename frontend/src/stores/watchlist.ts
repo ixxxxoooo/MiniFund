@@ -42,7 +42,7 @@ interface WatchlistStore {
   /** 切换分组并加载条目 */
   setActiveGroup: (id: number) => Promise<void>;
   /** 重新加载当前分组条目 */
-  reloadItems: () => Promise<void>;
+  reloadItems: (expectedSequence?: number) => Promise<void>;
   refreshSummary: () => Promise<void>;
 
   addFund: (code: string) => Promise<void>;
@@ -65,6 +65,8 @@ interface WatchlistStore {
   setDCAPlanEnabled: (id: number, enabled: boolean) => Promise<boolean>;
 }
 
+let loadSequence = 0;
+
 /** 持仓数组转 map */
 function toPositionMap(list: Position[]): Record<string, Position> {
   const map: Record<string, Position> = {};
@@ -82,12 +84,17 @@ export const useWatchlistStore = create<WatchlistStore>()((set, get) => ({
   loaded: false,
 
   load: async () => {
+    const sequence = ++loadSequence;
     const realGroups = await call("加载分组", () => WatchlistService.ListGroups());
-    if (!realGroups || realGroups.length === 0) return;
+    if (!realGroups || realGroups.length === 0) {
+      if (sequence === loadSequence) set({ groups: [], activeGroupId: null, items: [], loaded: true });
+      return;
+    }
+    if (sequence !== loadSequence) return;
     const groups = withSummary(realGroups);
     // 默认进入「汇总」分组（统计全部自选与持仓）
     const activeGroupId = get().activeGroupId ?? SUMMARY_GROUP_ID;
-    set({ groups, activeGroupId, loaded: true });
+    set({ groups, activeGroupId: groups.some((g) => g.id === activeGroupId) ? activeGroupId : SUMMARY_GROUP_ID, loaded: true });
     await Promise.all([
       get().reloadItems(),
       call("加载持仓", () => PortfolioService.ListPositions()).then((list) => {
@@ -101,18 +108,19 @@ export const useWatchlistStore = create<WatchlistStore>()((set, get) => ({
   },
 
   setActiveGroup: async (id) => {
+    const sequence = ++loadSequence;
     set({ activeGroupId: id });
-    await get().reloadItems();
+    await get().reloadItems(sequence);
   },
 
-  reloadItems: async () => {
+  reloadItems: async (expectedSequence?: number) => {
     const groupId = get().activeGroupId;
     if (groupId == null) return;
     // 「汇总」分组：加载所有分组去重后的全部自选
     const items = isSummaryGroup(groupId)
       ? await call("加载全部自选", () => WatchlistService.ListAllItems())
       : await call("加载自选", () => WatchlistService.ListItems(groupId));
-    if (items) set({ items });
+    if (items && (expectedSequence == null || expectedSequence === loadSequence)) set({ items });
   },
 
   refreshSummary: async () => {

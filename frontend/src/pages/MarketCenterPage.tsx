@@ -117,15 +117,17 @@ export function MarketCenterPage() {
   return (
     <div className="flex min-h-0 flex-1">
       {/* 左侧指数列表 */}
-      <div className="flex w-[200px] shrink-0 flex-col overflow-y-auto border-r border-[var(--border-subtle)] bg-[var(--surface-secondary)] p-[var(--size-padding-sm)]">
+      <div className="flex w-[var(--size-market-sidebar)] shrink-0 flex-col overflow-y-auto border-r border-[var(--border-subtle)] bg-[var(--surface-secondary)] p-[var(--size-padding-sm)]">
         {quotes.length === 0 ? (
           <div className="flex h-full items-center justify-center text-[length:var(--size-font-xs)] text-[var(--fg-muted)]">
             {zhCN.market.quoteEmpty}
           </div>
         ) : (
           groups.map(({ group, items }) => (
-            <div key={group} className="mb-2">
-              <div className="px-2 py-1 text-2xs font-semibold tracking-wide text-[var(--fg-muted)]">{group}</div>
+            <section key={group} className="mb-[var(--size-gap)] last:mb-0">
+              <div className="sticky top-0 z-10 bg-[var(--surface-secondary)] px-2 py-1 text-2xs font-semibold text-[var(--fg-muted)]">
+                {group}
+              </div>
               {items.map((q) => {
                 const active = q.secid === selected;
                 return (
@@ -133,7 +135,7 @@ export function MarketCenterPage() {
                     key={q.secid}
                     onClick={() => select(q.secid)}
                     className={cn(
-                      "group flex w-full items-center justify-between gap-2 rounded-[var(--radius-btn)] px-2 py-1.5 text-left transition-colors",
+                      "group flex min-h-[var(--size-input)] w-full items-center justify-between gap-[var(--size-gap)] rounded-[var(--radius-btn)] px-2 py-1 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]",
                       active
                         ? "bg-[var(--sidebar-active)]"
                         : "hover:bg-[var(--sidebar-hover)]"
@@ -156,16 +158,16 @@ export function MarketCenterPage() {
                   </button>
                 );
               })}
-            </div>
+            </section>
           ))
         )}
       </div>
 
       {/* 右侧行情区 */}
-      <div className="flex min-w-0 flex-1 flex-col p-[var(--size-padding)]">
-        {/* 头卡：名称 + 分组标签 + 最新点位/涨跌 + 周期切换 */}
-        <div className="mb-3 flex shrink-0 flex-wrap items-end justify-between gap-3 border-b border-[var(--border-subtle)] pb-3">
-          <div className="flex min-w-0 flex-col gap-1">
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* 行情摘要：名称、最新点位、涨跌与周期切换 */}
+        <header className="flex shrink-0 flex-wrap items-end justify-between gap-[var(--size-gap)] border-b border-[var(--border-subtle)] px-[var(--size-padding)] py-[var(--size-padding)]">
+          <div className="flex min-w-0 flex-col gap-[var(--size-gap-sm)]">
             <div className="flex items-center gap-2">
               <span className="truncate text-[length:var(--size-font-base)] font-semibold text-[var(--fg)]">
                 {selectedQuote?.name ?? zhCN.market.title}
@@ -178,7 +180,7 @@ export function MarketCenterPage() {
             </div>
             {selectedQuote && selectedQuote.price > 0 ? (
               <div className="flex items-baseline gap-3">
-                <span className={cn("quote-num text-xl font-semibold leading-none", priceColorClass(headPct, stealth))}>
+                <span className={cn("quote-num text-[length:var(--size-font-xl)] font-semibold leading-none", priceColorClass(headPct, stealth))}>
                   {selectedQuote.price.toFixed(2)}
                 </span>
                 <QuoteText
@@ -194,7 +196,7 @@ export function MarketCenterPage() {
           </div>
 
           {/* 周期切换：分段控件 */}
-          <div className="flex shrink-0 items-center gap-0.5 rounded-[var(--radius-btn)] bg-[var(--surface-secondary)] p-0.5">
+          <div className="flex shrink-0 items-center gap-[var(--size-gap-sm)] rounded-[var(--radius-btn)] bg-[var(--surface-secondary)] p-[var(--size-gap-sm)]">
             {PERIODS.map((p) => (
               <button
                 key={p.id}
@@ -202,30 +204,32 @@ export function MarketCenterPage() {
                 className={cn(
                   "rounded-[var(--radius-sm)] px-3 py-1 text-2xs transition-colors",
                   p.id === period
-                    ? "bg-[var(--accent)] text-[var(--accent-fg)]"
-                    : "text-[var(--fg-secondary)] hover:text-[var(--fg)]"
+                    ? "bg-[var(--accent)] text-[var(--accent-fg)] shadow-[var(--shadow-sm)]"
+                    : "text-[var(--fg-secondary)] hover:bg-[var(--tab-hover-bg)] hover:text-[var(--fg)]"
                 )}
               >
                 {p.label}
               </button>
             ))}
           </div>
-        </div>
+        </header>
 
         {/* 当日 OHLC 概览 */}
         {stats.length > 0 && (
-          <div className="mb-2 flex shrink-0 flex-wrap gap-x-6 gap-y-1">
+          <dl className="grid shrink-0 grid-cols-2 divide-x divide-y divide-[var(--border-subtle)] border-b border-[var(--border-subtle)] bg-[var(--surface-secondary)] sm:grid-cols-4 sm:divide-y-0">
             {stats.map((s) => (
-              <span key={s.label} className="flex items-baseline gap-1 text-2xs">
-                <span className="text-[var(--fg-muted)]">{s.label}</span>
-                <span className="quote-num text-[var(--fg)]">{s.value}</span>
-              </span>
+              <div key={s.label} className="flex min-w-0 items-baseline justify-between gap-[var(--size-gap)] px-[var(--size-padding)] py-[var(--size-padding-sm)]">
+                <dt className="shrink-0 text-2xs text-[var(--fg-muted)]">{s.label}</dt>
+                <dd className="quote-num truncate text-[length:var(--size-font-xs)] font-medium text-[var(--fg)]">
+                  {s.value}
+                </dd>
+              </div>
             ))}
-          </div>
+          </dl>
         )}
 
         {/* K 线图（高度自适应容器） */}
-        <div ref={chartWrapRef} className="min-h-0 flex-1 overflow-hidden">
+        <div ref={chartWrapRef} className="min-h-0 flex-1 overflow-hidden px-[var(--size-padding)] pt-[var(--size-padding-sm)]">
           {loadingKline && kline.length === 0 ? (
             <div className="flex h-full items-center justify-center">
               <Spinner label={zhCN.market.klineLoading} />
@@ -239,7 +243,8 @@ export function MarketCenterPage() {
               data={kline}
               more={klineMore}
               resetKey={`${selected ?? ""}|${period}`}
-              height={Math.max(240, chartH - 40)}
+              height={Math.max(240, chartH - 8)}
+              currentPrice={selectedQuote?.price ?? 0}
               onLoadMore={loadMoreKline}
             />
           )}

@@ -18,8 +18,10 @@ interface QuoteTextProps {
  */
 export function QuoteText({ value, text, neutral = false, className }: QuoteTextProps) {
   const direction = quoteDirection(value);
+  // neutral 模式下：有自定义 text 时优先使用（如已脱敏的 "****"），
+  // 无 text 时才退化为无符号百分比展示，避免金额值被误格式化为百分比。
   const display = neutral
-    ? `${Math.abs(value).toFixed(2)}%`
+    ? (text ?? `${Math.abs(value).toFixed(2)}%`)
     : (text ?? formatPercent(value));
 
   return (

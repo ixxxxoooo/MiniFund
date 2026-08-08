@@ -380,8 +380,24 @@ func (s *Scheduler) runEstimateRound() {
 			logger.Warn("场内行情轮询失败: %v", err)
 		}
 	}
-	// 自选非空却拉不到任何估值：估值源整体不可用，广播降级提示（前端展示「数据延迟」徽标）。
-	// 连续多轮失败时只在首次广播（estimateDown 去抖），恢复时再广播一次。
+	// 用权威历史净值校正场外基金估值（fundgz 在净值公布后会滞后）。
+	if len(otc) > 0 {
+		if len(estimates) > 0 {
+			s.reconcileEstimates(ctx, estimates, otc)
+		} else {
+			// fundgz 全部失败时，主动刷新权威净值缓存供兜底使用
+			s.latestNavCache(ctx, otc)
+		}
+		// 为 fundgz 未返回的基金补充兜底估值条目：使用 FetchLatestNavs 数据创建基本条目，
+		// 使前端仍可计算持仓市值与当日收益（通过 HasDayGrowth 分支），而非显示"暂无估值"。
+		estimates = s.fillMissingEstimates(estimates, otc)
+	}
+	// 场内 ETF：实时涨跌幅即当日涨跌幅，补 DayGrowth 供持仓汇总计算当日收益。
+	// 否则 GetSummary 的 HasDayGrowth 分支永不命中，ETF 收盘后当日收益会归 0。
+	if len(exchange) > 0 {
+		s.reconcileETFs(estimates, exchange)
+	}
+	// 经兜底仍无任何估值：估值源整体不可用，广播降级提示。
 	if len(estimates) == 0 {
 		if !s.estimateDown {
 			s.estimateDown = true
@@ -392,15 +408,6 @@ func (s *Scheduler) runEstimateRound() {
 	if s.estimateDown {
 		s.estimateDown = false
 		s.EmitDegraded("estimate", false)
-	}
-	// 用权威历史净值校正场外基金估值（fundgz 在净值公布后会滞后）。
-	if len(otc) > 0 {
-		s.reconcileEstimates(ctx, estimates, otc)
-	}
-	// 场内 ETF：实时涨跌幅即当日涨跌幅，补 DayGrowth 供持仓汇总计算当日收益。
-	// 否则 GetSummary 的 HasDayGrowth 分支永不命中，ETF 收盘后当日收益会归 0。
-	if len(exchange) > 0 {
-		s.reconcileETFs(estimates, exchange)
 	}
 	s.mu.Lock()
 	s.lastEstimates = estimates
@@ -452,6 +459,48 @@ func (s *Scheduler) reconcileEstimates(ctx context.Context, estimates []model.Fu
 			e.EstimateGrowth = 0
 		}
 	}
+}
+
+// fillMissingEstimates 为 fundgz 未返回的场外基金补充兜底估值条目。
+// 部分基金（QDII、新发基金等）不被 fundgz 支持，导致前端 estimates 中完全缺失该代码，
+// 进而所有收益/市值列均显示"暂无估值"。此方法利用已缓存的权威最新净值创建基本条目。
+func (s *Scheduler) fillMissingEstimates(estimates []model.FundEstimate, otc []string) []model.FundEstimate {
+	existing := make(map[string]bool, len(estimates))
+	for _, e := range estimates {
+		existing[e.Code] = true
+	}
+	s.mu.Lock()
+	navs := s.latestNavs
+	s.mu.Unlock()
+	if navs == nil {
+		return estimates
+	}
+	// 查询基金名称用于前端展示
+	names, _ := s.store.FundNames(otc)
+	for _, code := range otc {
+		if existing[code] {
+			continue
+		}
+		rec, ok := navs[code]
+		if !ok || rec.Nav <= 0 {
+			continue
+		}
+		name := code
+		if n, ok := names[code]; ok && n != "" {
+			name = n
+		}
+		stub := model.FundEstimate{
+			Code:         code,
+			Name:         name,
+			NavDate:      rec.Date,
+			PrevNav:      rec.Nav,
+			HasEstimate:  false,
+			DayGrowth:    rec.Growth,
+			HasDayGrowth: true,
+		}
+		estimates = append(estimates, stub)
+	}
+	return estimates
 }
 
 // reconcileETFs 校正场内 ETF 估值：ETF 没有像场外那样的「净值确认」流程，

@@ -34,6 +34,7 @@
   --size-gap-sm: 4px;
   --size-padding: 12px;
   --size-padding-sm: 8px;
+  --size-market-sidebar: 212px;
 
   /* 主色调 */
   --accent: #007aff;
@@ -138,6 +139,7 @@
   --size-gap-sm: 2px;
   --size-padding: 8px;
   --size-padding-sm: 4px;
+  --size-market-sidebar: 196px;
 }
 
 .dark {

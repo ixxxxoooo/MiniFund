@@ -1,15 +1,18 @@
 import { useEffect, useRef } from "react";
 import {
+  CandleTooltipRectPosition,
   init,
   dispose,
+  TooltipShowRule,
+  TooltipShowType,
   type Chart,
-  type KLineData,
   type DeepPartial,
   type Styles,
 } from "klinecharts";
 import type { Kline } from "@bindings/minifund/internal/model";
 import { useThemeStore } from "@/stores/theme";
 import { useSettingsStore } from "@/stores/settings";
+import { createCandleTooltip, toKLineData } from "./kline-chart-utils";
 
 interface KlineChartProps {
   /** K 线数据（按日期升序） */
@@ -20,6 +23,8 @@ interface KlineChartProps {
   resetKey: string;
   /** 图表总高度（px） */
   height: number;
+  /** 当前实时点位，用于计算悬浮日期到现在的累计涨幅；不可用时回退最新 K 线收盘价。 */
+  currentPrice?: number;
   /** 向左滚动到最左侧时加载更多历史，返回新增的更早切片与是否仍有更多 */
   onLoadMore: () => Promise<{ older: Kline[]; more: boolean }>;
 }
@@ -33,52 +38,10 @@ function readTokens(names: string[]): Record<string, string> {
 }
 
 /**
- * 将日期字符串解析为毫秒时间戳。
- * 兼容两种主格式：纯日期 "YYYY-MM-DD" 与带时分 "YYYY-MM-DD HH:mm"（或含秒）。
- * 解析失败返回 NaN，调用方据此过滤，避免 klinecharts 收到 NaN 时间戳导致该根丢失或整图错位。
- */
-function parseKlineDate(date: string): number {
-  const s = date.trim();
-  if (!s) return NaN;
-  // 带空格的日期时间（腾讯/新浪等返回 "YYYY-MM-DD HH:mm[:ss]"）：空格替换为 T 得到 ISO 格式
-  if (s.includes(" ")) {
-    return Date.parse(s.replace(" ", "T"));
-  }
-  // 纯日期 "YYYY-MM-DD"：补 T00:00:00，兼容本地时区解析
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    return Date.parse(`${s}T00:00:00`);
-  }
-  // 其余格式兜底直接尝试解析
-  return Date.parse(s);
-}
-
-/** 将领域模型 Kline 转换为 klinecharts 数据（日期字符串转毫秒时间戳，成交额映射 turnover）。 */
-function toKLineData(list: Kline[]): KLineData[] {
-  const out: KLineData[] = [];
-  for (const k of list) {
-    const timestamp = parseKlineDate(k.date);
-    if (!Number.isFinite(timestamp)) {
-      // 脏数据（非标准日期串）跳过该根，避免 NaN 时间戳破坏整图
-      continue;
-    }
-    out.push({
-      timestamp,
-      open: k.open,
-      high: k.high,
-      low: k.low,
-      close: k.close,
-      volume: k.volume,
-      turnover: k.amount,
-    });
-  }
-  return out;
-}
-
-/**
  * 构建 klinecharts 主题样式：颜色全部来自 globals.css 的主题 token，
  * 自动跟随明/暗主题与涨跌色方案；摸鱼模式下涨跌统一为平盘中性色，不暴露涨跌。
  */
-function buildStyles(stealth: boolean): DeepPartial<Styles> {
+function buildStyles(stealth: boolean, latestPrice: number): DeepPartial<Styles> {
   const t = readTokens([
     "--quote-up",
     "--quote-down",
@@ -124,8 +87,15 @@ function buildStyles(stealth: boolean): DeepPartial<Styles> {
         },
       },
       tooltip: {
+        showRule: TooltipShowRule.FollowCross,
+        showType: TooltipShowType.Rect,
+        custom: createCandleTooltip(up, down, flat, latestPrice),
         text: { color: tooltipText },
-        rect: { color: tooltipBg, borderColor: grid },
+        rect: {
+          position: CandleTooltipRectPosition.Pointer,
+          color: tooltipBg,
+          borderColor: grid,
+        },
       },
     },
     indicator: {
@@ -164,7 +134,7 @@ function buildStyles(stealth: boolean): DeepPartial<Styles> {
  * 向左滚动到最左侧时通过 onLoadMore 动态加载更多历史，配合后端 SQLite 长期缓存秒开。
  * 样式映射主题 token，随明暗主题/涨跌色方案/摸鱼模式实时切换。
  */
-export function KlineChart({ data, more, resetKey, height, onLoadMore }: KlineChartProps) {
+export function KlineChart({ data, more, resetKey, height, currentPrice = 0, onLoadMore }: KlineChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Chart | null>(null);
   const appliedKeyRef = useRef<string>("");
@@ -175,17 +145,19 @@ export function KlineChart({ data, more, resetKey, height, onLoadMore }: KlineCh
   const resolved = useThemeStore((s) => s.resolved);
   const stealth = useSettingsStore((s) => s.settings?.stealthMode ?? false);
   const scheme = useSettingsStore((s) => s.settings?.quoteColorScheme ?? "cn");
+  const latestKlinePrice = data.length > 0 ? data[data.length - 1].close : 0;
+  const latestPrice = currentPrice > 0 ? currentPrice : latestKlinePrice;
 
   // 初始化与销毁（仅一次）：创建实例、MA/VOL 指标、注册 loadMore 回调。
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const chart = init(el);
+    const chart = init(el, { locale: "zh-CN" });
     chartRef.current = chart;
     if (chart) {
       chart.createIndicator({ name: "MA", calcParams: [5, 10, 20] }, true, { id: "candle_pane" });
       chart.createIndicator("VOL", false, { id: "vol_pane" });
-      chart.setStyles(buildStyles(stealth));
+      chart.setStyles(buildStyles(stealth, latestPrice));
       // 收窄最新 K 线到右侧价格轴的默认预留间距（库默认偏大，会显示一段空白）。
       chart.setOffsetRightDistance(4);
       chart.loadMore(() => {
@@ -222,8 +194,8 @@ export function KlineChart({ data, more, resetKey, height, onLoadMore }: KlineCh
 
   // 主题/涨跌色方案/摸鱼模式变化时重应用样式。
   useEffect(() => {
-    chartRef.current?.setStyles(buildStyles(stealth));
-  }, [resolved, stealth, scheme]);
+    chartRef.current?.setStyles(buildStyles(stealth, latestPrice));
+  }, [latestPrice, resolved, stealth, scheme]);
 
   // 高度变化时通知图表重新测量。
   useEffect(() => {
